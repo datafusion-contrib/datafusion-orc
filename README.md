@@ -6,31 +6,41 @@ Implementation of ORC file format
 
 Read [Apache ORC](https://orc.apache.org/) in Rust.
 
-This repository providing a toolkit to:
-
-* Read ORC files (proto structures)
+* Read ORC files
 * Read stripes (the conversion from proto metadata to memory regions)
 * Decode stripes (the math of decode stripes into e.g. booleans, runs of RLE, etc.)
+* Decode ORC data to [Arrow Datatypes](https://docs.rs/arrow/latest/arrow/datatypes/enum.DataType.html)
 
-It currently reads the following (logical) types:
+## Current Support
 
-* Booleans
-* Strings
-* Integers
-* Floats
+| Column Encoding           | Read | Write | Rust Type             | Arrow  DataType         |
+| ------------------------- | ---- | ----- | --------------------- | ----------------------- |
+| SmallInt, Int, BigInt     | ✓    |       | i16,i32,i64           | Int16, Int32, Int64     |
+| Float, Double             | ✓    |       | f32, f64              | Float32, Float64        |
+| String, Char, and VarChar | ✓    |       | string                | LargeUtf8               |
+| Boolean                   | ✓    |       | bool                  | Boolean                 |
+| TinyInt                   | ✗    |       |                       |                         |
+| Binary                    | ✗    |       |                       |                         |
+| Decimal                   | ✗    |       |                       |                         |
+| Date                      | ✓    |       | chrono::NavieDate     | Date32                  |
+| Timestamp                 | ✓    |       | chrono::NavieDateTime | Timestamp(Nanosecond,_) |
+| Struct                    | ✗    |       |                       |                         |
+| List                      | ✗    |       |                       |                         |
+| Map                       | ✗    |       |                       |                         |
+| Union                     | ✗    |       |                       |                         |
 
-And non-native logical types:
-* Timestamp
-* Date
 
-What is not yet implemented:
+## Compression Support
 
-* Snappy, LZO decompression
-* RLE v1 decoding
-* Utility functions to decode non-native logical types:
-    * Decimal
-    * Struct
-    * List
-    * Union
+| Compression | Support |
+| ----------- | ------- |
+| None        | ✓       |
+| ZLIB        | ✓       |
+| SNAPPY      | ✗       |
+| LZO         | ✗       |
+| LZ4         | ✗       |
+| ZSTD        | ✗       |
+
+
 
 
