@@ -288,9 +288,19 @@ impl NaiveStripeDecoder {
         if fields.is_empty() {
             Ok(None)
         } else {
+            //TODO(weny): any better way?
+            let fields = self
+                .schema_ref
+                .fields
+                .into_iter()
+                .map(|field| field.name())
+                .zip(fields.into_iter())
+                .collect::<Vec<_>>();
+
             Ok(Some(
-                RecordBatch::try_new(self.schema_ref.clone(), fields)
-                    .context(error::ConvertRecordBatchSnafu)?,
+                RecordBatch::try_from_iter(fields).context(error::ConvertRecordBatchSnafu)?,
+                // RecordBatch::try_new(self.schema_ref.clone(), fields)
+                //     .context(error::ConvertRecordBatchSnafu)?,
             ))
         }
     }

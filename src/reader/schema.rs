@@ -176,7 +176,7 @@ pub fn create_schema(types: &[Type], root_column: usize) -> Result<Arc<TypeDescr
         return error::NoTypesSnafu {}.fail();
     }
 
-    let root = &types[0];
+    let root = &types[root_column];
 
     match root.kind() {
         Kind::Struct => {

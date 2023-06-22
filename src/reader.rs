@@ -63,20 +63,28 @@ pub struct Cursor<R: Read + Seek> {
 }
 
 impl<R: Read + Seek> Cursor<R> {
-    pub fn new(r: Reader<R>, fields: &[&str]) -> Result<Self> {
+    pub fn new<T: AsRef<str>>(r: Reader<R>, fields: &[T]) -> Result<Self> {
         let mut columns = Vec::with_capacity(fields.len());
-        for &name in fields {
+        for name in fields {
             let field = r
                 .schema
-                .field(name)
-                .context(error::FieldNotFOundSnafu { name })?;
-            columns.push((name.to_string(), field));
+                .field(name.as_ref())
+                .context(error::FieldNotFOundSnafu {
+                    name: name.as_ref(),
+                })?;
+            columns.push((name.as_ref().to_string(), field));
         }
         Ok(Self {
             reader: r,
             columns,
             stripe_offset: 0,
         })
+    }
+
+    pub fn root(r: Reader<R>) -> Result<Self> {
+        let root = &r.metadata().footer.types[0];
+        let fields = &root.field_names.clone();
+        Self::new(r, fields)
     }
 }
 
