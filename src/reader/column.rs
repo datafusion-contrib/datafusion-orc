@@ -65,14 +65,12 @@ impl Column {
             .seek(SeekFrom::Start(start))
             .context(error::IoSnafu)?;
 
-        let mut scratch = Vec::with_capacity(length);
-        scratch.reserve(length);
+        let mut scratch = vec![0; length];
 
         reader
             .inner
             .read_exact(&mut scratch)
             .context(error::IoSnafu)?;
-
         Ok(Self {
             data: Bytes::from(scratch),
             number_of_rows: stripe.number_of_rows(),
@@ -98,7 +96,7 @@ impl Column {
             .find(|stream| stream.kind() == kind)
             .map(|stream| {
                 let length = stream.length() as usize;
-                let data = self.data.slice(start - length..start);
+                let data = self.data.slice((start - length)..start);
                 Decompressor::new(data, self.compression, vec![])
             })
             .map(Ok)

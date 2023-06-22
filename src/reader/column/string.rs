@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::array::{ArrayRef, LargeBinaryArray};
+use arrow::array::{ArrayRef, LargeStringArray};
 use snafu::{OptionExt, ResultExt};
 
 use super::present::new_present_iter;
@@ -94,7 +94,7 @@ pub fn new_arrow_dict_string_decoder(column: &Column) -> Result<(GenericIterator
         })
         .context(error::InvalidColumnSnafu { name: &column.name })?;
 
-    let dictionary = LargeBinaryArray::from_iter(values.into_iter().map(Some));
+    let dictionary = LargeStringArray::from_iter(values.into_iter().map(Some));
 
     Ok((
         NullableIterator {
