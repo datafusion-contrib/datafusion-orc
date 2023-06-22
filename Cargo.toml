@@ -1,7 +1,14 @@
 [package]
-name = "orc-rs"
+name = "orc-rust"
 version = "0.1.0"
 edition = "2021"
+homepage = "https://github.com/wenyxu/orc-rs"
+repository = "https://github.com/wenyxu/orc-rs"
+authors = ["Weny <wenymedia@gmail.com>"]
+license = "MIT/Apache-2.0"
+description = "Yet another unofficial implementation of Apache ORC spec in safe Rust"
+keywords = ["arrow", "orc", "arrow-rs"]
+include = ["src/**/*.rs", "Cargo.toml"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
