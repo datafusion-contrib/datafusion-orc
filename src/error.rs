@@ -46,7 +46,7 @@ pub enum Error {
     UnsupportedType { location: Location, kind: Kind },
 
     #[snafu(display("Field not found: {:?}", name))]
-    FieldNotFOund { location: Location, name: String },
+    FieldNotFound { location: Location, name: String },
 
     #[snafu(display("Invalid column : {:?}", name))]
     InvalidColumn { location: Location, name: String },

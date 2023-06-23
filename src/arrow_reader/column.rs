@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use snafu::{OptionExt, ResultExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 use crate::error::{self, Result};
 use crate::proto::stream::Kind;
@@ -29,15 +30,47 @@ pub struct Column {
     column: Arc<TypeDescription>,
 }
 
+macro_rules! impl_read_stream {
+    ($reader:ident,$start:ident,$length:ident $($_await:tt)*) => {{
+        $reader
+            .inner
+            .seek(SeekFrom::Start($start))$($_await)*
+            .context(error::IoSnafu)?;
+
+        let mut scratch = vec![0; $length];
+
+        $reader
+            .inner
+            .read_exact(&mut scratch)$($_await)*
+            .context(error::IoSnafu)?;
+
+        Ok(Bytes::from(scratch))
+    }};
+}
+
 impl Column {
-    pub fn new<R: Read + Seek>(
+    pub fn read_stream<R: Read + Seek>(
         reader: &mut Reader<R>,
-        compression: CompressionKind,
+        start: u64,
+        length: usize,
+    ) -> Result<Bytes> {
+        impl_read_stream!(reader, start, length)
+    }
+
+    pub async fn read_stream_async<R: AsyncRead + AsyncSeek + Unpin + Send>(
+        reader: &mut Reader<R>,
+        start: u64,
+        length: usize,
+    ) -> Result<Bytes> {
+        impl_read_stream!(reader, start, length.await)
+    }
+
+    pub fn get_stream_info(
         name: &str,
         column: &Arc<TypeDescription>,
         footer: &Arc<StripeFooter>,
         stripe: &StripeInformation,
-    ) -> Result<Self> {
+    ) -> Result<(u64, usize)> {
         let mut start = 0; // the start of the stream
 
         let column_idx = column.column_id() as u32;
@@ -58,21 +91,45 @@ impl Column {
             .iter()
             .filter(|stream| stream.column() == column_idx && stream.kind() != Kind::RowIndex)
             .fold(0, |acc, stream| acc + stream.length()) as usize;
-
         let start = stripe.offset() + start;
-        reader
-            .inner
-            .seek(SeekFrom::Start(start))
-            .context(error::IoSnafu)?;
 
-        let mut scratch = vec![0; length];
+        Ok((start, length))
+    }
 
-        reader
-            .inner
-            .read_exact(&mut scratch)
-            .context(error::IoSnafu)?;
+    pub fn new<R: Read + Seek>(
+        reader: &mut Reader<R>,
+        compression: CompressionKind,
+        name: &str,
+        column: &Arc<TypeDescription>,
+        footer: &Arc<StripeFooter>,
+        stripe: &StripeInformation,
+    ) -> Result<Self> {
+        let (start, length) = Column::get_stream_info(name, column, footer, stripe)?;
+        let data = Column::read_stream(reader, start, length)?;
+
         Ok(Self {
-            data: Bytes::from(scratch),
+            data,
+            number_of_rows: stripe.number_of_rows(),
+            compression,
+            footer: footer.clone(),
+            column: column.clone(),
+            name: name.to_string(),
+        })
+    }
+
+    pub async fn new_async<R: AsyncRead + AsyncSeek + Unpin + Send>(
+        reader: &mut Reader<R>,
+        compression: CompressionKind,
+        name: &str,
+        column: &Arc<TypeDescription>,
+        footer: &Arc<StripeFooter>,
+        stripe: &StripeInformation,
+    ) -> Result<Self> {
+        let (start, length) = Column::get_stream_info(name, column, footer, stripe)?;
+        let data = Column::read_stream_async(reader, start, length).await?;
+
+        Ok(Self {
+            data,
             number_of_rows: stripe.number_of_rows(),
             compression,
             footer: footer.clone(),
