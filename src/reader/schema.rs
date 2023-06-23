@@ -41,7 +41,7 @@ pub fn create_field((name, typ): (&str, &Arc<TypeDescription>)) -> Field {
         Kind::Long => Field::new(name, DataType::Int64, true),
         Kind::Float => Field::new(name, DataType::Float32, true),
         Kind::Double => Field::new(name, DataType::Float64, true),
-        Kind::String => Field::new(name, DataType::LargeUtf8, true),
+        Kind::String => Field::new(name, DataType::Utf8, true),
         Kind::Binary => Field::new(name, DataType::LargeBinary, true),
         // TODO(weny): handle tz
         Kind::Timestamp => Field::new(
@@ -62,8 +62,8 @@ pub fn create_field((name, typ): (&str, &Arc<TypeDescription>)) -> Field {
             )
         }
         Kind::Date => Field::new(name, DataType::Date32, true),
-        Kind::Varchar => Field::new(name, DataType::LargeUtf8, true),
-        Kind::Char => Field::new(name, DataType::LargeUtf8, true),
+        Kind::Varchar => Field::new(name, DataType::Utf8, true),
+        Kind::Char => Field::new(name, DataType::Utf8, true),
     }
 }
 

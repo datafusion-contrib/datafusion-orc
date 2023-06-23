@@ -1,35 +1,25 @@
 use snafu::OptionExt;
 
-use super::GenericIterator;
 use crate::error::{InvalidColumnSnafu, Result};
 use crate::proto::stream::Kind;
 use crate::reader::column::present::new_present_iter;
 use crate::reader::column::{Column, NullableIterator};
-use crate::reader::decode::rle_v2::SignedRleV2Iter;
+use crate::reader::decode::rle_v2::RleReaderV2;
 
-macro_rules! impl_integer_iter {
-    ($iter:ident,$tp:ident) => {
-        paste::item! {
-            pub fn [<new_ $tp _iter>] (column: &Column) -> Result<GenericIterator<$tp>> {
-                let present = new_present_iter(column)?.try_collect::<Vec<_>>()?;
-                let rows: usize = present.iter().filter(|&p| *p).count();
+pub fn new_i64_iter(column: &Column) -> Result<NullableIterator<i64>> {
+    let present = new_present_iter(column)?.try_collect::<Vec<_>>()?;
 
-                let iter = column
-                    .stream(Kind::Data)
-                    .transpose()?
-                    .map(|reader| {
-                        Box::new($iter::new(reader, rows, vec![]))
-                            as Box<dyn Iterator<Item = Result<$tp>>>
-                    })
-                    .context(InvalidColumnSnafu { name: &column.name })?;
+    let iter = column
+        .stream(Kind::Data)
+        .transpose()?
+        .map(|reader| {
+            Box::new(RleReaderV2::try_new(reader, true, true))
+                as Box<dyn Iterator<Item = Result<i64>>>
+        })
+        .context(InvalidColumnSnafu { name: &column.name })?;
 
-                Ok(NullableIterator {
-                    present: Box::new(present.into_iter()),
-                    iter,
-                })
-            }
-        }
-    };
+    Ok(NullableIterator {
+        present: Box::new(present.into_iter()),
+        iter,
+    })
 }
-
-impl_integer_iter!(SignedRleV2Iter, i64);

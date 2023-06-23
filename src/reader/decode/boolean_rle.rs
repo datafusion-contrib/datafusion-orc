@@ -2,8 +2,8 @@ use std::io::Read;
 
 use snafu::ResultExt;
 
-use super::read_u8;
 use crate::error::{self, Result};
+use crate::reader::decode::util::read_u8;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 #[allow(clippy::large_enum_variant)]
@@ -44,8 +44,7 @@ impl<R: Read> Iterator for BooleanRleRunIter<R> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let header = read_u8(&mut self.reader).context(error::IoSnafu);
-        let header = match header {
+        let header = match read_u8(&mut self.reader) {
             Ok(header) => header as i8,
             Err(e) => return Some(Err(e)),
         };
@@ -54,8 +53,7 @@ impl<R: Read> Iterator for BooleanRleRunIter<R> {
         } else {
             let length = header as u16 + 3;
             // this is not ok - it may require more than one byte
-            let value = read_u8(&mut self.reader).context(error::IoSnafu);
-            let value = match value {
+            let value = match read_u8(&mut self.reader) {
                 Ok(value) => value,
                 Err(e) => return Some(Err(e)),
             };

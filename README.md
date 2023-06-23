@@ -17,7 +17,7 @@ Read [Apache ORC](https://orc.apache.org/) in Rust.
 | ------------------------- | ---- | ----- | --------------------- | ----------------------- |
 | SmallInt, Int, BigInt     | ✓    |       | i16,i32,i64           | Int16, Int32, Int64     |
 | Float, Double             | ✓    |       | f32, f64              | Float32, Float64        |
-| String, Char, and VarChar | ✓    |       | string                | LargeUtf8               |
+| String, Char, and VarChar | ✓    |       | string                | Utf8                    |
 | Boolean                   | ✓    |       | bool                  | Boolean                 |
 | TinyInt                   | ✗    |       |                       |                         |
 | Binary                    | ✗    |       |                       |                         |

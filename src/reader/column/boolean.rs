@@ -1,13 +1,12 @@
 use snafu::OptionExt;
 
-use super::GenericIterator;
 use crate::error::{InvalidColumnSnafu, Result};
 use crate::proto::stream::Kind;
 use crate::reader::column::present::new_present_iter;
 use crate::reader::column::{Column, NullableIterator};
 use crate::reader::decode::boolean_rle::BooleanIter;
 
-pub fn new_boolean_iter(column: &Column) -> Result<GenericIterator<bool>> {
+pub fn new_boolean_iter(column: &Column) -> Result<NullableIterator<bool>> {
     let present = new_present_iter(column)?.try_collect::<Vec<_>>()?;
     let rows: usize = present.iter().filter(|&p| *p).count();
 

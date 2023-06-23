@@ -173,7 +173,7 @@ fn unrolled_unpack_4(
     }
 
     if remainder > 0 {
-        let mut start_shift = 6;
+        let mut start_shift = 4;
         let val = read_u8(reader)? as u64;
         for item in buffer.iter_mut().take(end_offset).skip(end_unroll) {
             *item = ((val >> start_shift) & 15) as i64;
@@ -481,4 +481,74 @@ fn read_long_be8(read_buffer: &[u8], rb_offset: usize) -> i64 {
         + (i64::from(read_buffer[rb_offset + 5]) << 16)
         + (i64::from(read_buffer[rb_offset + 6]) << 8)
         + i64::from(read_buffer[rb_offset + 7])
+}
+
+// zigzag_decode decodes an unsigned zig-zag encoded integer into a signed
+// integer.
+pub fn zigzag_decode(val: u64) -> i64 {
+    zigzag::ZigZag::decode(val)
+}
+
+pub fn rle_v2_direct_bit_width(value: u8) -> u8 {
+    match value {
+        0..=23 => value + 1,
+        27 => 32,
+        28 => 40,
+        29 => 48,
+        30 => 56,
+        31 => 64,
+        other => todo!("{other}"),
+    }
+}
+
+pub fn header_to_rle_v2_direct_bit_width(header: u8) -> u8 {
+    let bit_width = (header & 0b00111110) >> 1;
+    rle_v2_direct_bit_width(bit_width)
+}
+
+pub fn rle_v2_delta_bit_width(value: u8) -> u8 {
+    match value {
+        0..=23 => value + 1,
+        27 => 32,
+        28 => 40,
+        29 => 48,
+        30 => 56,
+        31 => 64,
+        other => todo!("{other}"),
+    }
+}
+
+pub fn read_vulong<R: Read>(r: &mut R) -> Result<i64> {
+    let mut result: i64 = 0;
+    let mut offset = 0;
+    let mut b: i64 = 0x80;
+    while (b & 0x80) != 0 {
+        let mut nb = [0u8; 1];
+        r.read_exact(&mut nb).context(error::IoSnafu)?;
+        b = i64::from(nb[0]);
+        if b == -1 {
+            return error::EofUnsignedVIntSnafu {}.fail();
+        }
+        result |= (b & 0x7F) << offset;
+        offset += 7;
+    }
+    Ok(result)
+}
+
+pub fn read_vslong<R: Read>(r: &mut R) -> Result<i64> {
+    let result = read_vulong(r)?;
+    Ok((result as u64 >> 1) as i64 ^ -(result & 1))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::reader::decode::util::zigzag_decode;
+
+    #[test]
+    fn test_zigzag_decode() {
+        let data = [0i64, -1, 1, -2, 2, -3, 3, -4, 4, -5];
+        for (i, v) in data.into_iter().enumerate() {
+            assert_eq!(zigzag_decode(i as u64), v)
+        }
+    }
 }
