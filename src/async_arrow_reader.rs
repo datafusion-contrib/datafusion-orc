@@ -122,6 +122,10 @@ impl<R: AsyncRead + AsyncSeek + Unpin + Send + 'static> ArrowStreamReader<R> {
         }
     }
 
+    pub fn schema(&self) -> SchemaRef {
+        self.schema_ref.clone()
+    }
+
     fn poll_next_inner(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
