@@ -9,7 +9,8 @@ Read [Apache ORC](https://orc.apache.org/) in Rust.
 * Read ORC files
 * Read stripes (the conversion from proto metadata to memory regions)
 * Decode stripes (the math of decode stripes into e.g. booleans, runs of RLE, etc.)
-* Decode ORC data to [Arrow Datatypes](https://docs.rs/arrow/latest/arrow/datatypes/enum.DataType.html)
+* Decode ORC data to [Arrow Datatypes](https://docs.rs/arrow/latest/arrow/datatypes/enum.DataType.html) (Async/Sync)
+
 
 ## Current Support
 
