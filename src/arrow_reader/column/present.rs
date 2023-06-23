@@ -1,6 +1,6 @@
+use crate::arrow_reader::column::Column;
 use crate::error::Result;
 use crate::proto::stream::Kind;
-use crate::reader::column::Column;
 use crate::reader::decode::boolean_rle::BooleanIter;
 
 pub fn new_present_iter(column: &Column) -> Result<Box<dyn Iterator<Item = Result<bool>>>> {
