@@ -4,12 +4,11 @@ use std::sync::Arc;
 use bytes::Bytes;
 use snafu::{OptionExt, ResultExt};
 
-use super::schema::TypeDescription;
-use super::Reader;
 use crate::error::{self, Result};
 use crate::proto::stream::Kind;
 use crate::proto::{ColumnEncoding, CompressionKind, StripeFooter, StripeInformation};
-use crate::reader::Decompressor;
+use crate::reader::schema::TypeDescription;
+use crate::reader::{Decompressor, Reader};
 
 pub mod boolean;
 pub mod date;
@@ -127,8 +126,6 @@ pub struct NullableIterator<T> {
     present: Box<dyn Iterator<Item = bool>>,
     iter: Box<dyn Iterator<Item = Result<T>>>,
 }
-
-pub type GenericIterator<T> = NullableIterator<T>;
 
 impl<T> Iterator for NullableIterator<T> {
     type Item = Result<Option<T>>;

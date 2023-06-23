@@ -1,11 +1,11 @@
 use chrono::{Days, NaiveDate};
 use snafu::OptionExt;
 
-use super::present::new_present_iter;
-use super::{Column, GenericIterator, NullableIterator};
 use crate::error::{self, Result};
 use crate::proto::stream::Kind;
-use crate::reader::decode::rle_v2::SignedRleV2Iter;
+use crate::reader::column::present::new_present_iter;
+use crate::reader::column::{Column, NullableIterator};
+use crate::reader::decode::rle_v2::RleReaderV2;
 
 pub const UNIX_EPOCH_FROM_CE: i32 = 719_163;
 
@@ -34,14 +34,13 @@ impl Iterator for DateIterator {
     }
 }
 
-pub fn new_date_iter(column: &Column) -> Result<GenericIterator<NaiveDate>> {
+pub fn new_date_iter(column: &Column) -> Result<NullableIterator<NaiveDate>> {
     let present = new_present_iter(column)?.try_collect::<Vec<_>>()?;
-    let rows: usize = present.iter().filter(|&p| *p).count();
 
     let data = column
         .stream(Kind::Data)
         .transpose()?
-        .map(|reader| Box::new(SignedRleV2Iter::new(reader, rows, vec![])))
+        .map(|reader| Box::new(RleReaderV2::try_new(reader, true, true)))
         .context(error::InvalidColumnSnafu { name: &column.name })?;
 
     Ok(NullableIterator {
