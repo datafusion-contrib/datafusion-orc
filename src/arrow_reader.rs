@@ -38,7 +38,7 @@ pub const DEFAULT_BATCH_SIZE: usize = 8192;
 impl<R: Read> ArrowReader<R> {
     pub fn new(cursor: Cursor<R>, batch_size: Option<usize>) -> Self {
         let batch_size = batch_size.unwrap_or(DEFAULT_BATCH_SIZE);
-        let schema = create_arrow_schema(&cursor);
+        let schema = Arc::new(create_arrow_schema(&cursor));
         Self {
             cursor,
             schema_ref: schema,
@@ -48,7 +48,7 @@ impl<R: Read> ArrowReader<R> {
     }
 }
 
-pub fn create_arrow_schema<R>(cursor: &Cursor<R>) -> SchemaRef {
+pub fn create_arrow_schema<R>(cursor: &Cursor<R>) -> Schema {
     let metadata = cursor
         .reader
         .metadata()
@@ -69,7 +69,7 @@ pub fn create_arrow_schema<R>(cursor: &Cursor<R>) -> SchemaRef {
         .map(|(name, typ)| Arc::new(create_field((name, typ))))
         .collect::<Vec<_>>();
 
-    Arc::new(Schema::new_with_metadata(fields, metadata))
+    Schema::new_with_metadata(fields, metadata)
 }
 
 impl<R: Read + Seek> RecordBatchReader for ArrowReader<R> {
