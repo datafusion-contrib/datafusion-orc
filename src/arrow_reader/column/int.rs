@@ -14,7 +14,7 @@ pub fn new_i64_iter(column: &Column) -> Result<NullableIterator<i64>> {
         .transpose()?
         .map(|reader| {
             Box::new(RleReaderV2::try_new(reader, true, true))
-                as Box<dyn Iterator<Item = Result<i64>>>
+                as Box<dyn Iterator<Item = Result<i64>> + Send>
         })
         .context(InvalidColumnSnafu { name: &column.name })?;
 

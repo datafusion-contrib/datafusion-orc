@@ -21,7 +21,7 @@ use crate::proto::StripeInformation;
 use crate::reader::schema::TypeDescription;
 use crate::reader::Reader;
 
-pub type BoxedDecoder = Box<dyn Iterator<Item = Result<RecordBatch>>>;
+pub type BoxedDecoder = Box<dyn Iterator<Item = Result<RecordBatch>> + Send>;
 
 enum StreamState<T> {
     /// At the start of a new row group, or the end of the file stream
@@ -51,7 +51,7 @@ pub struct StripeFactoryInner<R> {
     stripe_offset: usize,
 }
 
-impl<R> From<Cursor<R>> for StripeFactory<R> {
+impl<R: Send> From<Cursor<R>> for StripeFactory<R> {
     fn from(c: Cursor<R>) -> Self {
         Self {
             inner: Arc::new(Mutex::new(StripeFactoryInner {
@@ -77,7 +77,7 @@ pub struct ArrowStreamReader<R: AsyncRead + AsyncSeek + Unpin + Send> {
     state: StreamState<R>,
 }
 
-impl<R: AsyncRead + AsyncSeek + Unpin + Send> StripeFactory<R> {
+impl<R: AsyncRead + AsyncSeek + Unpin + Send + 'static> StripeFactory<R> {
     pub async fn read_next_stripe_inner(&self, info: StripeInformation) -> Result<Stripe> {
         let mut inner = self.inner.lock().await;
 
