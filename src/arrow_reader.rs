@@ -33,12 +33,12 @@ pub struct ArrowReader<R: Read> {
     batch_size: usize,
 }
 
-const DEFAULT_BATCH_SIZE: usize = 8192;
+pub const DEFAULT_BATCH_SIZE: usize = 8192;
 
 impl<R: Read> ArrowReader<R> {
     pub fn new(cursor: Cursor<R>, batch_size: Option<usize>) -> Self {
         let batch_size = batch_size.unwrap_or(DEFAULT_BATCH_SIZE);
-        let schema = Self::create_schema(&cursor);
+        let schema = create_arrow_schema(&cursor);
         Self {
             cursor,
             schema_ref: schema,
@@ -46,30 +46,30 @@ impl<R: Read> ArrowReader<R> {
             batch_size,
         }
     }
+}
 
-    pub fn create_schema(cursor: &Cursor<R>) -> SchemaRef {
-        let metadata = cursor
-            .reader
-            .metadata()
-            .footer
-            .metadata
-            .iter()
-            .map(|kv| {
-                (
-                    kv.name().to_string(),
-                    String::from_utf8_lossy(kv.value()).to_string(),
-                )
-            })
-            .collect::<HashMap<_, _>>();
+pub fn create_arrow_schema<R>(cursor: &Cursor<R>) -> SchemaRef {
+    let metadata = cursor
+        .reader
+        .metadata()
+        .footer
+        .metadata
+        .iter()
+        .map(|kv| {
+            (
+                kv.name().to_string(),
+                String::from_utf8_lossy(kv.value()).to_string(),
+            )
+        })
+        .collect::<HashMap<_, _>>();
 
-        let fields = cursor
-            .columns
-            .iter()
-            .map(|(name, typ)| Arc::new(create_field((name, typ))))
-            .collect::<Vec<_>>();
+    let fields = cursor
+        .columns
+        .iter()
+        .map(|(name, typ)| Arc::new(create_field((name, typ))))
+        .collect::<Vec<_>>();
 
-        Arc::new(Schema::new_with_metadata(fields, metadata))
-    }
+    Arc::new(Schema::new_with_metadata(fields, metadata))
 }
 
 impl<R: Read + Seek> RecordBatchReader for ArrowReader<R> {
@@ -352,27 +352,27 @@ impl NaiveStripeDecoder {
     }
 }
 
-pub struct Cursor<R: Read> {
-    reader: Reader<R>,
-    columns: Vec<(String, Arc<TypeDescription>)>,
-    stripe_offset: usize,
+pub struct Cursor<R> {
+    pub(crate) reader: Reader<R>,
+    pub(crate) columns: Arc<Vec<(String, Arc<TypeDescription>)>>,
+    pub(crate) stripe_offset: usize,
 }
 
-impl<R: Read> Cursor<R> {
+impl<R> Cursor<R> {
     pub fn new<T: AsRef<str>>(r: Reader<R>, fields: &[T]) -> Result<Self> {
         let mut columns = Vec::with_capacity(fields.len());
         for name in fields {
             let field = r
                 .schema
                 .field(name.as_ref())
-                .context(error::FieldNotFOundSnafu {
+                .context(error::FieldNotFoundSnafu {
                     name: name.as_ref(),
                 })?;
             columns.push((name.as_ref().to_string(), field));
         }
         Ok(Self {
             reader: r,
-            columns,
+            columns: Arc::new(columns),
             stripe_offset: 0,
         })
     }
@@ -402,10 +402,10 @@ impl<R: Read + Seek> Iterator for Cursor<R> {
 
 #[derive(Debug)]
 pub struct Stripe {
-    footer: Arc<StripeFooter>,
-    columns: Vec<Column>,
-    stripe_offset: usize,
-    info: StripeInformation,
+    pub(crate) footer: Arc<StripeFooter>,
+    pub(crate) columns: Vec<Column>,
+    pub(crate) stripe_offset: usize,
+    pub(crate) info: StripeInformation,
 }
 
 impl Stripe {
