@@ -181,8 +181,8 @@ impl Column {
 }
 
 pub struct NullableIterator<T> {
-    present: Box<dyn Iterator<Item = bool>>,
-    iter: Box<dyn Iterator<Item = Result<T>>>,
+    present: Box<dyn Iterator<Item = bool> + Send>,
+    iter: Box<dyn Iterator<Item = Result<T>> + Send>,
 }
 
 impl<T> Iterator for NullableIterator<T> {

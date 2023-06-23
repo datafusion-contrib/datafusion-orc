@@ -10,7 +10,7 @@ use crate::reader::decode::rle_v2::RleReaderV2;
 pub const UNIX_EPOCH_FROM_CE: i32 = 719_163;
 
 pub struct DateIterator {
-    data: Box<dyn Iterator<Item = Result<i64>>>,
+    data: Box<dyn Iterator<Item = Result<i64>> + Send>,
 }
 
 pub fn convert_date(data: i64) -> Result<NaiveDate> {
