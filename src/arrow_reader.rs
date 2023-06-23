@@ -1,3 +1,5 @@
+pub mod column;
+
 use std::collections::HashMap;
 use std::io::{Read, Seek};
 use std::sync::Arc;
@@ -9,20 +11,22 @@ use arrow::datatypes::{
 use arrow::error::ArrowError;
 use arrow::record_batch::{RecordBatch, RecordBatchReader};
 use chrono::{Datelike, NaiveDate, NaiveDateTime};
-use snafu::ResultExt;
+use snafu::{OptionExt, ResultExt};
 
+use self::column::Column;
+use crate::arrow_reader::column::boolean::new_boolean_iter;
+use crate::arrow_reader::column::date::{new_date_iter, UNIX_EPOCH_FROM_CE};
+use crate::arrow_reader::column::float::{new_f32_iter, new_f64_iter};
+use crate::arrow_reader::column::int::new_i64_iter;
+use crate::arrow_reader::column::string::StringDecoder;
+use crate::arrow_reader::column::timestamp::new_timestamp_iter;
+use crate::arrow_reader::column::NullableIterator;
 use crate::error::{self, Result};
-use crate::reader::column::boolean::new_boolean_iter;
-use crate::reader::column::date::{new_date_iter, UNIX_EPOCH_FROM_CE};
-use crate::reader::column::float::{new_f32_iter, new_f64_iter};
-use crate::reader::column::int::new_i64_iter;
-use crate::reader::column::string::StringDecoder;
-use crate::reader::column::timestamp::new_timestamp_iter;
-use crate::reader::column::NullableIterator;
-use crate::reader::schema::create_field;
-use crate::reader::{Cursor, Stripe};
+use crate::proto::{StripeFooter, StripeInformation};
+use crate::reader::schema::{create_field, TypeDescription};
+use crate::reader::Reader;
 
-pub struct ArrowReader<R: Read + Seek> {
+pub struct ArrowReader<R: Read> {
     cursor: Cursor<R>,
     schema_ref: SchemaRef,
     current_stripe: Option<Box<dyn Iterator<Item = Result<RecordBatch>>>>,
@@ -31,7 +35,7 @@ pub struct ArrowReader<R: Read + Seek> {
 
 const DEFAULT_BATCH_SIZE: usize = 8192;
 
-impl<R: Read + Seek> ArrowReader<R> {
+impl<R: Read> ArrowReader<R> {
     pub fn new(cursor: Cursor<R>, batch_size: Option<usize>) -> Self {
         let batch_size = batch_size.unwrap_or(DEFAULT_BATCH_SIZE);
         let schema = Self::create_schema(&cursor);
@@ -345,5 +349,98 @@ impl NaiveStripeDecoder {
             batch_size,
             number_of_rows,
         })
+    }
+}
+
+pub struct Cursor<R: Read> {
+    reader: Reader<R>,
+    columns: Vec<(String, Arc<TypeDescription>)>,
+    stripe_offset: usize,
+}
+
+impl<R: Read> Cursor<R> {
+    pub fn new<T: AsRef<str>>(r: Reader<R>, fields: &[T]) -> Result<Self> {
+        let mut columns = Vec::with_capacity(fields.len());
+        for name in fields {
+            let field = r
+                .schema
+                .field(name.as_ref())
+                .context(error::FieldNotFOundSnafu {
+                    name: name.as_ref(),
+                })?;
+            columns.push((name.as_ref().to_string(), field));
+        }
+        Ok(Self {
+            reader: r,
+            columns,
+            stripe_offset: 0,
+        })
+    }
+
+    pub fn root(r: Reader<R>) -> Result<Self> {
+        let root = &r.metadata().footer.types[0];
+        let fields = &root.field_names.clone();
+        Self::new(r, fields)
+    }
+}
+
+impl<R: Read + Seek> Iterator for Cursor<R> {
+    type Item = Result<Stripe>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(info) = self.reader.stripe(self.stripe_offset) {
+            let stripe = Stripe::new(&mut self.reader, &self.columns, self.stripe_offset, info);
+
+            self.stripe_offset += 1;
+
+            Some(stripe)
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Stripe {
+    footer: Arc<StripeFooter>,
+    columns: Vec<Column>,
+    stripe_offset: usize,
+    info: StripeInformation,
+}
+
+impl Stripe {
+    pub fn new<R: Read + Seek>(
+        r: &mut Reader<R>,
+        columns: &[(String, Arc<TypeDescription>)],
+        stripe: usize,
+        info: StripeInformation,
+    ) -> Result<Self> {
+        let footer = Arc::new(r.stripe_footer(stripe).clone());
+
+        let compression = r.metadata().postscript.compression();
+        //TODO(weny): add tz
+        let columns = columns
+            .iter()
+            .map(|(name, typ)| Column::new(r, compression, name, typ, &footer, &info))
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(Self {
+            footer,
+            columns,
+            stripe_offset: stripe,
+            info,
+        })
+    }
+
+    pub fn footer(&self) -> &Arc<StripeFooter> {
+        &self.footer
+    }
+
+    pub fn stripe_offset(&self) -> usize {
+        self.stripe_offset
+    }
+
+    pub fn stripe_info(&self) -> &StripeInformation {
+        &self.info
     }
 }

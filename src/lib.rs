@@ -3,6 +3,7 @@
 #![feature(iterator_try_collect)]
 #![feature(iter_next_chunk)]
 
+pub mod arrow_reader;
 pub mod error;
 pub mod proto;
 pub mod reader;

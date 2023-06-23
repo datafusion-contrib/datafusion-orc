@@ -3,11 +3,11 @@ use std::sync::Arc;
 use arrow::array::{ArrayRef, StringArray};
 use snafu::{OptionExt, ResultExt};
 
+use crate::arrow_reader::column::present::new_present_iter;
+use crate::arrow_reader::column::{Column, NullableIterator};
 use crate::error::{self, Result};
 use crate::proto::column_encoding::Kind as ColumnEncodingKind;
 use crate::proto::stream::Kind;
-use crate::reader::column::present::new_present_iter;
-use crate::reader::column::{Column, NullableIterator};
 use crate::reader::decode::rle_v2::RleReaderV2;
 use crate::reader::decode::variable_length::Values;
 use crate::reader::decompress::Decompressor;

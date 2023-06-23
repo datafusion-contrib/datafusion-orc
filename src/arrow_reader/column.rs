@@ -7,8 +7,9 @@ use snafu::{OptionExt, ResultExt};
 use crate::error::{self, Result};
 use crate::proto::stream::Kind;
 use crate::proto::{ColumnEncoding, CompressionKind, StripeFooter, StripeInformation};
+use crate::reader::decompress::Decompressor;
 use crate::reader::schema::TypeDescription;
-use crate::reader::{Decompressor, Reader};
+use crate::reader::Reader;
 
 pub mod boolean;
 pub mod date;
