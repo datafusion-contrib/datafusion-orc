@@ -10,7 +10,6 @@ use futures::future::BoxFuture;
 use futures::{ready, Stream};
 use futures_util::FutureExt;
 use tokio::io::{AsyncRead, AsyncSeek};
-use tokio::sync::Mutex;
 
 use crate::arrow_reader::column::Column;
 use crate::arrow_reader::{
@@ -45,28 +44,17 @@ impl<T> std::fmt::Debug for StreamState<T> {
     }
 }
 
-pub struct StripeFactoryInner<R> {
-    reader: Reader<R>,
-    columns: Arc<Vec<(String, Arc<TypeDescription>)>>,
-    stripe_offset: usize,
-}
-
 impl<R: Send> From<Cursor<R>> for StripeFactory<R> {
     fn from(c: Cursor<R>) -> Self {
         Self {
-            inner: Arc::new(Mutex::new(StripeFactoryInner {
-                reader: c.reader,
-                columns: c.columns,
-                stripe_offset: c.stripe_offset,
-            })),
+            inner: c,
             is_end: false,
         }
     }
 }
 
-#[derive(Clone)]
 pub struct StripeFactory<R> {
-    inner: Arc<Mutex<StripeFactoryInner<R>>>,
+    inner: Cursor<R>,
     is_end: bool,
 }
 
@@ -78,8 +66,8 @@ pub struct ArrowStreamReader<R: AsyncRead + AsyncSeek + Unpin + Send> {
 }
 
 impl<R: AsyncRead + AsyncSeek + Unpin + Send + 'static> StripeFactory<R> {
-    pub async fn read_next_stripe_inner(&self, info: StripeInformation) -> Result<Stripe> {
-        let mut inner = self.inner.lock().await;
+    pub async fn read_next_stripe_inner(&mut self, info: StripeInformation) -> Result<Stripe> {
+        let inner = &mut self.inner;
 
         let column_defs = inner.columns.clone();
         let stripe_offset = inner.stripe_offset;
@@ -89,10 +77,7 @@ impl<R: AsyncRead + AsyncSeek + Unpin + Send + 'static> StripeFactory<R> {
     }
 
     pub async fn read_next_stripe(mut self) -> Result<(Self, Option<Stripe>)> {
-        let info = {
-            let inner = self.inner.lock().await;
-            inner.reader.stripe(inner.stripe_offset)
-        };
+        let info = self.inner.reader.stripe(self.inner.stripe_offset);
 
         if let Some(info) = info {
             match self.read_next_stripe_inner(info).await {

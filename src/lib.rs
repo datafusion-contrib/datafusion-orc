@@ -9,17 +9,6 @@ pub mod error;
 pub mod proto;
 pub mod reader;
 
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub use arrow_reader::{ArrowReader, Cursor};
+pub use async_arrow_reader::ArrowStreamReader;
+pub use reader::Reader;
