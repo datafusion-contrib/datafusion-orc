@@ -11,8 +11,8 @@ use crate::reader::decode::rle_v2::RleReaderV2;
 const TIMESTAMP_BASE: i64 = 1420070400;
 
 pub struct TimestampIterator {
-    data: Box<dyn Iterator<Item = Result<i64>>>,
-    secondary: Box<dyn Iterator<Item = Result<i64>>>,
+    data: Box<dyn Iterator<Item = Result<i64>> + Send>,
+    secondary: Box<dyn Iterator<Item = Result<i64>> + Send>,
 }
 
 impl Iterator for TimestampIterator {

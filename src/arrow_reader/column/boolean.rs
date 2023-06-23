@@ -14,7 +14,8 @@ pub fn new_boolean_iter(column: &Column) -> Result<NullableIterator<bool>> {
         .stream(Kind::Data)
         .transpose()?
         .map(|reader| {
-            Box::new(BooleanIter::new(reader, rows)) as Box<dyn Iterator<Item = Result<bool>>>
+            Box::new(BooleanIter::new(reader, rows))
+                as Box<dyn Iterator<Item = Result<bool>> + Send>
         })
         .context(InvalidColumnSnafu { name: &column.name })?;
 

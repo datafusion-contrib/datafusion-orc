@@ -14,7 +14,7 @@ use crate::reader::decompress::Decompressor;
 
 pub struct DirectStringIterator {
     values: Box<Values<Decompressor>>,
-    lengths: Box<dyn Iterator<Item = Result<i64>>>,
+    lengths: Box<dyn Iterator<Item = Result<i64>> + Send>,
 }
 
 impl Iterator for DirectStringIterator {
