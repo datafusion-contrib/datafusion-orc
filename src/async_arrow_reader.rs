@@ -113,7 +113,7 @@ impl<R: AsyncRead + AsyncSeek + Unpin + Send> StripeFactory<R> {
 impl<R: AsyncRead + AsyncSeek + Unpin + Send + 'static> ArrowStreamReader<R> {
     pub fn new(c: Cursor<R>, batch_size: Option<usize>) -> Self {
         let batch_size = batch_size.unwrap_or(DEFAULT_BATCH_SIZE);
-        let schema = create_arrow_schema(&c);
+        let schema = Arc::new(create_arrow_schema(&c));
         Self {
             factory: Some(c.into()),
             batch_size,
