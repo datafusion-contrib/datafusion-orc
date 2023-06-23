@@ -1,10 +1,10 @@
 use chrono::NaiveDateTime;
 use snafu::OptionExt;
 
+use crate::arrow_reader::column::present::new_present_iter;
+use crate::arrow_reader::column::{Column, NullableIterator};
 use crate::error::{self, Result};
 use crate::proto::stream::Kind;
-use crate::reader::column::present::new_present_iter;
-use crate::reader::column::{Column, NullableIterator};
 use crate::reader::decode::rle_v2::RleReaderV2;
 
 // TIMESTAMP_BASE is 1 January 2015, the base value for all timestamp values.

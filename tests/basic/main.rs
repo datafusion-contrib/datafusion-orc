@@ -3,8 +3,8 @@
 use std::fs::File;
 
 use arrow::util::pretty;
-use orc_rust::reader::arrow::ArrowReader;
-use orc_rust::reader::{Cursor, Reader};
+use orc_rust::arrow_reader::{ArrowReader, Cursor};
+use orc_rust::reader::Reader;
 
 use crate::misc::{LONG_BOOL_EXPECTED, LONG_STRING_DICT_EXPECTED, LONG_STRING_EXPECTED};
 

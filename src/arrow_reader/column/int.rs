@@ -1,9 +1,9 @@
 use snafu::OptionExt;
 
+use crate::arrow_reader::column::present::new_present_iter;
+use crate::arrow_reader::column::{Column, NullableIterator};
 use crate::error::{InvalidColumnSnafu, Result};
 use crate::proto::stream::Kind;
-use crate::reader::column::present::new_present_iter;
-use crate::reader::column::{Column, NullableIterator};
 use crate::reader::decode::rle_v2::RleReaderV2;
 
 pub fn new_i64_iter(column: &Column) -> Result<NullableIterator<i64>> {

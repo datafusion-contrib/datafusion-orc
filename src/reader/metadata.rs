@@ -31,6 +31,7 @@ pub struct FileMetadata {
     pub postscript: PostScript,
     pub footer: Footer,
     pub metadata: Metadata,
+    pub stripe_footers: Vec<StripeFooter>,
 }
 
 pub fn read_metadata<R>(reader: &mut R) -> Result<FileMetadata>
@@ -94,38 +95,35 @@ where
 
     let metadata = deserialize_footer_metadata(&metadata, postscript.compression())?;
 
+    let mut stripe_footers = Vec::with_capacity(footer.stripes.len());
+
+    let mut scratch = Vec::<u8>::new();
+
+    for stripe in &footer.stripes {
+        let start = stripe.offset() + stripe.index_length() + stripe.data_length();
+        let len = stripe.footer_length();
+        reader
+            .seek(SeekFrom::Start(start))
+            .context(error::SeekSnafu)?;
+
+        scratch.clear();
+        scratch.reserve(len as usize);
+        reader
+            .take(len)
+            .read_to_end(&mut scratch)
+            .context(error::IoSnafu)?;
+        stripe_footers.push(deserialize_stripe_footer(
+            &scratch,
+            postscript.compression(),
+        )?);
+    }
+
     Ok(FileMetadata {
         postscript,
         footer,
         metadata,
+        stripe_footers,
     })
-}
-
-/// Reads, decompresses and deserializes the stripe's footer as [`StripeFooter`] using
-/// `scratch` as an intermediary memory region.
-/// # Implementation
-/// This function is guaranteed to perform exactly one seek and one read to `reader`.
-pub fn read_stripe_footer<R: Read + Seek>(
-    reader: &mut R,
-    metadata: &FileMetadata,
-    stripe: usize,
-    scratch: &mut Vec<u8>,
-) -> Result<StripeFooter> {
-    let stripe = &metadata.footer.stripes[stripe];
-
-    let start = stripe.offset() + stripe.index_length() + stripe.data_length();
-    let len = stripe.footer_length();
-    reader
-        .seek(SeekFrom::Start(start))
-        .context(error::SeekSnafu)?;
-
-    scratch.clear();
-    scratch.reserve(len as usize);
-    reader
-        .take(len)
-        .read_to_end(scratch)
-        .context(error::IoSnafu)?;
-    deserialize_stripe_footer(scratch, metadata.postscript.compression())
 }
 
 fn deserialize_footer(bytes: &[u8], compression: CompressionKind) -> Result<Footer> {
