@@ -74,6 +74,12 @@ pub enum Error {
         location: Location,
         source: ArrowError,
     },
+
+    #[snafu(display("Unsigned VInt"))]
+    EofUnsignedVInt { location: Location },
+
+    #[snafu(display("unexpected: {}", msg))]
+    Unexpected { location: Location, msg: String },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

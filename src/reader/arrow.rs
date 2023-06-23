@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io::{Read, Seek};
 use std::sync::Arc;
 
-use arrow::array::{ArrayRef, BooleanArray, DictionaryArray, LargeStringArray, PrimitiveArray};
+use arrow::array::{ArrayRef, BooleanArray, DictionaryArray, PrimitiveArray, StringArray};
 use arrow::datatypes::{
     Date32Type, Int16Type, Int32Type, Int64Type, Schema, SchemaRef, TimestampNanosecondType,
 };
@@ -11,16 +11,15 @@ use arrow::record_batch::{RecordBatch, RecordBatchReader};
 use chrono::{Datelike, NaiveDate, NaiveDateTime};
 use snafu::ResultExt;
 
-use super::column::boolean::new_boolean_iter;
-use super::column::date::new_date_iter;
-use super::column::float::{new_f32_iter, new_f64_iter};
-use super::column::int::new_i64_iter;
-use super::column::string::StringDecoder;
-use super::column::timestamp::new_timestamp_iter;
-use super::column::NullableIterator;
-use super::schema::create_field;
 use crate::error::{self, Result};
-use crate::reader::column::date::UNIX_EPOCH_FROM_CE;
+use crate::reader::column::boolean::new_boolean_iter;
+use crate::reader::column::date::{new_date_iter, UNIX_EPOCH_FROM_CE};
+use crate::reader::column::float::{new_f32_iter, new_f64_iter};
+use crate::reader::column::int::new_i64_iter;
+use crate::reader::column::string::StringDecoder;
+use crate::reader::column::timestamp::new_timestamp_iter;
+use crate::reader::column::NullableIterator;
+use crate::reader::schema::create_field;
 use crate::reader::{Cursor, Stripe};
 
 pub struct ArrowReader<R: Read + Seek> {
@@ -265,7 +264,7 @@ impl NaiveStripeDecoder {
                     StringDecoder::Direct(decoder) => {
                         match decoder.collect_chunk(chunk).transpose()? {
                             Some(values) => {
-                                fields.push(Arc::new(LargeStringArray::from(values)) as ArrayRef);
+                                fields.push(Arc::new(StringArray::from(values)) as ArrayRef);
                             }
                             None => break,
                         }
@@ -273,7 +272,7 @@ impl NaiveStripeDecoder {
                     StringDecoder::Dictionary((indexes, dictionary)) => {
                         match indexes.collect_chunk(chunk).transpose()? {
                             Some(indexes) => {
-                                fields.push(Arc::new(DictionaryArray::new(
+                                fields.push(Arc::new(DictionaryArray::<Int64Type>::new(
                                     indexes.into(),
                                     dictionary.clone(),
                                 )));
