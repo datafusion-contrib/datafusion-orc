@@ -83,6 +83,25 @@ impl FallibleStreamingIterator for DecompressorIter {
                     self.current = Some(State::Compressed(std::mem::take(&mut self.scratch)));
                 }
             }
+            CompressionKind::Zstd => {
+                // todo: take stratch from current State::Compressed for re-use
+                let (is_original, length) = decode_header(&self.stream);
+                let _ = self.stream.split_to(3);
+                let maybe_compressed = self.stream.split_to(length);
+
+                if is_original {
+                    self.current = Some(State::Original(maybe_compressed.into()));
+                } else {
+                    let mut reader = zstd::Decoder::new(maybe_compressed.to_byte_slice())
+                        .context(error::BuildZstdDecoderSnafu)?;
+
+                    self.scratch.clear();
+                    reader
+                        .read_to_end(&mut self.scratch)
+                        .context(error::IoSnafu)?;
+                    self.current = Some(State::Compressed(std::mem::take(&mut self.scratch)));
+                }
+            }
             _ => todo!(),
         };
         Ok(())
