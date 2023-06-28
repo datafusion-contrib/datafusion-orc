@@ -1,3 +1,4 @@
+use std::io;
 use std::str::Utf8Error;
 
 use arrow::error::ArrowError;
@@ -80,6 +81,12 @@ pub enum Error {
 
     #[snafu(display("unexpected: {}", msg))]
     Unexpected { location: Location, msg: String },
+
+    #[snafu(display("Failed to build zstd decoder: {}", source))]
+    BuildZstdDecoder {
+        location: Location,
+        source: io::Error,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
