@@ -16,7 +16,7 @@ Read [Apache ORC](https://orc.apache.org/) in Rust.
 
 | Column Encoding           | Read | Write | Rust Type             | Arrow  DataType         |
 | ------------------------- | ---- | ----- | --------------------- | ----------------------- |
-| SmallInt, Int, BigInt     | ✓    |       | i16,i32,i64           | Int16, Int32, Int64     |
+| SmallInt, Int, BigInt     | ✓    |       | i16, i32, i64           | Int16, Int32, Int64     |
 | Float, Double             | ✓    |       | f32, f64              | Float32, Float64        |
 | String, Char, and VarChar | ✓    |       | string                | Utf8                    |
 | Boolean                   | ✓    |       | bool                  | Boolean                 |
@@ -40,7 +40,7 @@ Read [Apache ORC](https://orc.apache.org/) in Rust.
 | SNAPPY      | ✗       |
 | LZO         | ✗       |
 | LZ4         | ✗       |
-| ZSTD        | ✗       |
+| ZSTD        | ✓       |
 
 
 
