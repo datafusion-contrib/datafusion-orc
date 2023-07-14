@@ -1,6 +1,6 @@
 [package]
 name = "orc-rust"
-version = "0.2.4"
+version = "0.2.41"
 edition = "2021"
 homepage = "https://github.com/wenyxu/orc-rs"
 repository = "https://github.com/wenyxu/orc-rs"
