@@ -12,6 +12,7 @@ use crate::reader::decompress::Decompressor;
 use crate::reader::schema::TypeDescription;
 use crate::reader::Reader;
 
+pub mod binary;
 pub mod boolean;
 pub mod date;
 pub mod float;
