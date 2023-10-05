@@ -3,6 +3,8 @@ Implementation of ORC file format
 
 [![test](https://github.com/wenyxu/orc-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/wenyxu/orc-rs/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/WenyXu/orc-rs/branch/main/graph/badge.svg?token=2CSHZX02XM)](https://codecov.io/gh/WenyXu/orc-rs)
+![Crates.io](https://img.shields.io/crates/v/orc-rust)
+![Crates.io](https://img.shields.io/crates/d/orc-rust)
 
 Read [Apache ORC](https://orc.apache.org/) in Rust.
 
