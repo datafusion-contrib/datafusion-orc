@@ -1,3 +1,4 @@
+# Copied from https://github.com/DataEngineeringLabs/orc-format/blob/416490db0214fc51d53289253c0ee91f7fc9bc17/write.py
 import random
 import datetime
 import pyorc
