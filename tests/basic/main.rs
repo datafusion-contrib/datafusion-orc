@@ -3,10 +3,10 @@
 use std::fs::File;
 
 use arrow::util::pretty;
+use datafusion_orc::arrow_reader::{ArrowReader, Cursor};
+use datafusion_orc::async_arrow_reader::ArrowStreamReader;
+use datafusion_orc::reader::Reader;
 use futures_util::TryStreamExt;
-use orc_rust::arrow_reader::{ArrowReader, Cursor};
-use orc_rust::async_arrow_reader::ArrowStreamReader;
-use orc_rust::reader::Reader;
 
 use crate::misc::{LONG_BOOL_EXPECTED, LONG_STRING_DICT_EXPECTED, LONG_STRING_EXPECTED};
 

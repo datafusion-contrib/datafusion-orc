@@ -1,13 +1,13 @@
 [package]
-name = "orc-rust"
+name = "datafusion-orc"
 version = "0.2.43"
 edition = "2021"
-homepage = "https://github.com/wenyxu/orc-rs"
-repository = "https://github.com/wenyxu/orc-rs"
+homepage = "https://github.com/datafusion-contrib/datafusion-orc"
+repository = "https://github.com/datafusion-contrib/datafusion-orc"
 authors = ["Weny <wenymedia@gmail.com>"]
 license = "Apache-2.0"
-description = "Yet another unofficial implementation of Apache ORC spec in safe Rust"
-keywords = ["arrow", "orc", "arrow-rs"]
+description = "Implementation of ORC file format"
+keywords = ["arrow", "orc", "arrow-rs", "datafusion"]
 include = ["src/**/*.rs", "Cargo.toml"]
 rust-version = "1.70"
 
