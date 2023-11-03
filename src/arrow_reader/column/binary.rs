@@ -23,7 +23,7 @@ use crate::reader::decode::variable_length::Values;
 use crate::reader::decompress::Decompressor;
 
 pub fn new_binary_iterator(column: &Column) -> error::Result<NullableIterator<Vec<u8>>> {
-    let null_mask = new_present_iter(column)?.try_collect::<Vec<_>>()?;
+    let null_mask = new_present_iter(column)?.collect::<error::Result<Vec<_>>>()?;
 
     let values = column
         .stream(Kind::Data)

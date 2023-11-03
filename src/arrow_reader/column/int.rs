@@ -7,7 +7,7 @@ use crate::proto::stream::Kind;
 use crate::reader::decode::rle_v2::RleReaderV2;
 
 pub fn new_i64_iter(column: &Column) -> Result<NullableIterator<i64>> {
-    let present = new_present_iter(column)?.try_collect::<Vec<_>>()?;
+    let present = new_present_iter(column)?.collect::<Result<Vec<_>>>()?;
 
     let iter = column
         .stream(Kind::Data)

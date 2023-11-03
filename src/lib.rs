@@ -1,8 +1,3 @@
-#![feature(trait_upcasting)]
-#![allow(incomplete_features)]
-#![feature(iterator_try_collect)]
-#![feature(iter_next_chunk)]
-
 pub mod arrow_reader;
 pub mod async_arrow_reader;
 pub mod error;

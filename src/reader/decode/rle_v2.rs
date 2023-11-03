@@ -143,8 +143,8 @@ mod test {
         let expected = [1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1, 1];
 
         let cursor = Cursor::new(data);
-        let mut reader = UnsignedRleReaderV2::try_new(cursor, false);
-        let a = reader.try_collect::<Vec<_>>().unwrap();
+        let reader = UnsignedRleReaderV2::try_new(cursor, false);
+        let a = reader.collect::<Result<Vec<_>>>().unwrap();
         assert_eq!(a, expected);
 
         // direct
@@ -152,8 +152,8 @@ mod test {
         let expected = [23713, 43806, 57005, 48879];
 
         let cursor = Cursor::new(data);
-        let mut reader = UnsignedRleReaderV2::try_new(cursor, false);
-        let a = reader.try_collect::<Vec<_>>().unwrap();
+        let reader = UnsignedRleReaderV2::try_new(cursor, false);
+        let a = reader.collect::<Result<Vec<_>>>().unwrap();
         assert_eq!(a, expected);
 
         // patched base
@@ -167,32 +167,32 @@ mod test {
         ];
 
         let cursor = Cursor::new(data);
-        let mut reader = UnsignedRleReaderV2::try_new(cursor, false);
-        let a = reader.try_collect::<Vec<_>>().unwrap();
+        let reader = UnsignedRleReaderV2::try_new(cursor, false);
+        let a = reader.collect::<Result<Vec<_>>>().unwrap();
         assert_eq!(a, expected);
 
         let data = [196u8, 9, 2, 2, 74, 40, 166];
         let expected = [2u64, 3, 5, 7, 11, 13, 17, 19, 23, 29];
 
         let cursor = Cursor::new(data);
-        let mut reader = UnsignedRleReaderV2::try_new(cursor, false);
-        let a = reader.try_collect::<Vec<_>>().unwrap();
+        let reader = UnsignedRleReaderV2::try_new(cursor, false);
+        let a = reader.collect::<Result<Vec<_>>>().unwrap();
         assert_eq!(a, expected);
 
         let data = [0xc6u8, 0x09, 0x02, 0x02, 0x22, 0x42, 0x42, 0x46];
         let expected = [2u64, 3, 5, 7, 11, 13, 17, 19, 23, 29];
 
         let cursor = Cursor::new(data);
-        let mut reader = UnsignedRleReaderV2::try_new(cursor, false);
-        let a = reader.try_collect::<Vec<_>>().unwrap();
+        let reader = UnsignedRleReaderV2::try_new(cursor, false);
+        let a = reader.collect::<Result<Vec<_>>>().unwrap();
         assert_eq!(a, expected);
 
         let data = [7u8, 1];
         let expected = [1u64, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 
         let cursor = Cursor::new(data);
-        let mut reader = UnsignedRleReaderV2::try_new(cursor, false);
-        let a = reader.try_collect::<Vec<_>>().unwrap();
+        let reader = UnsignedRleReaderV2::try_new(cursor, false);
+        let a = reader.collect::<Result<Vec<_>>>().unwrap();
         assert_eq!(a, expected);
     }
 
@@ -202,8 +202,8 @@ mod test {
         let data: [u8; 3] = [0x0a, 0x27, 0x10];
 
         let cursor = Cursor::new(data);
-        let mut reader = UnsignedRleReaderV2::try_new(cursor, false);
-        let a = reader.try_collect::<Vec<_>>().unwrap();
+        let reader = UnsignedRleReaderV2::try_new(cursor, false);
+        let a = reader.collect::<Result<Vec<_>>>().unwrap();
 
         assert_eq!(a, vec![10000, 10000, 10000, 10000, 10000]);
     }
@@ -214,8 +214,8 @@ mod test {
         let data: [u8; 10] = [0x5e, 0x03, 0x5c, 0xa1, 0xab, 0x1e, 0xde, 0xad, 0xbe, 0xef];
 
         let cursor = Cursor::new(data);
-        let mut reader = UnsignedRleReaderV2::try_new(cursor, false);
-        let a = reader.try_collect::<Vec<_>>().unwrap();
+        let reader = UnsignedRleReaderV2::try_new(cursor, false);
+        let a = reader.collect::<Result<Vec<_>>>().unwrap();
 
         assert_eq!(a, vec![23713, 43806, 57005, 48879]);
     }
@@ -226,8 +226,8 @@ mod test {
         let data = [110u8, 3, 0, 185, 66, 1, 86, 60, 1, 189, 90, 1, 125, 222];
 
         let cursor = Cursor::new(data);
-        let mut reader = RleReaderV2::try_new(cursor, true, false);
-        let a = reader.try_collect::<Vec<_>>().unwrap();
+        let reader = RleReaderV2::try_new(cursor, true, false);
+        let a = reader.collect::<Result<Vec<_>>>().unwrap();
 
         assert_eq!(a, vec![23713, 43806, 57005, 48879]);
     }
@@ -241,8 +241,8 @@ mod test {
         let data: [u8; 8] = [0xc6, 0x09, 0x02, 0x02, 0x22, 0x42, 0x42, 0x46];
 
         let cursor = Cursor::new(data);
-        let mut reader = UnsignedRleReaderV2::try_new(cursor, false);
-        let a = reader.try_collect::<Vec<_>>().unwrap();
+        let reader = UnsignedRleReaderV2::try_new(cursor, false);
+        let a = reader.collect::<Result<Vec<_>>>().unwrap();
 
         assert_eq!(a, vec![2, 3, 5, 7, 11, 13, 17, 19, 23, 29]);
     }
@@ -259,9 +259,9 @@ mod test {
         ];
 
         let cursor = Cursor::new(data);
-        let mut reader = RleReaderV2::try_new(cursor, false, false);
+        let reader = RleReaderV2::try_new(cursor, false, false);
         let a = reader
-            .try_collect::<Vec<_>>()
+            .collect::<Result<Vec<_>>>()
             .unwrap()
             .into_iter()
             .map(|v| v as u64)
@@ -301,8 +301,8 @@ mod test {
         ];
 
         let cursor = Cursor::new(data);
-        let mut reader = RleReaderV2::try_new(cursor, false, false);
-        let a = reader.try_collect::<Vec<_>>().unwrap();
+        let reader = RleReaderV2::try_new(cursor, false, false);
+        let a = reader.collect::<Result<Vec<_>>>().unwrap();
 
         assert_eq!(a.len(), expected.len());
 
