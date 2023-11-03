@@ -45,7 +45,7 @@ impl Iterator for TimestampIterator {
 }
 
 pub fn new_timestamp_iter(column: &Column) -> Result<NullableIterator<NaiveDateTime>> {
-    let present = new_present_iter(column)?.try_collect::<Vec<_>>()?;
+    let present = new_present_iter(column)?.collect::<Result<Vec<_>>>()?;
 
     let data = column
         .stream(Kind::Data)
