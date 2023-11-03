@@ -36,7 +36,7 @@ impl Iterator for DirectStringIterator {
 }
 
 pub fn new_direct_string_iter(column: &Column) -> Result<NullableIterator<String>> {
-    let present = new_present_iter(column)?.try_collect::<Vec<_>>()?;
+    let present = new_present_iter(column)?.collect::<Result<Vec<_>>>()?;
 
     let values = column
         .stream(Kind::Data)
@@ -57,7 +57,7 @@ pub fn new_direct_string_iter(column: &Column) -> Result<NullableIterator<String
 }
 
 pub fn new_arrow_dict_string_decoder(column: &Column) -> Result<(NullableIterator<i64>, ArrayRef)> {
-    let present = new_present_iter(column)?.try_collect::<Vec<_>>()?;
+    let present = new_present_iter(column)?.collect::<Result<Vec<_>>>()?;
 
     // DictionaryData
     let values = column
@@ -71,9 +71,9 @@ pub fn new_arrow_dict_string_decoder(column: &Column) -> Result<(NullableIterato
         .transpose()?
         .map(|reader| Box::new(RleReaderV2::try_new(reader, false, true)))
         .context(error::InvalidColumnSnafu { name: &column.name })?;
-    let mut iter = DirectStringIterator { values, lengths };
+    let iter = DirectStringIterator { values, lengths };
 
-    let values = iter.try_collect::<Vec<_>>()?;
+    let values = iter.collect::<Result<Vec<_>>>()?;
 
     let indexes = column
         .stream(Kind::Data)
