@@ -3,167 +3,167 @@
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IntegerStatistics {
-    #[prost(sint64, optional, tag="1")]
+    #[prost(sint64, optional, tag = "1")]
     pub minimum: ::core::option::Option<i64>,
-    #[prost(sint64, optional, tag="2")]
+    #[prost(sint64, optional, tag = "2")]
     pub maximum: ::core::option::Option<i64>,
-    #[prost(sint64, optional, tag="3")]
+    #[prost(sint64, optional, tag = "3")]
     pub sum: ::core::option::Option<i64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DoubleStatistics {
-    #[prost(double, optional, tag="1")]
+    #[prost(double, optional, tag = "1")]
     pub minimum: ::core::option::Option<f64>,
-    #[prost(double, optional, tag="2")]
+    #[prost(double, optional, tag = "2")]
     pub maximum: ::core::option::Option<f64>,
-    #[prost(double, optional, tag="3")]
+    #[prost(double, optional, tag = "3")]
     pub sum: ::core::option::Option<f64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StringStatistics {
-    #[prost(string, optional, tag="1")]
+    #[prost(string, optional, tag = "1")]
     pub minimum: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, optional, tag="2")]
+    #[prost(string, optional, tag = "2")]
     pub maximum: ::core::option::Option<::prost::alloc::string::String>,
     /// sum will store the total length of all strings in a stripe
-    #[prost(sint64, optional, tag="3")]
+    #[prost(sint64, optional, tag = "3")]
     pub sum: ::core::option::Option<i64>,
     /// If the minimum or maximum value was longer than 1024 bytes, store a lower or upper
     /// bound instead of the minimum or maximum values above.
-    #[prost(string, optional, tag="4")]
+    #[prost(string, optional, tag = "4")]
     pub lower_bound: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, optional, tag="5")]
+    #[prost(string, optional, tag = "5")]
     pub upper_bound: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BucketStatistics {
-    #[prost(uint64, repeated, tag="1")]
+    #[prost(uint64, repeated, tag = "1")]
     pub count: ::prost::alloc::vec::Vec<u64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DecimalStatistics {
-    #[prost(string, optional, tag="1")]
+    #[prost(string, optional, tag = "1")]
     pub minimum: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, optional, tag="2")]
+    #[prost(string, optional, tag = "2")]
     pub maximum: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, optional, tag="3")]
+    #[prost(string, optional, tag = "3")]
     pub sum: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DateStatistics {
     /// min,max values saved as days since epoch
-    #[prost(sint32, optional, tag="1")]
+    #[prost(sint32, optional, tag = "1")]
     pub minimum: ::core::option::Option<i32>,
-    #[prost(sint32, optional, tag="2")]
+    #[prost(sint32, optional, tag = "2")]
     pub maximum: ::core::option::Option<i32>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TimestampStatistics {
     /// min,max values saved as milliseconds since epoch
-    #[prost(sint64, optional, tag="1")]
+    #[prost(sint64, optional, tag = "1")]
     pub minimum: ::core::option::Option<i64>,
-    #[prost(sint64, optional, tag="2")]
+    #[prost(sint64, optional, tag = "2")]
     pub maximum: ::core::option::Option<i64>,
-    #[prost(sint64, optional, tag="3")]
+    #[prost(sint64, optional, tag = "3")]
     pub minimum_utc: ::core::option::Option<i64>,
-    #[prost(sint64, optional, tag="4")]
+    #[prost(sint64, optional, tag = "4")]
     pub maximum_utc: ::core::option::Option<i64>,
     /// store the lower 6 TS digits for min/max to achieve nanosecond precision
-    #[prost(int32, optional, tag="5")]
+    #[prost(int32, optional, tag = "5")]
     pub minimum_nanos: ::core::option::Option<i32>,
-    #[prost(int32, optional, tag="6")]
+    #[prost(int32, optional, tag = "6")]
     pub maximum_nanos: ::core::option::Option<i32>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BinaryStatistics {
     /// sum will store the total binary blob length in a stripe
-    #[prost(sint64, optional, tag="1")]
+    #[prost(sint64, optional, tag = "1")]
     pub sum: ::core::option::Option<i64>,
 }
 /// Statistics for list and map
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionStatistics {
-    #[prost(uint64, optional, tag="1")]
+    #[prost(uint64, optional, tag = "1")]
     pub min_children: ::core::option::Option<u64>,
-    #[prost(uint64, optional, tag="2")]
+    #[prost(uint64, optional, tag = "2")]
     pub max_children: ::core::option::Option<u64>,
-    #[prost(uint64, optional, tag="3")]
+    #[prost(uint64, optional, tag = "3")]
     pub total_children: ::core::option::Option<u64>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ColumnStatistics {
-    #[prost(uint64, optional, tag="1")]
+    #[prost(uint64, optional, tag = "1")]
     pub number_of_values: ::core::option::Option<u64>,
-    #[prost(message, optional, tag="2")]
+    #[prost(message, optional, tag = "2")]
     pub int_statistics: ::core::option::Option<IntegerStatistics>,
-    #[prost(message, optional, tag="3")]
+    #[prost(message, optional, tag = "3")]
     pub double_statistics: ::core::option::Option<DoubleStatistics>,
-    #[prost(message, optional, tag="4")]
+    #[prost(message, optional, tag = "4")]
     pub string_statistics: ::core::option::Option<StringStatistics>,
-    #[prost(message, optional, tag="5")]
+    #[prost(message, optional, tag = "5")]
     pub bucket_statistics: ::core::option::Option<BucketStatistics>,
-    #[prost(message, optional, tag="6")]
+    #[prost(message, optional, tag = "6")]
     pub decimal_statistics: ::core::option::Option<DecimalStatistics>,
-    #[prost(message, optional, tag="7")]
+    #[prost(message, optional, tag = "7")]
     pub date_statistics: ::core::option::Option<DateStatistics>,
-    #[prost(message, optional, tag="8")]
+    #[prost(message, optional, tag = "8")]
     pub binary_statistics: ::core::option::Option<BinaryStatistics>,
-    #[prost(message, optional, tag="9")]
+    #[prost(message, optional, tag = "9")]
     pub timestamp_statistics: ::core::option::Option<TimestampStatistics>,
-    #[prost(bool, optional, tag="10")]
+    #[prost(bool, optional, tag = "10")]
     pub has_null: ::core::option::Option<bool>,
-    #[prost(uint64, optional, tag="11")]
+    #[prost(uint64, optional, tag = "11")]
     pub bytes_on_disk: ::core::option::Option<u64>,
-    #[prost(message, optional, tag="12")]
+    #[prost(message, optional, tag = "12")]
     pub collection_statistics: ::core::option::Option<CollectionStatistics>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RowIndexEntry {
-    #[prost(uint64, repeated, tag="1")]
+    #[prost(uint64, repeated, tag = "1")]
     pub positions: ::prost::alloc::vec::Vec<u64>,
-    #[prost(message, optional, tag="2")]
+    #[prost(message, optional, tag = "2")]
     pub statistics: ::core::option::Option<ColumnStatistics>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RowIndex {
-    #[prost(message, repeated, tag="1")]
+    #[prost(message, repeated, tag = "1")]
     pub entry: ::prost::alloc::vec::Vec<RowIndexEntry>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BloomFilter {
-    #[prost(uint32, optional, tag="1")]
+    #[prost(uint32, optional, tag = "1")]
     pub num_hash_functions: ::core::option::Option<u32>,
-    #[prost(fixed64, repeated, packed="false", tag="2")]
+    #[prost(fixed64, repeated, packed = "false", tag = "2")]
     pub bitset: ::prost::alloc::vec::Vec<u64>,
-    #[prost(bytes="vec", optional, tag="3")]
+    #[prost(bytes = "vec", optional, tag = "3")]
     pub utf8bitset: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BloomFilterIndex {
-    #[prost(message, repeated, tag="1")]
+    #[prost(message, repeated, tag = "1")]
     pub bloom_filter: ::prost::alloc::vec::Vec<BloomFilter>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Stream {
-    #[prost(enumeration="stream::Kind", optional, tag="1")]
+    #[prost(enumeration = "stream::Kind", optional, tag = "1")]
     pub kind: ::core::option::Option<i32>,
-    #[prost(uint32, optional, tag="2")]
+    #[prost(uint32, optional, tag = "2")]
     pub column: ::core::option::Option<u32>,
-    #[prost(uint64, optional, tag="3")]
+    #[prost(uint64, optional, tag = "3")]
     pub length: ::core::option::Option<u64>,
 }
 /// Nested message and enum types in `Stream`.
@@ -236,14 +236,14 @@ pub mod stream {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ColumnEncoding {
-    #[prost(enumeration="column_encoding::Kind", optional, tag="1")]
+    #[prost(enumeration = "column_encoding::Kind", optional, tag = "1")]
     pub kind: ::core::option::Option<i32>,
-    #[prost(uint32, optional, tag="2")]
+    #[prost(uint32, optional, tag = "2")]
     pub dictionary_size: ::core::option::Option<u32>,
     /// The encoding of the bloom filters for this column:
     ///    0 or missing = none or original
     ///    1            = ORC-135 (utc for timestamps)
-    #[prost(uint32, optional, tag="3")]
+    #[prost(uint32, optional, tag = "3")]
     pub bloom_encoding: ::core::option::Option<u32>,
 }
 /// Nested message and enum types in `ColumnEncoding`.
@@ -284,9 +284,9 @@ pub mod column_encoding {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StripeEncryptionVariant {
-    #[prost(message, repeated, tag="1")]
+    #[prost(message, repeated, tag = "1")]
     pub streams: ::prost::alloc::vec::Vec<Stream>,
-    #[prost(message, repeated, tag="2")]
+    #[prost(message, repeated, tag = "2")]
     pub encoding: ::prost::alloc::vec::Vec<ColumnEncoding>,
 }
 // each stripe looks like:
@@ -301,14 +301,14 @@ pub struct StripeEncryptionVariant {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StripeFooter {
-    #[prost(message, repeated, tag="1")]
+    #[prost(message, repeated, tag = "1")]
     pub streams: ::prost::alloc::vec::Vec<Stream>,
-    #[prost(message, repeated, tag="2")]
+    #[prost(message, repeated, tag = "2")]
     pub columns: ::prost::alloc::vec::Vec<ColumnEncoding>,
-    #[prost(string, optional, tag="3")]
+    #[prost(string, optional, tag = "3")]
     pub writer_timezone: ::core::option::Option<::prost::alloc::string::String>,
     /// one for each column encryption variant
-    #[prost(message, repeated, tag="4")]
+    #[prost(message, repeated, tag = "4")]
     pub encryption: ::prost::alloc::vec::Vec<StripeEncryptionVariant>,
 }
 // the file tail looks like:
@@ -321,27 +321,27 @@ pub struct StripeFooter {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StringPair {
-    #[prost(string, optional, tag="1")]
+    #[prost(string, optional, tag = "1")]
     pub key: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, optional, tag="2")]
+    #[prost(string, optional, tag = "2")]
     pub value: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Type {
-    #[prost(enumeration="r#type::Kind", optional, tag="1")]
+    #[prost(enumeration = "r#type::Kind", optional, tag = "1")]
     pub kind: ::core::option::Option<i32>,
-    #[prost(uint32, repeated, tag="2")]
+    #[prost(uint32, repeated, tag = "2")]
     pub subtypes: ::prost::alloc::vec::Vec<u32>,
-    #[prost(string, repeated, tag="3")]
+    #[prost(string, repeated, tag = "3")]
     pub field_names: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    #[prost(uint32, optional, tag="4")]
+    #[prost(uint32, optional, tag = "4")]
     pub maximum_length: ::core::option::Option<u32>,
-    #[prost(uint32, optional, tag="5")]
+    #[prost(uint32, optional, tag = "5")]
     pub precision: ::core::option::Option<u32>,
-    #[prost(uint32, optional, tag="6")]
+    #[prost(uint32, optional, tag = "6")]
     pub scale: ::core::option::Option<u32>,
-    #[prost(message, repeated, tag="7")]
+    #[prost(message, repeated, tag = "7")]
     pub attributes: ::prost::alloc::vec::Vec<StringPair>,
 }
 /// Nested message and enum types in `Type`.
@@ -428,19 +428,19 @@ pub mod r#type {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StripeInformation {
     /// the global file offset of the start of the stripe
-    #[prost(uint64, optional, tag="1")]
+    #[prost(uint64, optional, tag = "1")]
     pub offset: ::core::option::Option<u64>,
     /// the number of bytes of index
-    #[prost(uint64, optional, tag="2")]
+    #[prost(uint64, optional, tag = "2")]
     pub index_length: ::core::option::Option<u64>,
     /// the number of bytes of data
-    #[prost(uint64, optional, tag="3")]
+    #[prost(uint64, optional, tag = "3")]
     pub data_length: ::core::option::Option<u64>,
     /// the number of bytes in the stripe footer
-    #[prost(uint64, optional, tag="4")]
+    #[prost(uint64, optional, tag = "4")]
     pub footer_length: ::core::option::Option<u64>,
     /// the number of rows in this stripe
-    #[prost(uint64, optional, tag="5")]
+    #[prost(uint64, optional, tag = "5")]
     pub number_of_rows: ::core::option::Option<u64>,
     /// If this is present, the reader should use this value for the encryption
     /// stripe id for setting the encryption IV. Otherwise, the reader should
@@ -451,19 +451,19 @@ pub struct StripeInformation {
     /// each of the input files will reset it to 1.
     /// Note that 1 was choosen, because protobuf v3 doesn't serialize
     /// primitive types that are the default (eg. 0).
-    #[prost(uint64, optional, tag="6")]
+    #[prost(uint64, optional, tag = "6")]
     pub encrypt_stripe_id: ::core::option::Option<u64>,
     /// For each encryption variant, the new encrypted local key to use
     /// until we find a replacement.
-    #[prost(bytes="vec", repeated, tag="7")]
+    #[prost(bytes = "vec", repeated, tag = "7")]
     pub encrypted_local_keys: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UserMetadataItem {
-    #[prost(string, optional, tag="1")]
+    #[prost(string, optional, tag = "1")]
     pub name: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(bytes="vec", optional, tag="2")]
+    #[prost(bytes = "vec", optional, tag = "2")]
     pub value: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
 /// StripeStatistics (1 per a stripe), which each contain the
@@ -472,14 +472,14 @@ pub struct UserMetadataItem {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StripeStatistics {
-    #[prost(message, repeated, tag="1")]
+    #[prost(message, repeated, tag = "1")]
     pub col_stats: ::prost::alloc::vec::Vec<ColumnStatistics>,
 }
 /// This message type is only used in ORC v0 and v1.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Metadata {
-    #[prost(message, repeated, tag="1")]
+    #[prost(message, repeated, tag = "1")]
     pub stripe_stats: ::prost::alloc::vec::Vec<StripeStatistics>,
 }
 /// In ORC v2 (and for encrypted columns in v1), each column has
@@ -488,13 +488,13 @@ pub struct Metadata {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ColumnarStripeStatistics {
     /// one value for each stripe in the file
-    #[prost(message, repeated, tag="1")]
+    #[prost(message, repeated, tag = "1")]
     pub col_stats: ::prost::alloc::vec::Vec<ColumnStatistics>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FileStatistics {
-    #[prost(message, repeated, tag="1")]
+    #[prost(message, repeated, tag = "1")]
     pub column: ::prost::alloc::vec::Vec<ColumnStatistics>,
 }
 /// How was the data masked? This isn't necessary for reading the file, but
@@ -503,24 +503,24 @@ pub struct FileStatistics {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DataMask {
     /// the kind of masking, which may include third party masks
-    #[prost(string, optional, tag="1")]
+    #[prost(string, optional, tag = "1")]
     pub name: ::core::option::Option<::prost::alloc::string::String>,
     /// parameters for the mask
-    #[prost(string, repeated, tag="2")]
+    #[prost(string, repeated, tag = "2")]
     pub mask_parameters: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// the unencrypted column roots this mask was applied to
-    #[prost(uint32, repeated, tag="3")]
+    #[prost(uint32, repeated, tag = "3")]
     pub columns: ::prost::alloc::vec::Vec<u32>,
 }
 /// Information about the encryption keys.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct EncryptionKey {
-    #[prost(string, optional, tag="1")]
+    #[prost(string, optional, tag = "1")]
     pub key_name: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(uint32, optional, tag="2")]
+    #[prost(uint32, optional, tag = "2")]
     pub key_version: ::core::option::Option<u32>,
-    #[prost(enumeration="EncryptionAlgorithm", optional, tag="3")]
+    #[prost(enumeration = "EncryptionAlgorithm", optional, tag = "3")]
     pub algorithm: ::core::option::Option<i32>,
 }
 /// The description of an encryption variant.
@@ -529,59 +529,59 @@ pub struct EncryptionKey {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct EncryptionVariant {
     /// the column id of the root
-    #[prost(uint32, optional, tag="1")]
+    #[prost(uint32, optional, tag = "1")]
     pub root: ::core::option::Option<u32>,
     /// The master key that was used to encrypt the local key, referenced as
     /// an index into the Encryption.key list.
-    #[prost(uint32, optional, tag="2")]
+    #[prost(uint32, optional, tag = "2")]
     pub key: ::core::option::Option<u32>,
     /// the encrypted key for the file footer
-    #[prost(bytes="vec", optional, tag="3")]
+    #[prost(bytes = "vec", optional, tag = "3")]
     pub encrypted_key: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
     /// the stripe statistics for this variant
-    #[prost(message, repeated, tag="4")]
+    #[prost(message, repeated, tag = "4")]
     pub stripe_statistics: ::prost::alloc::vec::Vec<Stream>,
     /// encrypted file statistics as a FileStatistics
-    #[prost(bytes="vec", optional, tag="5")]
+    #[prost(bytes = "vec", optional, tag = "5")]
     pub file_statistics: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Encryption {
     /// all of the masks used in this file
-    #[prost(message, repeated, tag="1")]
+    #[prost(message, repeated, tag = "1")]
     pub mask: ::prost::alloc::vec::Vec<DataMask>,
     /// all of the keys used in this file
-    #[prost(message, repeated, tag="2")]
+    #[prost(message, repeated, tag = "2")]
     pub key: ::prost::alloc::vec::Vec<EncryptionKey>,
     /// The encrypted variants.
     /// Readers should prefer the first variant that the user has access to
     /// the corresponding key. If they don't have access to any of the keys,
     /// they should get the unencrypted masked data.
-    #[prost(message, repeated, tag="3")]
+    #[prost(message, repeated, tag = "3")]
     pub variants: ::prost::alloc::vec::Vec<EncryptionVariant>,
     /// How are the local keys encrypted?
-    #[prost(enumeration="KeyProviderKind", optional, tag="4")]
+    #[prost(enumeration = "KeyProviderKind", optional, tag = "4")]
     pub key_provider: ::core::option::Option<i32>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Footer {
-    #[prost(uint64, optional, tag="1")]
+    #[prost(uint64, optional, tag = "1")]
     pub header_length: ::core::option::Option<u64>,
-    #[prost(uint64, optional, tag="2")]
+    #[prost(uint64, optional, tag = "2")]
     pub content_length: ::core::option::Option<u64>,
-    #[prost(message, repeated, tag="3")]
+    #[prost(message, repeated, tag = "3")]
     pub stripes: ::prost::alloc::vec::Vec<StripeInformation>,
-    #[prost(message, repeated, tag="4")]
+    #[prost(message, repeated, tag = "4")]
     pub types: ::prost::alloc::vec::Vec<Type>,
-    #[prost(message, repeated, tag="5")]
+    #[prost(message, repeated, tag = "5")]
     pub metadata: ::prost::alloc::vec::Vec<UserMetadataItem>,
-    #[prost(uint64, optional, tag="6")]
+    #[prost(uint64, optional, tag = "6")]
     pub number_of_rows: ::core::option::Option<u64>,
-    #[prost(message, repeated, tag="7")]
+    #[prost(message, repeated, tag = "7")]
     pub statistics: ::prost::alloc::vec::Vec<ColumnStatistics>,
-    #[prost(uint32, optional, tag="8")]
+    #[prost(uint32, optional, tag = "8")]
     pub row_index_stride: ::core::option::Option<u32>,
     /// Each implementation that writes ORC files should register for a code
     /// 0 = ORC Java
@@ -589,35 +589,35 @@ pub struct Footer {
     /// 2 = Presto
     /// 3 = Scritchley Go from <https://github.com/scritchley/orc>
     /// 4 = Trino
-    #[prost(uint32, optional, tag="9")]
+    #[prost(uint32, optional, tag = "9")]
     pub writer: ::core::option::Option<u32>,
     /// information about the encryption in this file
-    #[prost(message, optional, tag="10")]
+    #[prost(message, optional, tag = "10")]
     pub encryption: ::core::option::Option<Encryption>,
-    #[prost(enumeration="CalendarKind", optional, tag="11")]
+    #[prost(enumeration = "CalendarKind", optional, tag = "11")]
     pub calendar: ::core::option::Option<i32>,
     /// informative description about the version of the software that wrote
     /// the file. It is assumed to be within a given writer, so for example
     /// ORC 1.7.2 = "1.7.2". It may include suffixes, such as "-SNAPSHOT".
-    #[prost(string, optional, tag="12")]
+    #[prost(string, optional, tag = "12")]
     pub software_version: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// Serialized length must be less that 255 bytes
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PostScript {
-    #[prost(uint64, optional, tag="1")]
+    #[prost(uint64, optional, tag = "1")]
     pub footer_length: ::core::option::Option<u64>,
-    #[prost(enumeration="CompressionKind", optional, tag="2")]
+    #[prost(enumeration = "CompressionKind", optional, tag = "2")]
     pub compression: ::core::option::Option<i32>,
-    #[prost(uint64, optional, tag="3")]
+    #[prost(uint64, optional, tag = "3")]
     pub compression_block_size: ::core::option::Option<u64>,
     /// the version of the file format
     ///    \[0, 11\] = Hive 0.11
     ///    \[0, 12\] = Hive 0.12
-    #[prost(uint32, repeated, tag="4")]
+    #[prost(uint32, repeated, tag = "4")]
     pub version: ::prost::alloc::vec::Vec<u32>,
-    #[prost(uint64, optional, tag="5")]
+    #[prost(uint64, optional, tag = "5")]
     pub metadata_length: ::core::option::Option<u64>,
     /// The version of the writer that wrote the file. This number is
     /// updated when we make fixes or large changes to the writer so that
@@ -652,13 +652,13 @@ pub struct PostScript {
     /// Version of the Trino writer:
     ///    6 = original
     ///
-    #[prost(uint32, optional, tag="6")]
+    #[prost(uint32, optional, tag = "6")]
     pub writer_version: ::core::option::Option<u32>,
     /// the number of bytes in the encrypted stripe statistics
-    #[prost(uint64, optional, tag="7")]
+    #[prost(uint64, optional, tag = "7")]
     pub stripe_statistics_length: ::core::option::Option<u64>,
     /// Leave this last in the record
-    #[prost(string, optional, tag="8000")]
+    #[prost(string, optional, tag = "8000")]
     pub magic: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// The contents of the file tail that must be serialized.
@@ -666,13 +666,13 @@ pub struct PostScript {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FileTail {
-    #[prost(message, optional, tag="1")]
+    #[prost(message, optional, tag = "1")]
     pub postscript: ::core::option::Option<PostScript>,
-    #[prost(message, optional, tag="2")]
+    #[prost(message, optional, tag = "2")]
     pub footer: ::core::option::Option<Footer>,
-    #[prost(uint64, optional, tag="3")]
+    #[prost(uint64, optional, tag = "3")]
     pub file_length: ::core::option::Option<u64>,
-    #[prost(uint64, optional, tag="4")]
+    #[prost(uint64, optional, tag = "4")]
     pub postscript_length: ::core::option::Option<u64>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
