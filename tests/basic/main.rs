@@ -1,5 +1,3 @@
-#![feature(iterator_try_collect)]
-
 use std::fs::File;
 
 use arrow::util::pretty;
@@ -50,8 +48,8 @@ fn basic_path(path: &str) -> String {
 #[test]
 pub fn test_read_long_bool() {
     let path = basic_path("long_bool.orc");
-    let mut reader = new_arrow_reader(&path, &["long"]);
-    let batch = reader.try_collect::<Vec<_>>().unwrap();
+    let reader = new_arrow_reader(&path, &["long"]);
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
 
     assert_eq!(32, batch[0].column(0).len());
     assert_eq!(
@@ -63,8 +61,8 @@ pub fn test_read_long_bool() {
 #[test]
 pub fn test_read_long_bool_gzip() {
     let path = basic_path("long_bool_gzip.orc");
-    let mut reader = new_arrow_reader(&path, &["long"]);
-    let batch = reader.try_collect::<Vec<_>>().unwrap();
+    let reader = new_arrow_reader(&path, &["long"]);
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
 
     assert_eq!(32, batch[0].column(0).len());
     assert_eq!(
@@ -76,8 +74,8 @@ pub fn test_read_long_bool_gzip() {
 #[test]
 pub fn test_read_long_string() {
     let path = basic_path("string_long.orc");
-    let mut reader = new_arrow_reader(&path, &["dict"]);
-    let batch = reader.try_collect::<Vec<_>>().unwrap();
+    let reader = new_arrow_reader(&path, &["dict"]);
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
 
     assert_eq!(64, batch[0].column(0).len());
 
@@ -90,8 +88,8 @@ pub fn test_read_long_string() {
 #[test]
 pub fn test_read_string_dirt() {
     let path = basic_path("string_dict.orc");
-    let mut reader = new_arrow_reader(&path, &["dict"]);
-    let batch = reader.try_collect::<Vec<_>>().unwrap();
+    let reader = new_arrow_reader(&path, &["dict"]);
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
 
     assert_eq!(64, batch[0].column(0).len());
     assert_eq!(
@@ -103,8 +101,8 @@ pub fn test_read_string_dirt() {
 #[test]
 pub fn test_read_string_dirt_gzip() {
     let path = basic_path("string_dict_gzip.orc");
-    let mut reader = new_arrow_reader(&path, &["dict"]);
-    let batch = reader.try_collect::<Vec<_>>().unwrap();
+    let reader = new_arrow_reader(&path, &["dict"]);
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
 
     assert_eq!(64, batch[0].column(0).len());
     assert_eq!(
@@ -116,8 +114,8 @@ pub fn test_read_string_dirt_gzip() {
 #[test]
 pub fn test_read_string_long_long() {
     let path = basic_path("string_long_long.orc");
-    let mut reader = new_arrow_reader(&path, &["dict"]);
-    let batch = reader.try_collect::<Vec<_>>().unwrap();
+    let reader = new_arrow_reader(&path, &["dict"]);
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
 
     assert_eq!(8192, batch[0].column(0).len());
     assert_eq!(10_000 - 8192, batch[1].column(0).len());
@@ -126,8 +124,8 @@ pub fn test_read_string_long_long() {
 #[test]
 pub fn test_read_f32_long_long_gzip() {
     let path = basic_path("f32_long_long_gzip.orc");
-    let mut reader = new_arrow_reader(&path, &["dict"]);
-    let batch = reader.try_collect::<Vec<_>>().unwrap();
+    let reader = new_arrow_reader(&path, &["dict"]);
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
 
     let total: usize = batch.iter().map(|c| c.column(0).len()).sum();
 
@@ -137,8 +135,8 @@ pub fn test_read_f32_long_long_gzip() {
 #[test]
 pub fn test_read_string_long_long_gzip() {
     let path = basic_path("string_long_long_gzip.orc");
-    let mut reader = new_arrow_reader(&path, &["dict"]);
-    let batch = reader.try_collect::<Vec<_>>().unwrap();
+    let reader = new_arrow_reader(&path, &["dict"]);
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
 
     assert_eq!(8192, batch[0].column(0).len());
     assert_eq!(10_000 - 8192, batch[1].column(0).len());
@@ -147,8 +145,8 @@ pub fn test_read_string_long_long_gzip() {
 #[test]
 pub fn basic_test() {
     let path = basic_path("test.orc");
-    let mut reader = new_arrow_reader(&path, &["a", "b", "str_direct", "d", "e", "f"]);
-    let batch = reader.try_collect::<Vec<_>>().unwrap();
+    let reader = new_arrow_reader(&path, &["a", "b", "str_direct", "d", "e", "f"]);
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
 
     let expected = r#"+-----+-------+------------+-----+-----+-------+
 | a   | b     | str_direct | d   | e   | f     |
@@ -169,7 +167,7 @@ pub fn basic_test() {
 #[test]
 pub fn basic_test_2() {
     let path = basic_path("test.orc");
-    let mut reader = new_arrow_reader(
+    let reader = new_arrow_reader(
         &path,
         &[
             "int_short_repeated",
@@ -185,7 +183,7 @@ pub fn basic_test_2() {
             "utf8_decrease",
         ],
     );
-    let batch = reader.try_collect::<Vec<_>>().unwrap();
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
 
     let expected = r#"+--------------------+------------------------+-----------+---------------+------------+----------------+---------------+-------------------+--------------+---------------+---------------+
 | int_short_repeated | int_neg_short_repeated | int_delta | int_neg_delta | int_direct | int_neg_direct | bigint_direct | bigint_neg_direct | bigint_other | utf8_increase | utf8_decrease |
@@ -206,8 +204,8 @@ pub fn basic_test_2() {
 #[test]
 pub fn basic_test_3() {
     let path = basic_path("test.orc");
-    let mut reader = new_arrow_reader(&path, &["timestamp_simple", "date_simple"]);
-    let batch = reader.try_collect::<Vec<_>>().unwrap();
+    let reader = new_arrow_reader(&path, &["timestamp_simple", "date_simple"]);
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
 
     let expected = r#"+----------------------------+-------------+
 | timestamp_simple           | date_simple |
@@ -227,8 +225,8 @@ pub fn basic_test_3() {
 #[test]
 pub fn basic_test_0() {
     let path = basic_path("test.orc");
-    let mut reader = new_arrow_reader_root(&path);
-    let batch = reader.try_collect::<Vec<_>>().unwrap();
+    let reader = new_arrow_reader_root(&path);
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
 
     let expected = r#"+-----+-------+------------+-----+-----+-------+--------------------+------------------------+-----------+---------------+------------+----------------+---------------+-------------------+--------------+---------------+---------------+----------------------------+-------------+
 | a   | b     | str_direct | d   | e   | f     | int_short_repeated | int_neg_short_repeated | int_delta | int_neg_delta | int_direct | int_neg_direct | bigint_direct | bigint_neg_direct | bigint_other | utf8_increase | utf8_decrease | timestamp_simple           | date_simple |

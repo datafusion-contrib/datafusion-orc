@@ -1,3 +1,6 @@
+[workspace]
+members = ["gen"]
+
 [package]
 name = "datafusion-orc"
 version = "0.2.43"
