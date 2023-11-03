@@ -64,6 +64,7 @@ pub fn create_field((name, typ): (&str, &Arc<TypeDescription>)) -> Field {
         Kind::Date => Field::new(name, DataType::Date32, true),
         Kind::Varchar => Field::new(name, DataType::Utf8, true),
         Kind::Char => Field::new(name, DataType::Utf8, true),
+        Kind::TimestampInstant => todo!(),
     }
 }
 
@@ -226,5 +227,6 @@ pub fn create_schema(types: &[Type], root_column: usize) -> Result<Arc<TypeDescr
             root_column,
         ))),
         Kind::Decimal => Ok(Arc::new(TypeDescription::new(DECIMAL.clone(), root_column))),
+        Kind::TimestampInstant => todo!(),
     }
 }

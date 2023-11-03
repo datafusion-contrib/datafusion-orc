@@ -321,7 +321,7 @@ impl NaiveStripeDecoder {
         let mut decoders = Vec::with_capacity(stripe.columns.len());
         let number_of_rows = stripe
             .columns
-            .get(0)
+            .first()
             .map(|c| c.number_of_rows())
             .unwrap_or_default();
         for col in &stripe.columns {
@@ -346,6 +346,7 @@ impl NaiveStripeDecoder {
                 crate::proto::r#type::Kind::Date => Decoder::Date(new_date_iter(col)?),
                 crate::proto::r#type::Kind::Varchar => Decoder::String(StringDecoder::new(col)?),
                 crate::proto::r#type::Kind::Char => Decoder::String(StringDecoder::new(col)?),
+                crate::proto::r#type::Kind::TimestampInstant => todo!(),
             };
             decoders.push(decoder);
         }
