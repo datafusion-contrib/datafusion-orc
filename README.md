@@ -1,7 +1,7 @@
 # datafusion-orc
 Implementation of ORC file format
 
-[![test](https://github.com/wenyxu/orc-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/wenyxu/orc-rs/actions/workflows/ci.yml)
+[![test](https://github.com/datafusion-contrib/datafusion-orc/actions/workflows/ci.yml/badge.svg)](https://github.com/datafusion-contrib/datafusion-orc/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/WenyXu/orc-rs/branch/main/graph/badge.svg?token=2CSHZX02XM)](https://codecov.io/gh/WenyXu/orc-rs)
 [![Crates.io](https://img.shields.io/crates/v/orc-rust)](https://crates.io/crates/orc-rust)
 [![Crates.io](https://img.shields.io/crates/d/orc-rust)](https://crates.io/crates/orc-rust)
@@ -18,7 +18,7 @@ Read [Apache ORC](https://orc.apache.org/) in Rust.
 
 | Column Encoding           | Read | Write | Rust Type             | Arrow  DataType         |
 | ------------------------- | ---- | ----- | --------------------- | ----------------------- |
-| SmallInt, Int, BigInt     | ✓    |       | i16, i32, i64           | Int16, Int32, Int64     |
+| SmallInt, Int, BigInt     | ✓    |       | i16, i32, i64         | Int16, Int32, Int64     |
 | Float, Double             | ✓    |       | f32, f64              | Float32, Float64        |
 | String, Char, and VarChar | ✓    |       | string                | Utf8                    |
 | Boolean                   | ✓    |       | bool                  | Boolean                 |
