@@ -169,7 +169,7 @@ impl Column {
 
     pub fn encoding(&self) -> ColumnEncoding {
         let column = self.column.column_id();
-        self.footer.columns[column]
+        self.footer.columns[column].clone()
     }
 
     pub fn number_of_rows(&self) -> usize {
