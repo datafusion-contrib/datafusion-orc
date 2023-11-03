@@ -27,6 +27,7 @@ Read [Apache ORC](https://orc.apache.org/) in Rust.
 | Decimal                   | ✗    |       |                       |                         |
 | Date                      | ✓    |       | chrono::NavieDate     | Date32                  |
 | Timestamp                 | ✓    |       | chrono::NavieDateTime | Timestamp(Nanosecond,_) |
+| Timestamp instant         | ✗    |       |                       |                         |
 | Struct                    | ✗    |       |                       |                         |
 | List                      | ✗    |       |                       |                         |
 | Map                       | ✗    |       |                       |                         |
