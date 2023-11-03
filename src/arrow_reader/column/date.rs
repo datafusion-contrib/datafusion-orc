@@ -35,7 +35,7 @@ impl Iterator for DateIterator {
 }
 
 pub fn new_date_iter(column: &Column) -> Result<NullableIterator<NaiveDate>> {
-    let present = new_present_iter(column)?.try_collect::<Vec<_>>()?;
+    let present = new_present_iter(column)?.collect::<Result<Vec<_>>>()?;
 
     let data = column
         .stream(Kind::Data)
