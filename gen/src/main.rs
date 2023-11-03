@@ -15,10 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::{
-    fs::{remove_file, OpenOptions},
-    io::{Read, Write},
-};
+use std::fs::{remove_file, OpenOptions};
+use std::io::{Read, Write};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     prost_build::Config::new()
