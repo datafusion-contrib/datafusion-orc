@@ -1,5 +1,6 @@
 use std::fs::File;
 
+use arrow::record_batch::RecordBatch;
 use arrow::util::pretty;
 use datafusion_orc::arrow_reader::{ArrowReader, Cursor};
 use datafusion_orc::async_arrow_reader::ArrowStreamReader;
@@ -263,4 +264,44 @@ pub async fn async_basic_test_0() {
         expected,
         pretty::pretty_format_batches(&batch).unwrap().to_string()
     )
+}
+
+#[test]
+pub fn alltypes_test() {
+    let compressions = ["none", "snappy", "zlib", "lzo", "zstd", "lz4"];
+    for compression in compressions {
+        let path = basic_path(&format!("alltypes.{compression}.orc"));
+        let reader = new_arrow_reader_root(&path);
+        let batches = reader.collect::<Result<Vec<_>, _>>().unwrap();
+
+        let expected = [
+        "+---------+--------+-------------+----------------------+------------+----------------+--------------------------+----------+------------+",
+        "| boolean | int16  | int32       | int64                | float32    | float64        | binary                   | utf8     | date32     |",
+        "+---------+--------+-------------+----------------------+------------+----------------+--------------------------+----------+------------+",
+        "|         |        |             |                      |            |                |                          |          |            |",
+        "| true    | 0      | 0           | 0                    | 0.0        | 0.0            |                          |          | 1970-01-01 |",
+        "| false   | 1      | 1           | 1                    | 1.0        | 1.0            | 61                       | a        | 1970-01-02 |",
+        "| false   | -1     | -1          | -1                   | -1.0       | -1.0           | 20                       |          | 1969-12-31 |",
+        "| true    | 32767  | 2147483647  | 9223372036854775807  | inf        | inf            | 656e636f6465             | encode   | 9999-12-31 |",
+        "| true    | -32768 | -2147483648 | -9223372036854775808 | -inf       | -inf           | 6465636f6465             | decode   | 1582-10-15 |",
+        "| true    | 50     | 50          | 50                   | 3.1415927  | 3.14159265359  | e5a4a7e7868ae5928ce5a58f | 大熊和奏 | 1582-10-16 |",
+        "| true    | 51     | 51          | 51                   | -3.1415927 | -3.14159265359 | e69689e897a4e69cb1e5a48f | 斉藤朱夏 | 2000-01-01 |",
+        "| true    | 52     | 52          | 52                   | 1.1        | 1.1            | e988b4e58e9fe5b88ce5ae9f | 鈴原希実 | 3000-12-31 |",
+        "| false   | 53     | 53          | 53                   | -1.1       | -1.1           | f09fa494                 | 🤔       | 1900-01-01 |",
+        "|         |        |             |                      |            |                |                          |          |            |",
+        "+---------+--------+-------------+----------------------+------------+----------------+--------------------------+----------+------------+",
+    ];
+        assert_batches_eq(&batches, &expected);
+    }
+}
+
+// From https://github.com/apache/arrow-rs/blob/7705acad845e8b2a366a08640f7acb4033ed7049/arrow-flight/src/sql/metadata/mod.rs#L67-L75
+pub fn assert_batches_eq(batches: &[RecordBatch], expected_lines: &[&str]) {
+    let formatted = pretty::pretty_format_batches(batches).unwrap().to_string();
+    let actual_lines: Vec<_> = formatted.trim().lines().collect();
+    assert_eq!(
+        &actual_lines, expected_lines,
+        "\n\nexpected:\n\n{:#?}\nactual:\n\n{:#?}\n\n",
+        expected_lines, actual_lines
+    );
 }
