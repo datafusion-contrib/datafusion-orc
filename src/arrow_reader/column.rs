@@ -20,6 +20,7 @@ pub mod int;
 pub mod present;
 pub mod string;
 pub mod timestamp;
+pub mod tinyint;
 
 #[derive(Debug)]
 pub struct Column {
