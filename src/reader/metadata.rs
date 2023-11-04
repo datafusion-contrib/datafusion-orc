@@ -6,8 +6,10 @@ use snafu::{OptionExt, ResultExt};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 use crate::error::{self, Result};
-use crate::proto::{CompressionKind, Footer, Metadata, PostScript, StripeFooter};
+use crate::proto::{Footer, Metadata, PostScript, StripeFooter};
 use crate::reader::decompress::Decompressor;
+
+use super::decompress::Compression;
 
 const DEFAULT_FOOTER_SIZE: u64 = 16 * 1024;
 
@@ -60,6 +62,10 @@ macro_rules! impl_read_metadata {
             // next is the postscript
             let postscript = PostScript::decode(&tail_bytes[tail_bytes.len() - postscript_len..])
                 .context(error::DecodeProtoSnafu)?;
+            let compression = Compression::from_proto(
+                postscript.compression(),
+                postscript.compression_block_size
+            );
             tail_bytes.truncate(tail_bytes.len() - postscript_len);
 
             // next is the footer
@@ -76,7 +82,7 @@ macro_rules! impl_read_metadata {
             $reader
                 .read_exact(&mut footer)$($_await)*
                 .context(error::SeekSnafu)?;
-            let footer = deserialize_footer(&footer, postscript.compression())?;
+            let footer = deserialize_footer(&footer, compression)?;
 
             // finally the metadata
             let metadata_length = postscript.metadata_length.context(error::OutOfSpecSnafu {
@@ -91,7 +97,7 @@ macro_rules! impl_read_metadata {
             let mut metadata = vec![0; metadata_length];
             $reader.read_exact(&mut metadata)$($_await)*.context(error::IoSnafu)?;
 
-            let metadata = deserialize_footer_metadata(&metadata, postscript.compression())?;
+            let metadata = deserialize_footer_metadata(&metadata, compression)?;
 
             let mut stripe_footers = Vec::with_capacity(footer.stripes.len());
 
@@ -112,7 +118,7 @@ macro_rules! impl_read_metadata {
                     .context(error::IoSnafu)?;
                 stripe_footers.push(deserialize_stripe_footer(
                     &scratch,
-                    postscript.compression(),
+                    compression,
                 )?);
             }
 
@@ -140,7 +146,7 @@ where
     impl_read_metadata!(reader.await)
 }
 
-fn deserialize_footer(bytes: &[u8], compression: CompressionKind) -> Result<Footer> {
+fn deserialize_footer(bytes: &[u8], compression: Option<Compression>) -> Result<Footer> {
     let mut buffer = vec![];
     Decompressor::new(Bytes::copy_from_slice(bytes), compression, vec![])
         .read_to_end(&mut buffer)
@@ -148,7 +154,7 @@ fn deserialize_footer(bytes: &[u8], compression: CompressionKind) -> Result<Foot
     Footer::decode(&*buffer).context(error::DecodeProtoSnafu)
 }
 
-fn deserialize_footer_metadata(bytes: &[u8], compression: CompressionKind) -> Result<Metadata> {
+fn deserialize_footer_metadata(bytes: &[u8], compression: Option<Compression>) -> Result<Metadata> {
     let mut buffer = vec![];
     Decompressor::new(Bytes::copy_from_slice(bytes), compression, vec![])
         .read_to_end(&mut buffer)
@@ -156,7 +162,10 @@ fn deserialize_footer_metadata(bytes: &[u8], compression: CompressionKind) -> Re
     Metadata::decode(&*buffer).context(error::DecodeProtoSnafu)
 }
 
-fn deserialize_stripe_footer(bytes: &[u8], compression: CompressionKind) -> Result<StripeFooter> {
+fn deserialize_stripe_footer(
+    bytes: &[u8],
+    compression: Option<Compression>,
+) -> Result<StripeFooter> {
     let mut buffer = vec![];
     Decompressor::new(Bytes::copy_from_slice(bytes), compression, vec![])
         .read_to_end(&mut buffer)
