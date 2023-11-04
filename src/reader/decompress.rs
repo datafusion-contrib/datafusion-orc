@@ -3,13 +3,62 @@
 
 use std::io::Read;
 
-use arrow::datatypes::ToByteSlice;
 use bytes::{Bytes, BytesMut};
 use fallible_streaming_iterator::FallibleStreamingIterator;
 use snafu::ResultExt;
 
 use crate::error::{self, Error};
-use crate::proto::CompressionKind;
+use crate::proto::{self, CompressionKind};
+
+#[derive(Clone, Copy, Debug)]
+pub struct Compression {
+    compression_type: CompressionType,
+    /// No compression chunk will decompress to larger than this size.
+    /// Use to size the scratch buffer appropriately.
+    max_decompressed_block_size: usize,
+}
+
+impl Compression {
+    pub fn from_proto(
+        kind: proto::CompressionKind,
+        compression_block_size: Option<u64>,
+    ) -> Option<Self> {
+        // Spec states default is 256K
+        let max_decompressed_block_size = compression_block_size.unwrap_or(256 * 1024) as usize;
+        match kind {
+            CompressionKind::None => None,
+            CompressionKind::Zlib => Some(Self {
+                compression_type: CompressionType::Zlib,
+                max_decompressed_block_size,
+            }),
+            CompressionKind::Snappy => Some(Self {
+                compression_type: CompressionType::Snappy,
+                max_decompressed_block_size,
+            }),
+            CompressionKind::Lzo => Some(Self {
+                compression_type: CompressionType::Lzo,
+                max_decompressed_block_size,
+            }),
+            CompressionKind::Lz4 => Some(Self {
+                compression_type: CompressionType::Lz4,
+                max_decompressed_block_size,
+            }),
+            CompressionKind::Zstd => Some(Self {
+                compression_type: CompressionType::Zstd,
+                max_decompressed_block_size,
+            }),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum CompressionType {
+    Zlib,
+    Snappy,
+    Lzo,
+    Lz4,
+    Zstd,
+}
 
 fn decode_header(bytes: &[u8]) -> (bool, usize) {
     let a: [u8; 3] = (&bytes[..3]).try_into().unwrap();
@@ -21,6 +70,53 @@ fn decode_header(bytes: &[u8]) -> (bool, usize) {
     (is_original, length)
 }
 
+fn decompress_block(
+    compression: Compression,
+    compressed_bytes: &[u8],
+    scratch: &mut Vec<u8>,
+) -> Result<(), Error> {
+    match compression.compression_type {
+        CompressionType::Zlib => {
+            let mut gz = flate2::read::DeflateDecoder::new(compressed_bytes);
+            scratch.clear();
+            gz.read_to_end(scratch).context(error::IoSnafu)?;
+        }
+        CompressionType::Zstd => {
+            let mut reader =
+                zstd::Decoder::new(compressed_bytes).context(error::BuildZstdDecoderSnafu)?;
+            scratch.clear();
+            reader.read_to_end(scratch).context(error::IoSnafu)?;
+        }
+        CompressionType::Snappy => {
+            let len = snap::raw::decompress_len(compressed_bytes)
+                .context(error::BuildSnappyDecoderSnafu)?;
+            scratch.resize(len, 0);
+            let mut decoder = snap::raw::Decoder::new();
+            decoder
+                .decompress(compressed_bytes, scratch)
+                .context(error::BuildSnappyDecoderSnafu)?;
+        }
+        CompressionType::Lzo => {
+            let decompressed = lzokay_native::decompress_all(compressed_bytes, None)
+                .context(error::BuildLzoDecoderSnafu)?;
+            // TODO: better way to utilize scratch here
+            scratch.clear();
+            scratch.extend(decompressed);
+        }
+        CompressionType::Lz4 => {
+            let decompressed = lz4_flex::block::decompress(
+                compressed_bytes,
+                compression.max_decompressed_block_size,
+            )
+            .context(error::BuildLz4DecoderSnafu)?;
+            // TODO: better way to utilize scratch here
+            scratch.clear();
+            scratch.extend(decompressed);
+        }
+    };
+    Ok(())
+}
+
 enum State {
     Original(Bytes),
     Compressed(Vec<u8>),
@@ -29,12 +125,12 @@ enum State {
 struct DecompressorIter {
     stream: BytesMut,
     current: Option<State>, // when we have compression but the value is original
-    compression: CompressionKind,
+    compression: Option<Compression>,
     scratch: Vec<u8>,
 }
 
 impl DecompressorIter {
-    pub fn new(stream: Bytes, compression: CompressionKind, scratch: Vec<u8>) -> Self {
+    pub fn new(stream: Bytes, compression: Option<Compression>, scratch: Vec<u8>) -> Self {
         Self {
             stream: BytesMut::from(stream.as_ref()),
             current: None,
@@ -62,50 +158,29 @@ impl FallibleStreamingIterator for DecompressorIter {
             self.current = None;
             return Ok(());
         }
+
         match self.compression {
-            CompressionKind::None => {
+            Some(compression) => {
+                // todo: take stratch from current State::Compressed for re-use
+                let (is_original, length) = decode_header(&self.stream);
+                let _ = self.stream.split_to(3);
+                let maybe_compressed = self.stream.split_to(length);
+
+                if is_original {
+                    self.current = Some(State::Original(maybe_compressed.into()));
+                } else {
+                    decompress_block(compression, &maybe_compressed, &mut self.scratch)?;
+                    self.current = Some(State::Compressed(std::mem::take(&mut self.scratch)));
+                }
+                Ok(())
+            }
+            None => {
                 // todo: take stratch from current State::Compressed for re-use
                 self.current = Some(State::Original(self.stream.clone().into()));
                 self.stream.clear();
+                Ok(())
             }
-            CompressionKind::Zlib => {
-                // todo: take stratch from current State::Compressed for re-use
-                let (is_original, length) = decode_header(&self.stream);
-                let _ = self.stream.split_to(3);
-                let maybe_compressed = self.stream.split_to(length);
-
-                if is_original {
-                    self.current = Some(State::Original(maybe_compressed.into()));
-                } else {
-                    let mut gz =
-                        flate2::read::DeflateDecoder::new(maybe_compressed.to_byte_slice());
-                    self.scratch.clear();
-                    gz.read_to_end(&mut self.scratch).context(error::IoSnafu)?;
-                    self.current = Some(State::Compressed(std::mem::take(&mut self.scratch)));
-                }
-            }
-            CompressionKind::Zstd => {
-                // todo: take stratch from current State::Compressed for re-use
-                let (is_original, length) = decode_header(&self.stream);
-                let _ = self.stream.split_to(3);
-                let maybe_compressed = self.stream.split_to(length);
-
-                if is_original {
-                    self.current = Some(State::Original(maybe_compressed.into()));
-                } else {
-                    let mut reader = zstd::Decoder::new(maybe_compressed.to_byte_slice())
-                        .context(error::BuildZstdDecoderSnafu)?;
-
-                    self.scratch.clear();
-                    reader
-                        .read_to_end(&mut self.scratch)
-                        .context(error::IoSnafu)?;
-                    self.current = Some(State::Compressed(std::mem::take(&mut self.scratch)));
-                }
-            }
-            _ => todo!(),
-        };
-        Ok(())
+        }
     }
 
     #[inline]
@@ -126,7 +201,7 @@ pub struct Decompressor {
 
 impl Decompressor {
     /// Creates a new [`Decompressor`] that will use `scratch` as a temporary region.
-    pub fn new(stream: Bytes, compression: CompressionKind, scratch: Vec<u8>) -> Self {
+    pub fn new(stream: Bytes, compression: Option<Compression>, scratch: Vec<u8>) -> Self {
         Self {
             decompressor: DecompressorIter::new(stream, compression, scratch),
             offset: 0,

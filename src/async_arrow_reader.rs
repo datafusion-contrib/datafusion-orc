@@ -17,6 +17,7 @@ use crate::arrow_reader::{
 };
 use crate::error::Result;
 use crate::proto::StripeInformation;
+use crate::reader::decompress::Compression;
 use crate::reader::schema::TypeDescription;
 use crate::reader::Reader;
 
@@ -188,7 +189,10 @@ impl Stripe {
     ) -> Result<Self> {
         let footer = Arc::new(r.stripe_footer(stripe).clone());
 
-        let compression = r.metadata().postscript.compression();
+        let compression = Compression::from_proto(
+            r.metadata().postscript.compression(),
+            r.metadata().postscript.compression_block_size,
+        );
         //TODO(weny): add tz
         let mut columns = Vec::with_capacity(column_defs.len());
         for (name, typ) in column_defs.iter() {

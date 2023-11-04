@@ -26,6 +26,7 @@ use crate::arrow_reader::column::timestamp::new_timestamp_iter;
 use crate::arrow_reader::column::NullableIterator;
 use crate::error::{self, Result};
 use crate::proto::{StripeFooter, StripeInformation};
+use crate::reader::decompress::Compression;
 use crate::reader::schema::{create_field, TypeDescription};
 use crate::reader::Reader;
 
@@ -427,7 +428,10 @@ impl Stripe {
     ) -> Result<Self> {
         let footer = Arc::new(r.stripe_footer(stripe).clone());
 
-        let compression = r.metadata().postscript.compression();
+        let compression = Compression::from_proto(
+            r.metadata().postscript.compression(),
+            r.metadata().postscript.compression_block_size,
+        );
         //TODO(weny): add tz
         let columns = columns
             .iter()

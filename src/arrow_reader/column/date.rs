@@ -14,12 +14,15 @@ pub struct DateIterator {
 }
 
 pub fn convert_date(data: i64) -> Result<NaiveDate> {
-    let date = NaiveDate::from_ymd_opt(1970, 1, 1)
-        .context(error::InvalidDateSnafu)?
-        .checked_add_days(Days::new(data as u64))
-        .context(error::AddDaysSnafu)?;
-
-    Ok(date)
+    let days = Days::new(data.unsigned_abs());
+    // safe unwrap as is valid date
+    let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
+    let date = if data.is_negative() {
+        epoch.checked_sub_days(days)
+    } else {
+        epoch.checked_add_days(days)
+    };
+    date.context(error::AddDaysSnafu)
 }
 
 impl Iterator for DateIterator {

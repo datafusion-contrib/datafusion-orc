@@ -7,8 +7,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 use crate::error::{self, Result};
 use crate::proto::stream::Kind;
-use crate::proto::{ColumnEncoding, CompressionKind, StripeFooter, StripeInformation};
-use crate::reader::decompress::Decompressor;
+use crate::proto::{ColumnEncoding, StripeFooter, StripeInformation};
+use crate::reader::decompress::{Compression, Decompressor};
 use crate::reader::schema::TypeDescription;
 use crate::reader::Reader;
 
@@ -25,7 +25,7 @@ pub mod timestamp;
 pub struct Column {
     data: Bytes,
     number_of_rows: u64,
-    compression: CompressionKind,
+    compression: Option<Compression>,
     footer: Arc<StripeFooter>,
     name: String,
     column: Arc<TypeDescription>,
@@ -99,7 +99,7 @@ impl Column {
 
     pub fn new<R: Read + Seek>(
         reader: &mut Reader<R>,
-        compression: CompressionKind,
+        compression: Option<Compression>,
         name: &str,
         column: &Arc<TypeDescription>,
         footer: &Arc<StripeFooter>,
@@ -120,7 +120,7 @@ impl Column {
 
     pub async fn new_async<R: AsyncRead + AsyncSeek + Unpin + Send>(
         reader: &mut Reader<R>,
-        compression: CompressionKind,
+        compression: Option<Compression>,
         name: &str,
         column: &Arc<TypeDescription>,
         footer: &Arc<StripeFooter>,

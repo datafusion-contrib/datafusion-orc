@@ -87,6 +87,24 @@ pub enum Error {
         location: Location,
         source: io::Error,
     },
+
+    #[snafu(display("Failed to build snappy decoder: {}", source))]
+    BuildSnappyDecoder {
+        location: Location,
+        source: snap::Error,
+    },
+
+    #[snafu(display("Failed to build lzo decoder: {}", source))]
+    BuildLzoDecoder {
+        location: Location,
+        source: lzokay_native::Error,
+    },
+
+    #[snafu(display("Failed to build lz4 decoder: {}", source))]
+    BuildLz4Decoder {
+        location: Location,
+        source: lz4_flex::block::DecompressError,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
