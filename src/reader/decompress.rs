@@ -10,6 +10,9 @@ use snafu::ResultExt;
 use crate::error::{self, Error};
 use crate::proto::{self, CompressionKind};
 
+// Spec states default is 256K
+const DEFAULT_COMPRESSION_BLOCK_SIZE: u64 = 256 * 1024;
+
 #[derive(Clone, Copy, Debug)]
 pub struct Compression {
     compression_type: CompressionType,
@@ -23,8 +26,8 @@ impl Compression {
         kind: proto::CompressionKind,
         compression_block_size: Option<u64>,
     ) -> Option<Self> {
-        // Spec states default is 256K
-        let max_decompressed_block_size = compression_block_size.unwrap_or(256 * 1024) as usize;
+        let max_decompressed_block_size =
+            compression_block_size.unwrap_or(DEFAULT_COMPRESSION_BLOCK_SIZE) as usize;
         match kind {
             CompressionKind::None => None,
             CompressionKind::Zlib => Some(Self {
