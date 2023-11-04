@@ -36,14 +36,14 @@ Read [Apache ORC](https://orc.apache.org/) in Rust.
 
 ## Compression Support
 
-| Compression | Support |
-| ----------- | ------- |
-| None        | ✓       |
-| ZLIB        | ✓       |
-| SNAPPY      | ✗       |
-| LZO         | ✗       |
-| LZ4         | ✗       |
-| ZSTD        | ✓       |
+| Compression | Read | Write |
+| ----------- | ---- | ----- |
+| None        | ✓    | ✗     |
+| ZLIB        | ✓    | ✗     |
+| SNAPPY      | ✓    | ✗     |
+| LZO         | ✓    | ✗     |
+| LZ4         | ✓    | ✗     |
+| ZSTD        | ✓    | ✗     |
 
 
 
