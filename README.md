@@ -23,10 +23,11 @@ Read [Apache ORC](https://orc.apache.org/) in Rust.
 | String, Char, and VarChar | ✓    |       | string                | Utf8                    |
 | Boolean                   | ✓    |       | bool                  | Boolean                 |
 | TinyInt                   | ✗    |       |                       |                         |
-| Binary                    | ✓    |       | Vec<u8>               | Binary                  |
+| Binary                    | ✓    |       | Vec\<u8\>             | Binary                  |
 | Decimal                   | ✗    |       |                       |                         |
-| Date                      | ✓    |       | chrono::NavieDate     | Date32                  |
-| Timestamp                 | ✓    |       | chrono::NavieDateTime | Timestamp(Nanosecond,_) |
+| Date                      | ✓    |       | chrono::NaiveDate     | Date32                  |
+| Timestamp                 | ✓    |       | chrono::NaiveDateTime | Timestamp(Nanosecond,_) |
+| Timestamp instant         | ✗    |       |                       |                         |
 | Struct                    | ✗    |       |                       |                         |
 | List                      | ✗    |       |                       |                         |
 | Map                       | ✗    |       |                       |                         |
