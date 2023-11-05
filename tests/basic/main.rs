@@ -269,11 +269,19 @@ pub async fn async_basic_test_0() {
 pub fn v0_file_test() {
     let path = basic_path("demo-11-zlib.orc");
     let reader = new_arrow_reader_root(&path);
-    let _expected_row_count = reader.total_row_count();
+    let expected_row_count = reader.total_row_count();
     let batches = reader.collect::<Result<Vec<_>, _>>().unwrap();
-    let _total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
-    // TODO: not reading entire file, debug
-    // assert_eq!(expected_row_count as usize, total_rows);
+    let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+    assert_eq!(expected_row_count as usize, total_rows);
+}
+
+#[tokio::test]
+pub async fn v0_file_test_async() {
+    let path = basic_path("demo-11-zlib.orc");
+    let reader = new_arrow_stream_reader_root(&path).await;
+    let batches = reader.try_collect::<Vec<_>>().await.unwrap();
+    let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+    assert_eq!(1_920_800, total_rows);
 }
 
 #[test]
