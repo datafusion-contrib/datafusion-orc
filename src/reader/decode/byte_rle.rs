@@ -9,11 +9,9 @@ const MIN_REPEAT_SIZE: usize = 3;
 pub struct ByteRleIter<R: Read> {
     reader: R,
     literals: [u8; MAX_LITERAL_SIZE],
-    next_byte: Option<u8>,
     num_literals: usize,
     used: usize,
     repeat: bool,
-    min_repeat_size: usize,
     remaining: usize,
 }
 
@@ -22,11 +20,9 @@ impl<R: Read> ByteRleIter<R> {
         Self {
             reader,
             literals: [0u8; MAX_LITERAL_SIZE],
-            next_byte: None,
             num_literals: 0,
             used: 0,
             repeat: false,
-            min_repeat_size: MIN_REPEAT_SIZE,
             remaining: length,
         }
     }
@@ -36,11 +32,7 @@ impl<R: Read> ByteRleIter<R> {
     }
 
     fn read_byte(&mut self) -> Result<u8> {
-        if let Some(byt) = self.next_byte.take() {
-            Ok(byt)
-        } else {
-            read_u8(&mut self.reader)
-        }
+        read_u8(&mut self.reader)
     }
 
     fn read_values(&mut self) -> Result<()> {
@@ -48,7 +40,7 @@ impl<R: Read> ByteRleIter<R> {
         self.used = 0;
         if control < 0x80 {
             self.repeat = true;
-            self.num_literals = control as usize + self.min_repeat_size;
+            self.num_literals = control as usize + MIN_REPEAT_SIZE;
             let val = self.read_byte()?;
             self.literals[0] = val;
         } else {
