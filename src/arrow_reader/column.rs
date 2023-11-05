@@ -180,6 +180,10 @@ impl Column {
     pub fn kind(&self) -> crate::proto::r#type::Kind {
         self.column.kind()
     }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
 }
 
 pub struct NullableIterator<T> {

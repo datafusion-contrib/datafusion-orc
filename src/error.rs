@@ -5,6 +5,7 @@ use arrow::error::ArrowError;
 pub use snafu::prelude::*;
 use snafu::Location;
 
+use crate::proto;
 use crate::proto::r#type::Kind;
 
 #[derive(Debug, Snafu)]
@@ -51,6 +52,13 @@ pub enum Error {
 
     #[snafu(display("Invalid column : {:?}", name))]
     InvalidColumn { location: Location, name: String },
+
+    #[snafu(display("Invalid encoding for column '{}': {:?}", name, encoding))]
+    InvalidColumnEncoding {
+        location: Location,
+        name: String,
+        encoding: proto::column_encoding::Kind,
+    },
 
     #[snafu(display("Failed to convert to timestamp"))]
     InvalidTimestamp { location: Location },
@@ -108,3 +116,9 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+impl From<Error> for ArrowError {
+    fn from(value: Error) -> Self {
+        ArrowError::ExternalError(Box::new(value))
+    }
+}
