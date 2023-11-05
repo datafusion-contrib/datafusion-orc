@@ -58,6 +58,30 @@ impl<R: Read> ArrowReader<R> {
     }
 }
 
+impl<R: Read + Seek> ArrowReader<R> {
+    fn try_advance_stripe(&mut self) -> Option<std::result::Result<RecordBatch, ArrowError>> {
+        match self
+            .cursor
+            .next()
+            .map(|r| r.map_err(|err| ArrowError::ExternalError(Box::new(err))))
+        {
+            Some(Ok(stripe)) => {
+                match NaiveStripeDecoder::new(stripe, self.schema_ref.clone(), self.batch_size)
+                    .map_err(|err| ArrowError::ExternalError(Box::new(err)))
+                {
+                    Ok(decoder) => {
+                        self.current_stripe = Some(Box::new(decoder));
+                        self.next()
+                    }
+                    Err(err) => Some(Err(err)),
+                }
+            }
+            Some(Err(err)) => Some(Err(err)),
+            None => None,
+        }
+    }
+}
+
 pub fn create_arrow_schema<R>(cursor: &Cursor<R>) -> Schema {
     let metadata = cursor
         .reader
@@ -93,28 +117,16 @@ impl<R: Read + Seek> Iterator for ArrowReader<R> {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.current_stripe.as_mut() {
-            Some(stripe) => stripe
-                .next()
-                .map(|batch| batch.map_err(|err| ArrowError::ExternalError(Box::new(err)))),
-            None => match self
-                .cursor
-                .next()
-                .map(|r| r.map_err(|err| ArrowError::ExternalError(Box::new(err))))
-            {
-                Some(Ok(stripe)) => {
-                    match NaiveStripeDecoder::new(stripe, self.schema_ref.clone(), self.batch_size)
-                        .map_err(|err| ArrowError::ExternalError(Box::new(err)))
-                    {
-                        Ok(decoder) => {
-                            self.current_stripe = Some(Box::new(decoder));
-                            self.next()
-                        }
-                        Err(err) => Some(Err(err)),
-                    }
+            Some(stripe) => {
+                match stripe
+                    .next()
+                    .map(|batch| batch.map_err(|err| ArrowError::ExternalError(Box::new(err))))
+                {
+                    Some(rb) => Some(rb),
+                    None => self.try_advance_stripe(),
                 }
-                Some(Err(err)) => Some(Err(err)),
-                None => None,
-            },
+            }
+            None => self.try_advance_stripe(),
         }
     }
 }
