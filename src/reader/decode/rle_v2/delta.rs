@@ -5,14 +5,14 @@ use snafu::ensure;
 use crate::error::{self, Result};
 use crate::reader::decode::rle_v2::RleReaderV2;
 use crate::reader::decode::util::{
-    read_ints, read_u8, read_vslong, read_vulong, rle_v2_delta_bit_width,
+    read_ints, read_u8, read_vslong, read_vulong, rle_v2_direct_bit_width,
 };
 
 impl<R: Read> RleReaderV2<R> {
     pub fn read_delta_values(&mut self, header: u8) -> Result<()> {
         let mut fb = (header >> 1) & 0x1f;
         if fb != 0 {
-            fb = rle_v2_delta_bit_width(fb);
+            fb = rle_v2_direct_bit_width(fb);
         }
         let reader = &mut self.reader;
         let signed = self.signed;
@@ -26,7 +26,7 @@ impl<R: Read> RleReaderV2<R> {
         let first_val = if signed {
             read_vslong(reader)?
         } else {
-            read_vulong(reader)?
+            read_vulong(reader)? as i64
         };
 
         self.literals[self.num_literals] = first_val;
