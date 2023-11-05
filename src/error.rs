@@ -76,8 +76,8 @@ pub enum Error {
         source: ArrowError,
     },
 
-    #[snafu(display("Unsigned VInt"))]
-    EofUnsignedVInt { location: Location },
+    #[snafu(display("Varint being decoded is too large"))]
+    VarintTooLarge { location: Location },
 
     #[snafu(display("unexpected: {}", msg))]
     Unexpected { location: Location, msg: String },

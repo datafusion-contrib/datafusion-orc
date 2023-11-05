@@ -38,5 +38,4 @@ tokio = { version = "1.28", features = [
     "macros",
     "rt",
 ] }
-zigzag = "0.1"
 zstd = "0.12"

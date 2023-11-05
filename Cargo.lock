@@ -447,7 +447,6 @@ dependencies = [
  "snafu",
  "snap",
  "tokio",
- "zigzag",
  "zstd",
 ]
 
@@ -1532,15 +1531,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.38",
-]
-
-[[package]]
-name = "zigzag"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70b40401a28d86ce16a330b863b86fd7dbee4d7c940587ab09ab8c019f9e3fdf"
-dependencies = [
- "num-traits",
 ]
 
 [[package]]
