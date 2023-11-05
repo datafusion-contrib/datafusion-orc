@@ -15,7 +15,7 @@ use arrow::record_batch::{RecordBatch, RecordBatchReader};
 use chrono::{Datelike, NaiveDate, NaiveDateTime};
 use snafu::{OptionExt, ResultExt};
 
-use self::column::tinyint::new_u8_iter;
+use self::column::tinyint::new_i8_iter;
 use self::column::Column;
 use crate::arrow_reader::column::binary::new_binary_iterator;
 use crate::arrow_reader::column::boolean::new_boolean_iter;
@@ -118,7 +118,7 @@ pub enum Decoder {
     Int64(NullableIterator<i64>),
     Int32(NullableIterator<i64>),
     Int16(NullableIterator<i64>),
-    Uint8(NullableIterator<u8>),
+    Int8(NullableIterator<i8>),
     Boolean(NullableIterator<bool>),
     Float32(NullableIterator<f32>),
     Float64(NullableIterator<f64>),
@@ -209,7 +209,7 @@ macro_rules! impl_decode_next_batch_cast {
 impl_decode_next_batch_cast!(i64, Int64Type);
 impl_decode_next_batch_cast!(i32, Int32Type);
 impl_decode_next_batch_cast!(i16, Int16Type);
-impl_decode_next_batch!(u8);
+impl_decode_next_batch!(i8);
 impl_decode_next_batch!(f32);
 impl_decode_next_batch!(f64);
 
@@ -241,7 +241,7 @@ impl NaiveStripeDecoder {
                     Some(array) => fields.push(array),
                     None => break,
                 },
-                Decoder::Uint8(decoder) => match decode_next_batch_u8(decoder, chunk)? {
+                Decoder::Int8(decoder) => match decode_next_batch_i8(decoder, chunk)? {
                     Some(array) => fields.push(array),
                     None => break,
                 },
@@ -335,7 +335,7 @@ impl NaiveStripeDecoder {
         for col in &stripe.columns {
             let decoder = match col.kind() {
                 crate::proto::r#type::Kind::Boolean => Decoder::Boolean(new_boolean_iter(col)?),
-                crate::proto::r#type::Kind::Byte => Decoder::Uint8(new_u8_iter(col)?),
+                crate::proto::r#type::Kind::Byte => Decoder::Int8(new_i8_iter(col)?),
                 crate::proto::r#type::Kind::Short => Decoder::Int16(new_i64_iter(col)?),
                 crate::proto::r#type::Kind::Int => Decoder::Int32(new_i64_iter(col)?),
                 crate::proto::r#type::Kind::Long => Decoder::Int64(new_i64_iter(col)?),

@@ -22,7 +22,7 @@ Read [Apache ORC](https://orc.apache.org/) in Rust.
 | Float, Double             | ✓    |       | f32, f64              | Float32, Float64        |
 | String, Char, and VarChar | ✓    |       | string                | Utf8                    |
 | Boolean                   | ✓    |       | bool                  | Boolean                 |
-| TinyInt                   | ✓    |       | u8                    | Uint8                   |
+| TinyInt                   | ✓    |       | i8                    | Int8                    |
 | Binary                    | ✓    |       | Vec\<u8\>             | Binary                  |
 | Decimal                   | ✗    |       |                       |                         |
 | Date                      | ✓    |       | chrono::NaiveDate     | Date32                  |
