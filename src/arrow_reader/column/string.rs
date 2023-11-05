@@ -8,13 +8,13 @@ use crate::arrow_reader::column::{Column, NullableIterator};
 use crate::error::{self, Result};
 use crate::proto::column_encoding::Kind as ColumnEncodingKind;
 use crate::proto::stream::Kind;
-use crate::reader::decode::rle_v2::RleReaderV2;
 use crate::reader::decode::variable_length::Values;
+use crate::reader::decode::RleVersion;
 use crate::reader::decompress::Decompressor;
 
 pub struct DirectStringIterator {
     values: Box<Values<Decompressor>>,
-    lengths: Box<dyn Iterator<Item = Result<i64>> + Send>,
+    lengths: Box<dyn Iterator<Item = Result<u64>> + Send>,
 }
 
 impl Iterator for DirectStringIterator {
@@ -35,7 +35,10 @@ impl Iterator for DirectStringIterator {
     }
 }
 
-pub fn new_direct_string_iter(column: &Column) -> Result<NullableIterator<String>> {
+pub fn new_direct_string_iter(
+    column: &Column,
+    rle_version: RleVersion,
+) -> Result<NullableIterator<String>> {
     let present = new_present_iter(column)?.collect::<Result<Vec<_>>>()?;
 
     let values = column
@@ -47,7 +50,7 @@ pub fn new_direct_string_iter(column: &Column) -> Result<NullableIterator<String
     let lengths = column
         .stream(Kind::Length)
         .transpose()?
-        .map(|reader| Box::new(RleReaderV2::try_new(reader, false, true)))
+        .map(|reader| rle_version.get_unsigned_rle_reader(reader))
         .context(error::InvalidColumnSnafu { name: &column.name })?;
 
     Ok(NullableIterator {
@@ -56,7 +59,10 @@ pub fn new_direct_string_iter(column: &Column) -> Result<NullableIterator<String
     })
 }
 
-pub fn new_arrow_dict_string_decoder(column: &Column) -> Result<(NullableIterator<i64>, ArrayRef)> {
+pub fn new_arrow_dict_string_decoder(
+    column: &Column,
+    rle_version: RleVersion,
+) -> Result<(NullableIterator<u64>, ArrayRef)> {
     let present = new_present_iter(column)?.collect::<Result<Vec<_>>>()?;
 
     // DictionaryData
@@ -69,7 +75,7 @@ pub fn new_arrow_dict_string_decoder(column: &Column) -> Result<(NullableIterato
     let lengths = column
         .stream(Kind::Length)
         .transpose()?
-        .map(|reader| Box::new(RleReaderV2::try_new(reader, false, true)))
+        .map(|reader| rle_version.get_unsigned_rle_reader(reader))
         .context(error::InvalidColumnSnafu { name: &column.name })?;
     let iter = DirectStringIterator { values, lengths };
 
@@ -78,7 +84,7 @@ pub fn new_arrow_dict_string_decoder(column: &Column) -> Result<(NullableIterato
     let indexes = column
         .stream(Kind::Data)
         .transpose()?
-        .map(|reader| Box::new(RleReaderV2::try_new(reader, false, true)))
+        .map(|reader| rle_version.get_unsigned_rle_reader(reader))
         .context(error::InvalidColumnSnafu { name: &column.name })?;
 
     let dictionary = StringArray::from_iter(values.into_iter().map(Some));
@@ -94,19 +100,19 @@ pub fn new_arrow_dict_string_decoder(column: &Column) -> Result<(NullableIterato
 
 pub enum StringDecoder {
     Direct(NullableIterator<String>),
-    Dictionary((NullableIterator<i64>, ArrayRef)),
+    Dictionary((NullableIterator<u64>, ArrayRef)),
 }
 
 impl StringDecoder {
     pub fn new(column: &Column) -> Result<Self> {
-        match column.encoding().kind() {
-            ColumnEncodingKind::DirectV2 => {
-                Ok(StringDecoder::Direct(new_direct_string_iter(column)?))
-            }
-            ColumnEncodingKind::DictionaryV2 => Ok(StringDecoder::Dictionary(
-                new_arrow_dict_string_decoder(column)?,
+        let kind = column.encoding().kind();
+        match kind {
+            ColumnEncodingKind::Direct | ColumnEncodingKind::DirectV2 => Ok(StringDecoder::Direct(
+                new_direct_string_iter(column, kind.into())?,
             )),
-            other => unimplemented!("{other:?}"),
+            ColumnEncodingKind::Dictionary | ColumnEncodingKind::DictionaryV2 => Ok(
+                StringDecoder::Dictionary(new_arrow_dict_string_decoder(column, kind.into())?),
+            ),
         }
     }
 }

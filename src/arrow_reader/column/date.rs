@@ -5,7 +5,7 @@ use crate::arrow_reader::column::present::new_present_iter;
 use crate::arrow_reader::column::{Column, NullableIterator};
 use crate::error::{self, Result};
 use crate::proto::stream::Kind;
-use crate::reader::decode::rle_v2::RleReaderV2;
+use crate::reader::decode::get_direct_signed_rle_reader;
 
 pub const UNIX_EPOCH_FROM_CE: i32 = 719_163;
 
@@ -43,8 +43,8 @@ pub fn new_date_iter(column: &Column) -> Result<NullableIterator<NaiveDate>> {
     let data = column
         .stream(Kind::Data)
         .transpose()?
-        .map(|reader| Box::new(RleReaderV2::try_new(reader, true, true)))
-        .context(error::InvalidColumnSnafu { name: &column.name })?;
+        .map(|reader| get_direct_signed_rle_reader(column, reader))
+        .context(error::InvalidColumnSnafu { name: &column.name })??;
 
     Ok(NullableIterator {
         present: Box::new(present.into_iter()),

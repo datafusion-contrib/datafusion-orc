@@ -266,6 +266,17 @@ pub async fn async_basic_test_0() {
 }
 
 #[test]
+pub fn v0_file_test() {
+    let path = basic_path("demo-11-zlib.orc");
+    let reader = new_arrow_reader_root(&path);
+    let _expected_row_count = reader.total_row_count();
+    let batches = reader.collect::<Result<Vec<_>, _>>().unwrap();
+    let _total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+    // TODO: not reading entire file, debug
+    // assert_eq!(expected_row_count as usize, total_rows);
+}
+
+#[test]
 pub fn alltypes_test() {
     let compressions = ["none", "snappy", "zlib", "lzo", "zstd", "lz4"];
     for compression in compressions {

@@ -12,6 +12,18 @@ pub fn read_u8(reader: &mut impl Read) -> Result<u8> {
     Ok(byte[0])
 }
 
+/// Like [`read_u8()`] but returns `Ok(None)` if reader has reached EOF
+#[inline]
+pub fn try_read_u8(reader: &mut impl Read) -> Result<Option<u8>> {
+    let mut byte = [0];
+    let length = reader.read(&mut byte).context(error::IoSnafu)?;
+    if length == 0 {
+        Ok(None)
+    } else {
+        Ok(Some(byte[0]))
+    }
+}
+
 pub fn bytes_to_long_be<R: Read>(r: &mut R, mut n: usize) -> Result<i64> {
     let mut out: i64 = 0;
 
