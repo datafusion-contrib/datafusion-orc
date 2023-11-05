@@ -1,13 +1,17 @@
 use crate::arrow_reader::column::Column;
+use crate::arrow_reader::Stripe;
 use crate::error::Result;
 use crate::proto::stream::Kind;
 use crate::reader::decode::boolean_rle::BooleanIter;
 
-pub fn new_present_iter(column: &Column) -> Result<Box<dyn Iterator<Item = Result<bool>>>> {
+pub fn new_present_iter(
+    column: &Column,
+    stripe: &Stripe,
+) -> Result<Box<dyn Iterator<Item = Result<bool>>>> {
     let rows = column.number_of_rows as usize;
-    let iter = column
-        .stream(Kind::Present)
-        .transpose()?
+    let iter = stripe
+        .stream_map
+        .get(column, Kind::Present)
         .map(|reader| {
             Box::new(BooleanIter::new(reader, rows)) as Box<dyn Iterator<Item = Result<bool>>>
         })
