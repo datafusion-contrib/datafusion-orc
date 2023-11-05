@@ -23,7 +23,7 @@ data = {
     "utf8_decrease": ["eeeee", "dddd", "ccc", "bb", "a"],
     "timestamp_simple": [datetime.datetime(2023, 4, 1, 20, 15, 30, 2000), datetime.datetime.fromtimestamp(int('1629617204525777000')/1000000000), datetime.datetime(2023, 1, 1), datetime.datetime(2023, 2, 1), datetime.datetime(2023, 3, 1)],
     "date_simple": [datetime.date(2023, 4, 1), datetime.date(2023, 3, 1), datetime.date(2023, 1, 1), datetime.date(2023, 2, 1), datetime.date(2023, 3, 1)],
-    "tinyint_simple": [0, None, 1, 128, 255]
+    "tinyint_simple": [-1, None, 1, 127, -127]
 }
 
 def infer_schema(data):
