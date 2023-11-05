@@ -275,6 +275,15 @@ pub fn v0_file_test() {
     assert_eq!(expected_row_count as usize, total_rows);
 }
 
+#[tokio::test]
+pub async fn v0_file_test_async() {
+    let path = basic_path("demo-11-zlib.orc");
+    let reader = new_arrow_stream_reader_root(&path).await;
+    let batches = reader.try_collect::<Vec<_>>().await.unwrap();
+    let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+    assert_eq!(1_920_800, total_rows);
+}
+
 #[test]
 pub fn alltypes_test() {
     let compressions = ["none", "snappy", "zlib", "lzo", "zstd", "lz4"];
