@@ -5,14 +5,14 @@ use crate::arrow_reader::column::present::new_present_iter;
 use crate::arrow_reader::column::{Column, NullableIterator};
 use crate::error::{self, Result};
 use crate::proto::stream::Kind;
-use crate::reader::decode::rle_v2::RleReaderV2;
+use crate::reader::decode::{get_direct_signed_rle_reader, get_direct_unsigned_rle_reader};
 
 // TIMESTAMP_BASE is 1 January 2015, the base value for all timestamp values.
 const TIMESTAMP_BASE: i64 = 1420070400;
 
 pub struct TimestampIterator {
     data: Box<dyn Iterator<Item = Result<i64>> + Send>,
-    secondary: Box<dyn Iterator<Item = Result<i64>> + Send>,
+    secondary: Box<dyn Iterator<Item = Result<u64>> + Send>,
 }
 
 impl Iterator for TimestampIterator {
@@ -50,14 +50,14 @@ pub fn new_timestamp_iter(column: &Column) -> Result<NullableIterator<NaiveDateT
     let data = column
         .stream(Kind::Data)
         .transpose()?
-        .map(|reader| Box::new(RleReaderV2::try_new(reader, true, true)))
-        .context(error::InvalidColumnSnafu { name: &column.name })?;
+        .map(|reader| get_direct_signed_rle_reader(column, reader))
+        .context(error::InvalidColumnSnafu { name: &column.name })??;
 
     let secondary = column
         .stream(Kind::Secondary)
         .transpose()?
-        .map(|reader| Box::new(RleReaderV2::try_new(reader, false, true)))
-        .context(error::InvalidColumnSnafu { name: &column.name })?;
+        .map(|reader| get_direct_unsigned_rle_reader(column, reader))
+        .context(error::InvalidColumnSnafu { name: &column.name })??;
 
     Ok(NullableIterator {
         present: Box::new(present.into_iter()),

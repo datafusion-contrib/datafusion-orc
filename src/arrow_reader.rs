@@ -9,6 +9,7 @@ use arrow::array::{
 };
 use arrow::datatypes::{
     Date32Type, Int16Type, Int32Type, Int64Type, Schema, SchemaRef, TimestampNanosecondType,
+    UInt64Type,
 };
 use arrow::error::ArrowError;
 use arrow::record_batch::{RecordBatch, RecordBatchReader};
@@ -50,6 +51,10 @@ impl<R: Read> ArrowReader<R> {
             current_stripe: None,
             batch_size,
         }
+    }
+
+    pub fn total_row_count(&self) -> u64 {
+        self.cursor.reader.metadata().footer.number_of_rows()
     }
 }
 
@@ -288,7 +293,7 @@ impl NaiveStripeDecoder {
                     StringDecoder::Dictionary((indexes, dictionary)) => {
                         match indexes.collect_chunk(chunk).transpose()? {
                             Some(indexes) => {
-                                fields.push(Arc::new(DictionaryArray::<Int64Type>::new(
+                                fields.push(Arc::new(DictionaryArray::<UInt64Type>::new(
                                     indexes.into(),
                                     dictionary.clone(),
                                 )));

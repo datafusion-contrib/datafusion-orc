@@ -18,7 +18,7 @@ use crate::arrow_reader::column::present::new_present_iter;
 use crate::arrow_reader::column::{Column, NullableIterator};
 use crate::error;
 use crate::proto::stream::Kind;
-use crate::reader::decode::rle_v2::RleReaderV2;
+use crate::reader::decode::get_direct_unsigned_rle_reader;
 use crate::reader::decode::variable_length::Values;
 use crate::reader::decompress::Decompressor;
 
@@ -33,8 +33,8 @@ pub fn new_binary_iterator(column: &Column) -> error::Result<NullableIterator<Ve
     let lengths = column
         .stream(Kind::Length)
         .transpose()?
-        .map(|reader| Box::new(RleReaderV2::try_new(reader, false, true)))
-        .context(error::InvalidColumnSnafu { name: &column.name })?;
+        .map(|reader| get_direct_unsigned_rle_reader(column, reader))
+        .context(error::InvalidColumnSnafu { name: &column.name })??;
 
     Ok(NullableIterator {
         present: Box::new(null_mask.into_iter()),
@@ -44,7 +44,7 @@ pub fn new_binary_iterator(column: &Column) -> error::Result<NullableIterator<Ve
 
 pub struct DirectBinaryIterator {
     values: Box<Values<Decompressor>>,
-    lengths: Box<dyn Iterator<Item = error::Result<i64>> + Send>,
+    lengths: Box<dyn Iterator<Item = error::Result<u64>> + Send>,
 }
 
 impl Iterator for DirectBinaryIterator {
