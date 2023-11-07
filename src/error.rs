@@ -29,6 +29,12 @@ pub enum Error {
     #[snafu(display("Out of sepc, message: {}", msg))]
     OutOfSpec { msg: String, location: Location },
 
+    #[snafu(display("failed to new string builder: {}", source))]
+    StringBuilder {
+        source: arrow::error::ArrowError,
+        location: Location,
+    },
+
     #[snafu(display("Failed to decode float, source: {}", source))]
     DecodeFloat {
         location: Location,

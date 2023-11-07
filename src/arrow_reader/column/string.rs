@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
-use arrow::array::{ArrayRef, StringArray};
+use arrow::array::StringArray;
 use snafu::{OptionExt, ResultExt};
 
 use crate::arrow_reader::column::present::new_present_iter;
 use crate::arrow_reader::column::{Column, NullableIterator};
+use crate::arrow_reader::Stripe;
 use crate::error::{self, Result};
 use crate::proto::column_encoding::Kind as ColumnEncodingKind;
 use crate::proto::stream::Kind;
@@ -38,18 +39,19 @@ impl Iterator for DirectStringIterator {
 pub fn new_direct_string_iter(
     column: &Column,
     rle_version: RleVersion,
+    stripe: &Stripe,
 ) -> Result<NullableIterator<String>> {
-    let present = new_present_iter(column)?.collect::<Result<Vec<_>>>()?;
+    let present = new_present_iter(column, stripe)?.collect::<Result<Vec<_>>>()?;
 
-    let values = column
-        .stream(Kind::Data)
-        .transpose()?
+    let values = stripe
+        .stream_map
+        .get(column, Kind::Data)
         .map(|reader| Box::new(Values::new(reader, vec![])))
         .context(error::InvalidColumnSnafu { name: &column.name })?;
 
-    let lengths = column
-        .stream(Kind::Length)
-        .transpose()?
+    let lengths = stripe
+        .stream_map
+        .get(column, Kind::Length)
         .map(|reader| rle_version.get_unsigned_rle_reader(reader))
         .context(error::InvalidColumnSnafu { name: &column.name })?;
 
@@ -62,28 +64,29 @@ pub fn new_direct_string_iter(
 pub fn new_arrow_dict_string_decoder(
     column: &Column,
     rle_version: RleVersion,
-) -> Result<(NullableIterator<u64>, ArrayRef)> {
-    let present = new_present_iter(column)?.collect::<Result<Vec<_>>>()?;
+    stripe: &Stripe,
+) -> Result<(NullableIterator<u64>, Arc<StringArray>)> {
+    let present = new_present_iter(column, stripe)?.collect::<Result<Vec<_>>>()?;
 
     // DictionaryData
-    let values = column
-        .stream(Kind::DictionaryData)
-        .transpose()?
+    let values = stripe
+        .stream_map
+        .get(column, Kind::DictionaryData)
         .map(|reader| Box::new(Values::new(reader, vec![])))
         .context(error::InvalidColumnSnafu { name: &column.name })?;
 
-    let lengths = column
-        .stream(Kind::Length)
-        .transpose()?
+    let lengths = stripe
+        .stream_map
+        .get(column, Kind::Length)
         .map(|reader| rle_version.get_unsigned_rle_reader(reader))
         .context(error::InvalidColumnSnafu { name: &column.name })?;
     let iter = DirectStringIterator { values, lengths };
 
     let values = iter.collect::<Result<Vec<_>>>()?;
 
-    let indexes = column
-        .stream(Kind::Data)
-        .transpose()?
+    let indexes = stripe
+        .stream_map
+        .get(column, Kind::Data)
         .map(|reader| rle_version.get_unsigned_rle_reader(reader))
         .context(error::InvalidColumnSnafu { name: &column.name })?;
 
@@ -100,19 +103,24 @@ pub fn new_arrow_dict_string_decoder(
 
 pub enum StringDecoder {
     Direct(NullableIterator<String>),
-    Dictionary((NullableIterator<u64>, ArrayRef)),
+    Dictionary((NullableIterator<u64>, Arc<StringArray>)),
 }
 
 impl StringDecoder {
-    pub fn new(column: &Column) -> Result<Self> {
+    pub fn new(column: &Column, stripe: &Stripe) -> Result<Self> {
         let kind = column.encoding().kind();
+
         match kind {
             ColumnEncodingKind::Direct | ColumnEncodingKind::DirectV2 => Ok(StringDecoder::Direct(
-                new_direct_string_iter(column, kind.into())?,
+                new_direct_string_iter(column, kind.into(), stripe)?,
             )),
-            ColumnEncodingKind::Dictionary | ColumnEncodingKind::DictionaryV2 => Ok(
-                StringDecoder::Dictionary(new_arrow_dict_string_decoder(column, kind.into())?),
-            ),
+            ColumnEncodingKind::Dictionary | ColumnEncodingKind::DictionaryV2 => {
+                Ok(StringDecoder::Dictionary(new_arrow_dict_string_decoder(
+                    column,
+                    kind.into(),
+                    stripe,
+                )?))
+            }
         }
     }
 }

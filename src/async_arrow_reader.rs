@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::Formatter;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -13,7 +14,7 @@ use tokio::io::{AsyncRead, AsyncSeek};
 
 use crate::arrow_reader::column::Column;
 use crate::arrow_reader::{
-    create_arrow_schema, Cursor, NaiveStripeDecoder, Stripe, DEFAULT_BATCH_SIZE,
+    create_arrow_schema, Cursor, NaiveStripeDecoder, StreamMap, Stripe, DEFAULT_BATCH_SIZE,
 };
 use crate::error::Result;
 use crate::proto::StripeInformation;
@@ -196,7 +197,21 @@ impl Stripe {
         //TODO(weny): add tz
         let mut columns = Vec::with_capacity(column_defs.len());
         for (name, typ) in column_defs.iter() {
-            columns.push(Column::new_async(r, compression, name, typ, &footer, &info).await?);
+            columns.push(Column::new(name, typ, &footer, &info));
+        }
+
+        let mut stream_map = HashMap::new();
+        let mut stream_offset = info.offset();
+        for stream in &footer.streams {
+            let length = stream.length();
+            let column_id = stream.column();
+            let kind = stream.kind();
+            let data = Column::read_stream_async(r, stream_offset, length as usize).await?;
+
+            // TODO(weny): filter out unused streams.
+            stream_map.insert((column_id, kind), data);
+
+            stream_offset += length;
         }
 
         Ok(Stripe {
@@ -204,6 +219,10 @@ impl Stripe {
             columns,
             stripe_offset: stripe,
             info,
+            stream_map: Arc::new(StreamMap {
+                inner: stream_map,
+                compression,
+            }),
         })
     }
 }

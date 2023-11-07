@@ -16,23 +16,28 @@ use snafu::OptionExt;
 
 use crate::arrow_reader::column::present::new_present_iter;
 use crate::arrow_reader::column::{Column, NullableIterator};
+use crate::arrow_reader::Stripe;
 use crate::error;
 use crate::proto::stream::Kind;
 use crate::reader::decode::get_direct_unsigned_rle_reader;
 use crate::reader::decode::variable_length::Values;
 use crate::reader::decompress::Decompressor;
 
-pub fn new_binary_iterator(column: &Column) -> error::Result<NullableIterator<Vec<u8>>> {
-    let null_mask = new_present_iter(column)?.collect::<error::Result<Vec<_>>>()?;
+pub fn new_binary_iterator(
+    column: &Column,
+    stripe: &Stripe,
+) -> error::Result<NullableIterator<Vec<u8>>> {
+    let null_mask = new_present_iter(column, stripe)?.collect::<error::Result<Vec<_>>>()?;
 
-    let values = column
-        .stream(Kind::Data)
-        .transpose()?
+    let values = stripe
+        .stream_map
+        .get(column, Kind::Data)
         .map(|reader| Box::new(Values::new(reader, vec![])))
         .context(error::InvalidColumnSnafu { name: &column.name })?;
-    let lengths = column
-        .stream(Kind::Length)
-        .transpose()?
+
+    let lengths = stripe
+        .stream_map
+        .get(column, Kind::Length)
         .map(|reader| get_direct_unsigned_rle_reader(column, reader))
         .context(error::InvalidColumnSnafu { name: &column.name })??;
 

@@ -38,6 +38,8 @@ def infer_schema(data):
             dt = "boolean"
         elif dt == str:
             dt = "string"
+        elif dt == dict: 
+            dt = infer_schema(value[0])
         elif key.startswith("timestamp"):
             dt = "timestamp"
         elif key.startswith("date"):
@@ -84,6 +86,17 @@ def _write(
         reader = pyorc.Reader(f)
         list(reader)
 
+nested_struct = {
+    "nest": [
+        (1.0,True),
+        (3.0,None),
+        (None,None),
+        None,
+        (-3.0,None)
+    ],
+}
+
+_write("struct<nest:struct<a:float,b:boolean>>", nested_struct, "nested_struct.orc")
 
 _write(
     infer_schema(data),

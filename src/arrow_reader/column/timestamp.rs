@@ -3,6 +3,7 @@ use snafu::OptionExt;
 
 use crate::arrow_reader::column::present::new_present_iter;
 use crate::arrow_reader::column::{Column, NullableIterator};
+use crate::arrow_reader::Stripe;
 use crate::error::{self, Result};
 use crate::proto::stream::Kind;
 use crate::reader::decode::{get_direct_signed_rle_reader, get_direct_unsigned_rle_reader};
@@ -44,18 +45,21 @@ impl Iterator for TimestampIterator {
     }
 }
 
-pub fn new_timestamp_iter(column: &Column) -> Result<NullableIterator<NaiveDateTime>> {
-    let present = new_present_iter(column)?.collect::<Result<Vec<_>>>()?;
+pub fn new_timestamp_iter(
+    column: &Column,
+    stripe: &Stripe,
+) -> Result<NullableIterator<NaiveDateTime>> {
+    let present = new_present_iter(column, stripe)?.collect::<Result<Vec<_>>>()?;
 
-    let data = column
-        .stream(Kind::Data)
-        .transpose()?
+    let data = stripe
+        .stream_map
+        .get(column, Kind::Data)
         .map(|reader| get_direct_signed_rle_reader(column, reader))
         .context(error::InvalidColumnSnafu { name: &column.name })??;
 
-    let secondary = column
-        .stream(Kind::Secondary)
-        .transpose()?
+    let secondary = stripe
+        .stream_map
+        .get(column, Kind::Secondary)
         .map(|reader| get_direct_unsigned_rle_reader(column, reader))
         .context(error::InvalidColumnSnafu { name: &column.name })??;
 
