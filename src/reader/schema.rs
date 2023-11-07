@@ -1,7 +1,8 @@
 use std::sync::{Arc, Mutex, Weak};
 
-use arrow::datatypes::{DataType, Field};
+use arrow::datatypes::{DataType, Field, Fields, UnionFields, UnionMode};
 use lazy_static::lazy_static;
+use snafu::ensure;
 
 use crate::error::{self, Result};
 use crate::proto::r#type::Kind;
@@ -33,7 +34,8 @@ impl Category {
 }
 
 pub fn create_field((name, typ): (&str, &Arc<TypeDescription>)) -> Field {
-    match typ.inner.lock().unwrap().category.kind {
+    let kind = typ.kind();
+    match kind {
         Kind::Boolean => Field::new(name, DataType::Boolean, true),
         Kind::Byte => Field::new(name, DataType::Int8, true),
         Kind::Short => Field::new(name, DataType::Int16, true),
@@ -49,10 +51,46 @@ pub fn create_field((name, typ): (&str, &Arc<TypeDescription>)) -> Field {
             DataType::Timestamp(arrow::datatypes::TimeUnit::Nanosecond, None),
             true,
         ),
-        Kind::List => todo!(),
-        Kind::Map => todo!(),
-        Kind::Struct => todo!(),
-        Kind::Union => todo!(),
+        Kind::List => {
+            let children = typ.children();
+            assert_eq!(children.len(), 1);
+
+            let (name, typ) = &children[0];
+            let value = create_field((name, typ));
+
+            Field::new(name, DataType::List(Arc::new(value)), true)
+        }
+        Kind::Map => {
+            let children = typ.children();
+            assert_eq!(children.len(), 2);
+
+            let (name, typ) = &children[1];
+            let value = create_field((name, typ));
+
+            Field::new(name, DataType::Map(Arc::new(value), false), true)
+        }
+        Kind::Struct => {
+            let children = typ.children();
+            let mut fields = Vec::with_capacity(children.len());
+            for (name, child) in &children {
+                fields.push(create_field((name, child)));
+            }
+
+            Field::new(name, DataType::Struct(Fields::from(fields)), true)
+        }
+        Kind::Union => {
+            let children = typ.children();
+            let mut fields = Vec::with_capacity(children.len());
+            for (idx, (name, child)) in children.iter().enumerate() {
+                fields.push((idx as i8, Arc::new(create_field((name, child)))));
+            }
+
+            Field::new(
+                name,
+                DataType::Union(UnionFields::from_iter(fields), UnionMode::Sparse),
+                true,
+            )
+        }
         Kind::Decimal => {
             let inner = typ.inner.lock().unwrap();
             Field::new(
@@ -122,6 +160,16 @@ impl TypeDescription {
 
     pub fn kind(&self) -> Kind {
         self.inner.lock().unwrap().category.kind
+    }
+
+    pub fn children(&self) -> Vec<(String, Arc<TypeDescription>)> {
+        let inner = self.inner.lock().unwrap();
+
+        let children = inner.children.clone().unwrap_or_default();
+
+        let names = inner.field_names.clone();
+
+        names.into_iter().zip(children).collect()
     }
 }
 
@@ -220,12 +268,54 @@ pub fn create_schema(types: &[Type], root_column: usize) -> Result<Arc<TypeDescr
 
         // FIXME(weny): Test propose
         Kind::Binary => Ok(Arc::new(TypeDescription::new(BINARY.clone(), root_column))),
-        Kind::List => Ok(Arc::new(TypeDescription::new(ARRAY.clone(), root_column))),
-        Kind::Map => Ok(Arc::new(TypeDescription::new(MAP.clone(), root_column))),
-        Kind::Union => Ok(Arc::new(TypeDescription::new(
-            UNIONTYPE.clone(),
-            root_column,
-        ))),
+        Kind::List => {
+            let sub_types = &root.subtypes;
+            ensure!(
+                sub_types.len() == 1,
+                error::UnexpectedSnafu {
+                    msg: format!("unexpected number of subtypes for list: {:?}", sub_types)
+                }
+            );
+
+            let td = Arc::new(TypeDescription::new(ARRAY.clone(), root_column));
+            let fields = &root.field_names;
+            for (idx, column) in sub_types.iter().enumerate() {
+                let child = create_schema(types, *column as usize)?;
+                td.add_field(fields[idx].to_string(), child);
+            }
+
+            Ok(td)
+        }
+        Kind::Map => {
+            let sub_types = &root.subtypes;
+            ensure!(
+                sub_types.len() == 2,
+                error::UnexpectedSnafu {
+                    msg: format!("unexpected number of subtypes for map: {:?}", sub_types)
+                }
+            );
+
+            let td = Arc::new(TypeDescription::new(MAP.clone(), root_column));
+            let fields = &root.field_names;
+            for (idx, column) in sub_types.iter().enumerate() {
+                let child = create_schema(types, *column as usize)?;
+                td.add_field(fields[idx].to_string(), child);
+            }
+
+            Ok(td)
+        }
+        Kind::Union => {
+            let td = Arc::new(TypeDescription::new(UNIONTYPE.clone(), root_column));
+
+            let sub_types = &root.subtypes;
+            let fields = &root.field_names;
+            for (idx, column) in sub_types.iter().enumerate() {
+                let child = create_schema(types, *column as usize)?;
+                td.add_field(fields[idx].to_string(), child);
+            }
+
+            Ok(td)
+        }
         Kind::Decimal => Ok(Arc::new(TypeDescription::new(DECIMAL.clone(), root_column))),
         Kind::TimestampInstant => todo!(),
     }

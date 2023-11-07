@@ -5,17 +5,25 @@ use std::io::{Read, Seek};
 use std::sync::Arc;
 
 use arrow::array::{
-    ArrayRef, BinaryArray, BooleanArray, DictionaryArray, PrimitiveArray, StringArray,
+    Array, ArrayBuilder, ArrayRef, BinaryArray, BinaryBuilder, BooleanArray, BooleanBuilder,
+    Date32Array, Date32Builder, Float32Array, Float32Builder, Float64Builder, Int16Array,
+    Int16Builder, Int32Array, Int32Builder, Int64Array, Int64Builder, Int8Array, Int8Builder,
+    PrimitiveBuilder, StringArray, StringBuilder, StringDictionaryBuilder, StructBuilder,
+    TimestampNanosecondBuilder,
 };
+use arrow::array::{Float64Array, TimestampNanosecondArray};
 use arrow::datatypes::{
-    Date32Type, Int16Type, Int32Type, Int64Type, Schema, SchemaRef, TimestampNanosecondType,
-    UInt64Type,
+    Date32Type, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, Schema,
+    SchemaRef, TimestampNanosecondType, UInt64Type,
 };
+use arrow::datatypes::{Field, TimeUnit};
 use arrow::error::ArrowError;
 use arrow::record_batch::{RecordBatch, RecordBatchReader};
+use bytes::Bytes;
 use chrono::{Datelike, NaiveDate, NaiveDateTime};
 use snafu::{OptionExt, ResultExt};
 
+use self::column::struct_column::new_struct_iter;
 use self::column::tinyint::new_i8_iter;
 use self::column::Column;
 use crate::arrow_reader::column::binary::new_binary_iterator;
@@ -24,11 +32,13 @@ use crate::arrow_reader::column::date::{new_date_iter, UNIX_EPOCH_FROM_CE};
 use crate::arrow_reader::column::float::{new_f32_iter, new_f64_iter};
 use crate::arrow_reader::column::int::new_i64_iter;
 use crate::arrow_reader::column::string::StringDecoder;
+use crate::arrow_reader::column::struct_column::StructDecoder;
 use crate::arrow_reader::column::timestamp::new_timestamp_iter;
 use crate::arrow_reader::column::NullableIterator;
 use crate::error::{self, Result};
+use crate::proto::stream::Kind;
 use crate::proto::{StripeFooter, StripeInformation};
-use crate::reader::decompress::Compression;
+use crate::reader::decompress::{Compression, Decompressor};
 use crate::reader::schema::{create_field, TypeDescription};
 use crate::reader::Reader;
 
@@ -143,6 +153,507 @@ pub enum Decoder {
     Date(NullableIterator<NaiveDate>),
     String(StringDecoder),
     Binary(NullableIterator<Vec<u8>>),
+    Struct(StructDecoder),
+}
+
+macro_rules! impl_append_struct_value {
+    ($typ:ident) => {
+        paste::item! {
+
+            fn [<append_struct_ $typ:lower _ value>](
+                idx: usize,
+                column: &ArrayRef,
+                builder: &mut StructBuilder,
+            ) {
+                type Array = [<$typ Array>];
+                type Builder = [<$typ Builder>];
+
+                let values = column.as_any().downcast_ref::<Array>().unwrap();
+                for value in values {
+                    builder
+                        .field_builder::<Builder>(idx)
+                        .unwrap()
+                        .append_option(value);
+                }
+            }
+        }
+    };
+}
+
+impl_append_struct_value!(Boolean);
+impl_append_struct_value!(Int8);
+impl_append_struct_value!(Int16);
+impl_append_struct_value!(Int32);
+impl_append_struct_value!(Int64);
+impl_append_struct_value!(Float32);
+impl_append_struct_value!(Float64);
+impl_append_struct_value!(Date32);
+impl_append_struct_value!(Binary);
+impl_append_struct_value!(TimestampNanosecond);
+
+macro_rules! impl_append_struct_null {
+    ($typ:ident) => {
+        paste::item! {
+
+            fn [<append_struct_ $typ:lower _ null>](
+                idx: usize,
+                builder: &mut StructBuilder,
+            ) {
+                type Builder = [<$typ Builder>];
+
+                builder
+                    .field_builder::<Builder>(idx)
+                    .unwrap()
+                    .append_null();
+            }
+        }
+    };
+}
+
+impl_append_struct_null!(Boolean);
+impl_append_struct_null!(Int8);
+impl_append_struct_null!(Int16);
+impl_append_struct_null!(Int32);
+impl_append_struct_null!(Int64);
+impl_append_struct_null!(Float32);
+impl_append_struct_null!(Float64);
+impl_append_struct_null!(Date32);
+impl_append_struct_null!(Binary);
+impl_append_struct_null!(TimestampNanosecond);
+
+pub fn append_struct_value(
+    idx: usize,
+    column: &ArrayRef,
+    builder: &mut StructBuilder,
+    decoder: &Decoder,
+) -> Result<()> {
+    match column.data_type() {
+        arrow::datatypes::DataType::Boolean => {
+            append_struct_boolean_value(idx, column, builder);
+        }
+        arrow::datatypes::DataType::Int8 => append_struct_int8_value(idx, column, builder),
+        arrow::datatypes::DataType::Int16 => append_struct_int16_value(idx, column, builder),
+        arrow::datatypes::DataType::Int32 => append_struct_int32_value(idx, column, builder),
+        arrow::datatypes::DataType::Int64 => append_struct_int64_value(idx, column, builder),
+        arrow::datatypes::DataType::Float32 => append_struct_float32_value(idx, column, builder),
+        arrow::datatypes::DataType::Float64 => append_struct_float64_value(idx, column, builder),
+        arrow::datatypes::DataType::Timestamp(TimeUnit::Nanosecond, _) => {
+            append_struct_timestampnanosecond_value(idx, column, builder)
+        }
+        &arrow::datatypes::DataType::Binary => append_struct_binary_value(idx, column, builder),
+        arrow::datatypes::DataType::Utf8 => {
+            let values = column.as_any().downcast_ref::<StringArray>().unwrap();
+
+            match decoder {
+                Decoder::String(decoder) => match decoder {
+                    StringDecoder::Direct(_) => {
+                        for value in values {
+                            builder
+                                .field_builder::<StringBuilder>(idx)
+                                .unwrap()
+                                .append_option(value);
+                        }
+                    }
+                    StringDecoder::Dictionary(_) => {
+                        for value in values {
+                            builder
+                                .field_builder::<StringDictionaryBuilder<UInt64Type>>(idx)
+                                .unwrap()
+                                .append_option(value);
+                        }
+                    }
+                },
+                _ => unreachable!(),
+            }
+        }
+        arrow::datatypes::DataType::Date32 => append_struct_date32_value(idx, column, builder),
+
+        _ => unreachable!(),
+    }
+
+    Ok(())
+}
+
+pub fn append_struct_null(
+    idx: usize,
+    field: &Field,
+    builder: &mut StructBuilder,
+    decoder: &Decoder,
+) -> Result<()> {
+    match field.data_type() {
+        arrow::datatypes::DataType::Boolean => {
+            append_struct_boolean_null(idx, builder);
+        }
+        arrow::datatypes::DataType::Int8 => append_struct_int8_null(idx, builder),
+        arrow::datatypes::DataType::Int16 => append_struct_int16_null(idx, builder),
+        arrow::datatypes::DataType::Int32 => append_struct_int32_null(idx, builder),
+        arrow::datatypes::DataType::Int64 => append_struct_int64_null(idx, builder),
+        arrow::datatypes::DataType::Float32 => append_struct_float32_null(idx, builder),
+        arrow::datatypes::DataType::Float64 => append_struct_float64_null(idx, builder),
+        arrow::datatypes::DataType::Timestamp(TimeUnit::Nanosecond, _) => {
+            append_struct_timestampnanosecond_null(idx, builder)
+        }
+        &arrow::datatypes::DataType::Binary => append_struct_binary_null(idx, builder),
+        arrow::datatypes::DataType::Utf8 => match decoder {
+            Decoder::String(decoder) => match decoder {
+                StringDecoder::Direct(_) => {
+                    builder
+                        .field_builder::<StringBuilder>(idx)
+                        .unwrap()
+                        .append_null();
+                }
+                StringDecoder::Dictionary(_) => {
+                    builder
+                        .field_builder::<StringDictionaryBuilder<UInt64Type>>(idx)
+                        .unwrap()
+                        .append_null();
+                }
+            },
+            _ => unreachable!(),
+        },
+        arrow::datatypes::DataType::Date32 => append_struct_date32_null(idx, builder),
+
+        _ => unreachable!(),
+    }
+
+    Ok(())
+}
+
+impl Decoder {
+    pub fn new_array_builder(&self, capacity: usize) -> Box<dyn ArrayBuilder> {
+        match self {
+            Decoder::Int64(_) => Box::new(PrimitiveBuilder::<Int64Type>::with_capacity(capacity)),
+            Decoder::Int32(_) => Box::new(PrimitiveBuilder::<Int32Type>::with_capacity(capacity)),
+            Decoder::Int16(_) => Box::new(PrimitiveBuilder::<Int16Type>::with_capacity(capacity)),
+            Decoder::Int8(_) => Box::new(PrimitiveBuilder::<Int8Type>::with_capacity(capacity)),
+            Decoder::Boolean(_) => Box::new(BooleanBuilder::with_capacity(capacity)),
+            Decoder::Float32(_) => {
+                Box::new(PrimitiveBuilder::<Float32Type>::with_capacity(capacity))
+            }
+            Decoder::Float64(_) => {
+                Box::new(PrimitiveBuilder::<Float64Type>::with_capacity(capacity))
+            }
+            Decoder::Timestamp(_) => Box::new(
+                PrimitiveBuilder::<TimestampNanosecondType>::with_capacity(capacity),
+            ),
+            Decoder::Date(_) => Box::new(PrimitiveBuilder::<Date32Type>::with_capacity(capacity)),
+            Decoder::String(decoder) => match decoder {
+                StringDecoder::Direct(_) => Box::new(StringBuilder::new()),
+                StringDecoder::Dictionary((_, dictionary)) => {
+                    // Safety: keys won't overflow
+                    let builder = StringDictionaryBuilder::<UInt64Type>::new_with_dictionary(
+                        capacity, dictionary,
+                    )
+                    .unwrap();
+
+                    Box::new(builder)
+                }
+            },
+            Decoder::Binary(_) => Box::new(BinaryBuilder::new()),
+            Decoder::Struct(decoder) => decoder.new_builder(capacity),
+        }
+    }
+
+    // returns true if has more.
+    pub fn append_value(
+        &mut self,
+        builder: &mut Box<dyn ArrayBuilder>,
+        chunk: usize,
+    ) -> Result<bool> {
+        let mut has_more = false;
+        match self {
+            Decoder::Int64(iter) => {
+                let values = iter.collect_chunk(chunk).transpose()?;
+
+                if let Some(values) = values {
+                    has_more = true;
+                    let builder = builder.as_any_mut().downcast_mut::<Int64Builder>().unwrap();
+
+                    for value in values {
+                        builder.append_option(value);
+                    }
+                }
+            }
+            Decoder::Int32(iter) => {
+                let values = iter.collect_chunk(chunk).transpose()?;
+
+                if let Some(values) = values {
+                    has_more = true;
+                    let builder = builder.as_any_mut().downcast_mut::<Int32Builder>().unwrap();
+
+                    for value in values {
+                        builder.append_option(value.map(|v| v as i32));
+                    }
+                }
+            }
+            Decoder::Int16(iter) => {
+                let values = iter.collect_chunk(chunk).transpose()?;
+
+                if let Some(values) = values {
+                    has_more = true;
+                    let builder = builder.as_any_mut().downcast_mut::<Int16Builder>().unwrap();
+
+                    for value in values {
+                        builder.append_option(value.map(|v| v as i16));
+                    }
+                }
+            }
+            Decoder::Int8(iter) => {
+                let values = iter.collect_chunk(chunk).transpose()?;
+                if let Some(values) = values {
+                    has_more = true;
+                    let builder = builder.as_any_mut().downcast_mut::<Int8Builder>().unwrap();
+
+                    for value in values {
+                        builder.append_option(value);
+                    }
+                }
+            }
+            Decoder::Boolean(iter) => {
+                let values = iter.collect_chunk(chunk).transpose()?;
+                if let Some(values) = values {
+                    has_more = true;
+                    let builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<BooleanBuilder>()
+                        .unwrap();
+                    for value in values {
+                        builder.append_option(value);
+                    }
+                }
+            }
+            Decoder::Float32(iter) => {
+                let values = iter.collect_chunk(chunk).transpose()?;
+                if let Some(values) = values {
+                    has_more = true;
+                    let builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<Float32Builder>()
+                        .unwrap();
+
+                    for value in values {
+                        builder.append_option(value);
+                    }
+                }
+            }
+            Decoder::Float64(iter) => {
+                let values = iter.collect_chunk(chunk).transpose()?;
+                if let Some(values) = values {
+                    has_more = true;
+                    let builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<Float64Builder>()
+                        .unwrap();
+                    for value in values {
+                        builder.append_option(value);
+                    }
+                }
+            }
+            Decoder::Timestamp(iter) => {
+                let values = iter.collect_chunk(chunk).transpose()?;
+                if let Some(values) = values {
+                    has_more = true;
+                    let builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<TimestampNanosecondBuilder>()
+                        .unwrap();
+                    for value in values {
+                        builder
+                            .append_option(value.map(|value| value.timestamp_nanos_opt().unwrap()));
+                    }
+                }
+            }
+            Decoder::Date(iter) => {
+                let values = iter.collect_chunk(chunk).transpose()?;
+                if let Some(values) = values {
+                    has_more = true;
+                    let builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<Date32Builder>()
+                        .unwrap();
+
+                    for value in values {
+                        builder.append_option(
+                            value.map(|value| value.num_days_from_ce() - UNIX_EPOCH_FROM_CE),
+                        );
+                    }
+                }
+            }
+            Decoder::String(decoder) => match decoder {
+                StringDecoder::Direct(iter) => {
+                    let values = iter.collect_chunk(chunk).transpose()?;
+                    if let Some(values) = values {
+                        has_more = true;
+                        let builder = builder
+                            .as_any_mut()
+                            .downcast_mut::<StringBuilder>()
+                            .unwrap();
+                        for value in values {
+                            builder.append_option(value);
+                        }
+                    }
+                }
+                StringDecoder::Dictionary((indexes, dictionary)) => {
+                    let values = indexes.collect_chunk(chunk).transpose()?;
+                    if let Some(indexes) = values {
+                        has_more = true;
+
+                        let builder = builder
+                            .as_any_mut()
+                            .downcast_mut::<StringDictionaryBuilder<UInt64Type>>()
+                            .unwrap();
+                        for index in indexes {
+                            builder.append_option(index.map(|idx| dictionary.value(idx as usize)));
+                        }
+                    }
+                }
+            },
+            Decoder::Binary(iter) => {
+                let values = iter.collect_chunk(chunk).transpose()?;
+                if let Some(values) = values {
+                    has_more = true;
+                    let builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<BinaryBuilder>()
+                        .unwrap();
+
+                    for value in values {
+                        builder.append_option(value);
+                    }
+                }
+            }
+            Decoder::Struct(iter) => {
+                let builder = builder
+                    .as_any_mut()
+                    .downcast_mut::<StructBuilder>()
+                    .unwrap();
+
+                let values = iter.collect_chunk(builder, chunk).transpose()?;
+
+                if let Some(values) = values {
+                    has_more = true;
+
+                    for (idx, column) in values.iter().enumerate() {
+                        append_struct_value(idx, column, builder, &iter.decoders[idx])?;
+                    }
+                }
+            }
+        }
+
+        Ok(has_more)
+    }
+
+    pub fn append_null(&self, builder: &mut Box<dyn ArrayBuilder>) -> Result<()> {
+        match self {
+            Decoder::Int64(_) => {
+                builder
+                    .as_any_mut()
+                    .downcast_mut::<Int64Builder>()
+                    .unwrap()
+                    .append_null();
+            }
+            Decoder::Int32(_) => {
+                builder
+                    .as_any_mut()
+                    .downcast_mut::<Int32Builder>()
+                    .unwrap()
+                    .append_null();
+            }
+            Decoder::Int16(_) => {
+                builder
+                    .as_any_mut()
+                    .downcast_mut::<Int16Builder>()
+                    .unwrap()
+                    .append_null();
+            }
+            Decoder::Int8(_) => {
+                builder
+                    .as_any_mut()
+                    .downcast_mut::<Int8Builder>()
+                    .unwrap()
+                    .append_null();
+            }
+            Decoder::Boolean(_) => {
+                builder
+                    .as_any_mut()
+                    .downcast_mut::<BooleanBuilder>()
+                    .unwrap()
+                    .append_null();
+            }
+            Decoder::Float32(_) => {
+                builder
+                    .as_any_mut()
+                    .downcast_mut::<Float32Builder>()
+                    .unwrap()
+                    .append_null();
+            }
+            Decoder::Float64(_) => {
+                builder
+                    .as_any_mut()
+                    .downcast_mut::<Float64Builder>()
+                    .unwrap()
+                    .append_null();
+            }
+            Decoder::Timestamp(_) => {
+                builder
+                    .as_any_mut()
+                    .downcast_mut::<TimestampNanosecondBuilder>()
+                    .unwrap()
+                    .append_null();
+            }
+            Decoder::Date(_) => {
+                builder
+                    .as_any_mut()
+                    .downcast_mut::<Date32Builder>()
+                    .unwrap()
+                    .append_null();
+            }
+            Decoder::String(_) => {
+                builder
+                    .as_any_mut()
+                    .downcast_mut::<StringBuilder>()
+                    .unwrap()
+                    .append_null();
+            }
+            Decoder::Binary(_) => {
+                builder
+                    .as_any_mut()
+                    .downcast_mut::<BinaryBuilder>()
+                    .unwrap()
+                    .append_null();
+            }
+            Decoder::Struct(iter) => {
+                let builder = builder
+                    .as_any_mut()
+                    .downcast_mut::<StructBuilder>()
+                    .unwrap();
+
+                builder.append_null();
+
+                for (idx, filed) in iter.fields.iter().enumerate() {
+                    append_struct_null(idx, filed, builder, &iter.decoders[idx])?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl BatchDecoder for Decoder {
+    fn next_batch(&mut self, chunk: usize) -> Result<Option<ArrayRef>> {
+        let mut builder = self.new_array_builder(chunk);
+
+        let _ = !self.append_value(&mut builder, chunk)?;
+
+        let output = builder.finish();
+
+        if output.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(output))
+        }
+    }
 }
 
 pub struct NaiveStripeDecoder {
@@ -159,7 +670,9 @@ impl Iterator for NaiveStripeDecoder {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.number_of_rows {
-            let record = self.decode_next_batch().transpose()?;
+            let record = self
+                .decode_next_batch(self.number_of_rows - self.index)
+                .transpose()?;
             self.index += self.batch_size;
             Some(record)
         } else {
@@ -168,161 +681,56 @@ impl Iterator for NaiveStripeDecoder {
     }
 }
 
-impl<T> NullableIterator<T> {
-    fn collect_chunk(&mut self, chunk: usize) -> Option<Result<Vec<Option<T>>>> {
-        let mut buf = Vec::with_capacity(chunk);
-        for _ in 0..chunk {
-            match self.next() {
-                Some(Ok(value)) => {
-                    buf.push(value);
-                }
-                Some(Err(err)) => return Some(Err(err)),
-                None => break,
-            }
-        }
-
-        Some(Ok(buf))
-    }
+pub trait BatchDecoder: Send {
+    fn next_batch(&mut self, chunk: usize) -> Result<Option<ArrayRef>>;
 }
 
-macro_rules! impl_decode_next_batch {
-    ($name:ident) => {
-        paste::item! {
-            fn [<decode_next_batch_ $name>](
-                decoder: &mut NullableIterator<$name>,
-                chunk: usize,
-            ) -> Result<Option<ArrayRef>> {
-                Ok(match decoder.collect_chunk(chunk).transpose()? {
-                    Some(values) => Some(Arc::new(PrimitiveArray::from(values)) as ArrayRef),
-                    None => None,
-                })
-            }
+pub fn reader_factory(col: &Column, stripe: &Stripe) -> Result<Decoder> {
+    let reader = match col.kind() {
+        crate::proto::r#type::Kind::Boolean => Decoder::Boolean(new_boolean_iter(col, stripe)?),
+        crate::proto::r#type::Kind::Byte => Decoder::Int8(new_i8_iter(col, stripe)?),
+        crate::proto::r#type::Kind::Short => Decoder::Int16(new_i64_iter(col, stripe)?),
+        crate::proto::r#type::Kind::Int => Decoder::Int32(new_i64_iter(col, stripe)?),
+        crate::proto::r#type::Kind::Long => Decoder::Int64(new_i64_iter(col, stripe)?),
+        crate::proto::r#type::Kind::Float => Decoder::Float32(new_f32_iter(col, stripe)?),
+        crate::proto::r#type::Kind::Double => Decoder::Float64(new_f64_iter(col, stripe)?),
+        crate::proto::r#type::Kind::String => Decoder::String(StringDecoder::new(col, stripe)?),
+        crate::proto::r#type::Kind::Binary => Decoder::Binary(new_binary_iterator(col, stripe)?),
+        crate::proto::r#type::Kind::Timestamp => {
+            Decoder::Timestamp(new_timestamp_iter(col, stripe)?)
         }
+        crate::proto::r#type::Kind::List => todo!(),
+        crate::proto::r#type::Kind::Map => todo!(),
+        crate::proto::r#type::Kind::Struct => Decoder::Struct(new_struct_iter(col, stripe)?),
+        crate::proto::r#type::Kind::Union => todo!(),
+        crate::proto::r#type::Kind::Decimal => todo!(),
+        crate::proto::r#type::Kind::Date => Decoder::Date(new_date_iter(col, stripe)?),
+        crate::proto::r#type::Kind::Varchar => Decoder::String(StringDecoder::new(col, stripe)?),
+        crate::proto::r#type::Kind::Char => Decoder::String(StringDecoder::new(col, stripe)?),
+        crate::proto::r#type::Kind::TimestampInstant => todo!(),
     };
-}
 
-macro_rules! impl_decode_next_batch_cast {
-    ($target:ident,$tp:ident) => {
-        paste::item! {
-            fn [<decode_next_batch_ $target>](
-                decoder: &mut NullableIterator<i64>,
-                chunk: usize,
-            ) -> Result<Option<ArrayRef>> {
-                Ok(match decoder.collect_chunk(chunk).transpose()? {
-                    Some(values) => {
-                        let values = values
-                            .into_iter()
-                            .map(|v| v.map(|v| v as $target))
-                            .collect::<Vec<_>>();
-                        Some(Arc::new(PrimitiveArray::<$tp>::from(values)) as ArrayRef)
-                    }
-                    None => None,
-                })
-            }
-        }
-    };
+    Ok(reader)
 }
-
-impl_decode_next_batch_cast!(i64, Int64Type);
-impl_decode_next_batch_cast!(i32, Int32Type);
-impl_decode_next_batch_cast!(i16, Int16Type);
-impl_decode_next_batch!(i8);
-impl_decode_next_batch!(f32);
-impl_decode_next_batch!(f64);
 
 impl NaiveStripeDecoder {
-    fn decode_next_batch(&mut self) -> Result<Option<RecordBatch>> {
-        let chunk = self.batch_size;
+    fn inner_decode_next_batch(&mut self, remaining: usize) -> Result<Vec<ArrayRef>> {
+        let chunk = self.batch_size.min(remaining);
 
         let mut fields = Vec::with_capacity(self.stripe.columns.len());
 
         for decoder in &mut self.decoders {
-            match decoder {
-                Decoder::Boolean(decoder) => {
-                    match decoder.collect_chunk(chunk).transpose()? {
-                        Some(values) => {
-                            fields.push(Arc::new(BooleanArray::from(values)) as ArrayRef)
-                        }
-                        None => break,
-                    };
-                }
-                Decoder::Int64(decoder) => match decode_next_batch_i64(decoder, chunk)? {
-                    Some(array) => fields.push(array),
-                    None => break,
-                },
-                Decoder::Int32(decoder) => match decode_next_batch_i32(decoder, chunk)? {
-                    Some(array) => fields.push(array),
-                    None => break,
-                },
-                Decoder::Int16(decoder) => match decode_next_batch_i16(decoder, chunk)? {
-                    Some(array) => fields.push(array),
-                    None => break,
-                },
-                Decoder::Int8(decoder) => match decode_next_batch_i8(decoder, chunk)? {
-                    Some(array) => fields.push(array),
-                    None => break,
-                },
-                Decoder::Float32(decoder) => match decode_next_batch_f32(decoder, chunk)? {
-                    Some(array) => fields.push(array),
-                    None => break,
-                },
-                Decoder::Float64(decoder) => match decode_next_batch_f64(decoder, chunk)? {
-                    Some(array) => fields.push(array),
-                    None => break,
-                },
-                Decoder::Timestamp(decoder) => match decoder.collect_chunk(chunk).transpose()? {
-                    Some(values) => {
-                        let iter = values
-                            .into_iter()
-                            .filter_map(|value| value.map(|value| value.timestamp_nanos_opt()));
-                        fields.push(
-                            Arc::new(PrimitiveArray::<TimestampNanosecondType>::from_iter(iter))
-                                as ArrayRef,
-                        );
-                    }
-                    None => break,
-                },
-                Decoder::Date(decoder) => match decoder.collect_chunk(chunk).transpose()? {
-                    Some(values) => {
-                        let iter = values.into_iter().map(|value| {
-                            value.map(|value| value.num_days_from_ce() - UNIX_EPOCH_FROM_CE)
-                        });
-                        fields.push(
-                            Arc::new(PrimitiveArray::<Date32Type>::from_iter(iter)) as ArrayRef
-                        );
-                    }
-                    None => break,
-                },
-                Decoder::String(decoder) => match decoder {
-                    StringDecoder::Direct(decoder) => {
-                        match decoder.collect_chunk(chunk).transpose()? {
-                            Some(values) => {
-                                fields.push(Arc::new(StringArray::from(values)) as ArrayRef);
-                            }
-                            None => break,
-                        }
-                    }
-                    StringDecoder::Dictionary((indexes, dictionary)) => {
-                        match indexes.collect_chunk(chunk).transpose()? {
-                            Some(indexes) => {
-                                fields.push(Arc::new(DictionaryArray::<UInt64Type>::new(
-                                    indexes.into(),
-                                    dictionary.clone(),
-                                )));
-                            }
-                            None => break,
-                        }
-                    }
-                },
-                Decoder::Binary(binary) => match binary.collect_chunk(chunk).transpose()? {
-                    Some(values) => {
-                        let ref_vec = values.iter().map(|opt| opt.as_deref()).collect::<Vec<_>>();
-                        fields.push(Arc::new(BinaryArray::from_opt_vec(ref_vec)) as ArrayRef);
-                    }
-                    None => break,
-                },
+            match decoder.next_batch(chunk)? {
+                Some(array) => fields.push(array),
+                None => break,
             }
         }
+
+        Ok(fields)
+    }
+
+    fn decode_next_batch(&mut self, remaining: usize) -> Result<Option<RecordBatch>> {
+        let fields = self.inner_decode_next_batch(remaining)?;
 
         if fields.is_empty() {
             Ok(None)
@@ -349,30 +757,9 @@ impl NaiveStripeDecoder {
             .first()
             .map(|c| c.number_of_rows())
             .unwrap_or_default();
+
         for col in &stripe.columns {
-            let decoder = match col.kind() {
-                crate::proto::r#type::Kind::Boolean => Decoder::Boolean(new_boolean_iter(col)?),
-                crate::proto::r#type::Kind::Byte => Decoder::Int8(new_i8_iter(col)?),
-                crate::proto::r#type::Kind::Short => Decoder::Int16(new_i64_iter(col)?),
-                crate::proto::r#type::Kind::Int => Decoder::Int32(new_i64_iter(col)?),
-                crate::proto::r#type::Kind::Long => Decoder::Int64(new_i64_iter(col)?),
-                crate::proto::r#type::Kind::Float => Decoder::Float32(new_f32_iter(col)?),
-                crate::proto::r#type::Kind::Double => Decoder::Float64(new_f64_iter(col)?),
-                crate::proto::r#type::Kind::String => Decoder::String(StringDecoder::new(col)?),
-                crate::proto::r#type::Kind::Binary => Decoder::Binary(new_binary_iterator(col)?),
-                crate::proto::r#type::Kind::Timestamp => {
-                    Decoder::Timestamp(new_timestamp_iter(col)?)
-                }
-                crate::proto::r#type::Kind::List => todo!(),
-                crate::proto::r#type::Kind::Map => todo!(),
-                crate::proto::r#type::Kind::Struct => todo!(),
-                crate::proto::r#type::Kind::Union => todo!(),
-                crate::proto::r#type::Kind::Decimal => todo!(),
-                crate::proto::r#type::Kind::Date => Decoder::Date(new_date_iter(col)?),
-                crate::proto::r#type::Kind::Varchar => Decoder::String(StringDecoder::new(col)?),
-                crate::proto::r#type::Kind::Char => Decoder::String(StringDecoder::new(col)?),
-                crate::proto::r#type::Kind::TimestampInstant => todo!(),
-            };
+            let decoder = reader_factory(col, &stripe)?;
             decoders.push(decoder);
         }
 
@@ -441,12 +828,31 @@ pub struct Stripe {
     pub(crate) columns: Vec<Column>,
     pub(crate) stripe_offset: usize,
     pub(crate) info: StripeInformation,
+    /// <(ColumnId, Kind), Bytes>
+    pub(crate) stream_map: Arc<StreamMap>,
+}
+
+#[derive(Debug)]
+pub struct StreamMap {
+    pub inner: HashMap<(u32, Kind), Bytes>,
+    pub compression: Option<Compression>,
+}
+
+impl StreamMap {
+    pub fn get(&self, column: &Column, kind: Kind) -> Option<Decompressor> {
+        let column_id = column.column_id();
+
+        self.inner
+            .get(&(column_id, kind))
+            .cloned()
+            .map(|data| Decompressor::new(data, self.compression, vec![]))
+    }
 }
 
 impl Stripe {
     pub fn new<R: Read + Seek>(
         r: &mut Reader<R>,
-        columns: &[(String, Arc<TypeDescription>)],
+        column_defs: &[(String, Arc<TypeDescription>)],
         stripe: usize,
         info: StripeInformation,
     ) -> Result<Self> {
@@ -457,16 +863,34 @@ impl Stripe {
             r.metadata().postscript.compression_block_size,
         );
         //TODO(weny): add tz
-        let columns = columns
-            .iter()
-            .map(|(name, typ)| Column::new(r, compression, name, typ, &footer, &info))
-            .collect::<Result<Vec<_>>>()?;
+        let mut columns = Vec::with_capacity(column_defs.len());
+        for (name, typ) in column_defs.iter() {
+            columns.push(Column::new(name, typ, &footer, &info));
+        }
+
+        let mut stream_map = HashMap::new();
+        let mut stream_offset = info.offset();
+        for stream in &footer.streams {
+            let length = stream.length();
+            let column_id = stream.column();
+            let kind = stream.kind();
+            let data = Column::read_stream(r, stream_offset, length as usize)?;
+
+            // TODO(weny): filter out unused streams.
+            stream_map.insert((column_id, kind), data);
+
+            stream_offset += length;
+        }
 
         Ok(Self {
             footer,
             columns,
             stripe_offset: stripe,
             info,
+            stream_map: Arc::new(StreamMap {
+                inner: stream_map,
+                compression,
+            }),
         })
     }
 

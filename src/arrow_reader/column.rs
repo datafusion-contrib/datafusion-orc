@@ -1,6 +1,7 @@
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
 
+use arrow::datatypes::Field;
 use bytes::Bytes;
 use snafu::{OptionExt, ResultExt};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
@@ -8,8 +9,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 use crate::error::{self, Result};
 use crate::proto::stream::Kind;
 use crate::proto::{ColumnEncoding, StripeFooter, StripeInformation};
-use crate::reader::decompress::{Compression, Decompressor};
-use crate::reader::schema::TypeDescription;
+
+use crate::reader::schema::{create_field, TypeDescription};
 use crate::reader::Reader;
 
 pub mod binary;
@@ -19,17 +20,22 @@ pub mod float;
 pub mod int;
 pub mod present;
 pub mod string;
+pub mod struct_column;
 pub mod timestamp;
 pub mod tinyint;
 
 #[derive(Debug)]
 pub struct Column {
-    data: Bytes,
     number_of_rows: u64,
-    compression: Option<Compression>,
     footer: Arc<StripeFooter>,
     name: String,
     column: Arc<TypeDescription>,
+}
+
+impl From<Column> for Field {
+    fn from(value: Column) -> Self {
+        create_field((&value.name, &value.column))
+    }
 }
 
 macro_rules! impl_read_stream {
@@ -98,67 +104,18 @@ impl Column {
         Ok((start, length))
     }
 
-    pub fn new<R: Read + Seek>(
-        reader: &mut Reader<R>,
-        compression: Option<Compression>,
+    pub fn new(
         name: &str,
         column: &Arc<TypeDescription>,
         footer: &Arc<StripeFooter>,
         stripe: &StripeInformation,
-    ) -> Result<Self> {
-        let (start, length) = Column::get_stream_info(name, column, footer, stripe)?;
-        let data = Column::read_stream(reader, start, length)?;
-
-        Ok(Self {
-            data,
+    ) -> Self {
+        Self {
             number_of_rows: stripe.number_of_rows(),
-            compression,
             footer: footer.clone(),
             column: column.clone(),
             name: name.to_string(),
-        })
-    }
-
-    pub async fn new_async<R: AsyncRead + AsyncSeek + Unpin + Send>(
-        reader: &mut Reader<R>,
-        compression: Option<Compression>,
-        name: &str,
-        column: &Arc<TypeDescription>,
-        footer: &Arc<StripeFooter>,
-        stripe: &StripeInformation,
-    ) -> Result<Self> {
-        let (start, length) = Column::get_stream_info(name, column, footer, stripe)?;
-        let data = Column::read_stream_async(reader, start, length).await?;
-
-        Ok(Self {
-            data,
-            number_of_rows: stripe.number_of_rows(),
-            compression,
-            footer: footer.clone(),
-            column: column.clone(),
-            name: name.to_string(),
-        })
-    }
-
-    pub fn stream(&self, kind: Kind) -> Option<Result<Decompressor>> {
-        let mut start = 0; // the start of the stream
-
-        let column_id = self.column.column_id() as u32;
-        self.footer
-            .streams
-            .iter()
-            .filter(|stream| stream.column() == column_id && stream.kind() != Kind::RowIndex)
-            .map(|stream| {
-                start += stream.length() as usize;
-                stream
-            })
-            .find(|stream| stream.kind() == kind)
-            .map(|stream| {
-                let length = stream.length() as usize;
-                let data = self.data.slice((start - length)..start);
-                Decompressor::new(data, self.compression, vec![])
-            })
-            .map(Ok)
+        }
     }
 
     pub fn dictionary_size(&self) -> usize {
@@ -183,6 +140,27 @@ impl Column {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn column_id(&self) -> u32 {
+        self.column.column_id() as u32
+    }
+
+    pub fn children(&self) -> Vec<Column> {
+        let children = self.column.children();
+
+        let mut columns = Vec::with_capacity(children.len());
+
+        for (name, column) in children {
+            columns.push(Column {
+                number_of_rows: self.number_of_rows,
+                footer: self.footer.clone(),
+                name,
+                column,
+            });
+        }
+
+        columns
     }
 }
 
@@ -209,5 +187,26 @@ impl<T> Iterator for NullableIterator<T> {
             }
             None => None,
         }
+    }
+}
+
+impl<T> NullableIterator<T> {
+    pub fn collect_chunk(&mut self, chunk: usize) -> Option<Result<Vec<Option<T>>>> {
+        let mut buf = Vec::with_capacity(chunk);
+        for _ in 0..chunk {
+            match self.next() {
+                Some(Ok(value)) => {
+                    buf.push(value);
+                }
+                Some(Err(err)) => return Some(Err(err)),
+                None => break,
+            }
+        }
+
+        if buf.is_empty() {
+            return None;
+        }
+
+        Some(Ok(buf))
     }
 }
