@@ -6,14 +6,15 @@ use std::sync::Arc;
 
 use arrow::array::{
     Array, ArrayBuilder, ArrayRef, BinaryArray, BinaryBuilder, BooleanArray, BooleanBuilder,
-    Date32Array, Date32Builder, Float32Array, Float32Builder, Float64Builder, Int64Array,
-    Int64Builder, Int8Array, Int8Builder, PrimitiveBuilder, StringArray, StringBuilder,
-    StringDictionaryBuilder, StructBuilder, TimestampNanosecondBuilder,
+    Date32Array, Date32Builder, Float32Array, Float32Builder, Float64Builder, Int16Array,
+    Int16Builder, Int32Array, Int32Builder, Int64Array, Int64Builder, Int8Array, Int8Builder,
+    PrimitiveBuilder, StringArray, StringBuilder, StringDictionaryBuilder, StructBuilder,
+    TimestampNanosecondBuilder,
 };
 use arrow::array::{Float64Array, TimestampNanosecondArray};
 use arrow::datatypes::{
-    Date32Type, Float32Type, Float64Type, Int64Type, Int8Type, Schema, SchemaRef,
-    TimestampNanosecondType, UInt64Type,
+    Date32Type, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, Schema,
+    SchemaRef, TimestampNanosecondType, UInt64Type,
 };
 use arrow::datatypes::{Field, TimeUnit};
 use arrow::error::ArrowError;
@@ -181,6 +182,8 @@ macro_rules! impl_append_struct_value {
 
 impl_append_struct_value!(Boolean);
 impl_append_struct_value!(Int8);
+impl_append_struct_value!(Int16);
+impl_append_struct_value!(Int32);
 impl_append_struct_value!(Int64);
 impl_append_struct_value!(Float32);
 impl_append_struct_value!(Float64);
@@ -209,6 +212,8 @@ macro_rules! impl_append_struct_null {
 
 impl_append_struct_null!(Boolean);
 impl_append_struct_null!(Int8);
+impl_append_struct_null!(Int16);
+impl_append_struct_null!(Int32);
 impl_append_struct_null!(Int64);
 impl_append_struct_null!(Float32);
 impl_append_struct_null!(Float64);
@@ -227,6 +232,8 @@ pub fn append_struct_value(
             append_struct_boolean_value(idx, column, builder);
         }
         arrow::datatypes::DataType::Int8 => append_struct_int8_value(idx, column, builder),
+        arrow::datatypes::DataType::Int16 => append_struct_int16_value(idx, column, builder),
+        arrow::datatypes::DataType::Int32 => append_struct_int32_value(idx, column, builder),
         arrow::datatypes::DataType::Int64 => append_struct_int64_value(idx, column, builder),
         arrow::datatypes::DataType::Float32 => append_struct_float32_value(idx, column, builder),
         arrow::datatypes::DataType::Float64 => append_struct_float64_value(idx, column, builder),
@@ -278,6 +285,8 @@ pub fn append_struct_null(
             append_struct_boolean_null(idx, builder);
         }
         arrow::datatypes::DataType::Int8 => append_struct_int8_null(idx, builder),
+        arrow::datatypes::DataType::Int16 => append_struct_int16_null(idx, builder),
+        arrow::datatypes::DataType::Int32 => append_struct_int32_null(idx, builder),
         arrow::datatypes::DataType::Int64 => append_struct_int64_null(idx, builder),
         arrow::datatypes::DataType::Float32 => append_struct_float32_null(idx, builder),
         arrow::datatypes::DataType::Float64 => append_struct_float64_null(idx, builder),
@@ -314,8 +323,8 @@ impl Decoder {
     pub fn new_array_builder(&self, capacity: usize) -> Box<dyn ArrayBuilder> {
         match self {
             Decoder::Int64(_) => Box::new(PrimitiveBuilder::<Int64Type>::with_capacity(capacity)),
-            Decoder::Int32(_) => Box::new(PrimitiveBuilder::<Int64Type>::with_capacity(capacity)),
-            Decoder::Int16(_) => Box::new(PrimitiveBuilder::<Int64Type>::with_capacity(capacity)),
+            Decoder::Int32(_) => Box::new(PrimitiveBuilder::<Int32Type>::with_capacity(capacity)),
+            Decoder::Int16(_) => Box::new(PrimitiveBuilder::<Int16Type>::with_capacity(capacity)),
             Decoder::Int8(_) => Box::new(PrimitiveBuilder::<Int8Type>::with_capacity(capacity)),
             Decoder::Boolean(_) => Box::new(BooleanBuilder::with_capacity(capacity)),
             Decoder::Float32(_) => {
@@ -370,10 +379,10 @@ impl Decoder {
 
                 if let Some(values) = values {
                     has_more = true;
-                    let builder = builder.as_any_mut().downcast_mut::<Int64Builder>().unwrap();
+                    let builder = builder.as_any_mut().downcast_mut::<Int32Builder>().unwrap();
 
                     for value in values {
-                        builder.append_option(value);
+                        builder.append_option(value.map(|v| v as i32));
                     }
                 }
             }
@@ -382,10 +391,10 @@ impl Decoder {
 
                 if let Some(values) = values {
                     has_more = true;
-                    let builder = builder.as_any_mut().downcast_mut::<Int64Builder>().unwrap();
+                    let builder = builder.as_any_mut().downcast_mut::<Int16Builder>().unwrap();
 
                     for value in values {
-                        builder.append_option(value);
+                        builder.append_option(value.map(|v| v as i16));
                     }
                 }
             }
@@ -546,14 +555,14 @@ impl Decoder {
             Decoder::Int32(_) => {
                 builder
                     .as_any_mut()
-                    .downcast_mut::<Int64Builder>()
+                    .downcast_mut::<Int32Builder>()
                     .unwrap()
                     .append_null();
             }
             Decoder::Int16(_) => {
                 builder
                     .as_any_mut()
-                    .downcast_mut::<Int64Builder>()
+                    .downcast_mut::<Int16Builder>()
                     .unwrap()
                     .append_null();
             }
