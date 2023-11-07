@@ -28,7 +28,7 @@ Read [Apache ORC](https://orc.apache.org/) in Rust.
 | Date                      | ✓    |       | chrono::NaiveDate     | Date32                  |
 | Timestamp                 | ✓    |       | chrono::NaiveDateTime | Timestamp(Nanosecond,_) |
 | Timestamp instant         | ✗    |       |                       |                         |
-| Struct                    | ✗    |       |                       |                         |
+| Struct                    | ✓    |       |                       | Struct                  |
 | List                      | ✗    |       |                       |                         |
 | Map                       | ✗    |       |                       |                         |
 | Union                     | ✗    |       |                       |                         |
