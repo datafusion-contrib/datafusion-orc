@@ -9,14 +9,12 @@ use crate::reader::decode::boolean_rle::BooleanIter;
 
 pub fn new_boolean_iter(column: &Column, stripe: &Stripe) -> Result<NullableIterator<bool>> {
     let present = new_present_iter(column, stripe)?.collect::<Result<Vec<_>>>()?;
-    let rows: usize = present.iter().filter(|&p| *p).count();
 
     let iter = stripe
         .stream_map
         .get(column, Kind::Data)
         .map(|reader| {
-            Box::new(BooleanIter::new(reader, rows))
-                as Box<dyn Iterator<Item = Result<bool>> + Send>
+            Box::new(BooleanIter::new(reader)) as Box<dyn Iterator<Item = Result<bool>> + Send>
         })
         .context(InvalidColumnSnafu { name: &column.name })?;
 
