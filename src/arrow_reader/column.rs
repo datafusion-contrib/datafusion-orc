@@ -18,6 +18,7 @@ pub mod boolean;
 pub mod date;
 pub mod float;
 pub mod int;
+pub mod list;
 pub mod present;
 pub mod string;
 pub mod struct_column;
@@ -34,6 +35,12 @@ pub struct Column {
 
 impl From<Column> for Field {
     fn from(value: Column) -> Self {
+        create_field((&value.name, &value.column))
+    }
+}
+
+impl From<&Column> for Field {
+    fn from(value: &Column) -> Self {
         create_field((&value.name, &value.column))
     }
 }

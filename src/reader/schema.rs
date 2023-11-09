@@ -55,7 +55,7 @@ pub fn create_field((name, typ): (&str, &Arc<TypeDescription>)) -> Field {
             let children = typ.children();
             assert_eq!(children.len(), 1);
 
-            let (name, typ) = &children[0];
+            let (_, typ) = &children[0];
             let value = create_field((name, typ));
 
             Field::new(name, DataType::List(Arc::new(value)), true)
@@ -278,10 +278,11 @@ pub fn create_schema(types: &[Type], root_column: usize) -> Result<Arc<TypeDescr
             );
 
             let td = Arc::new(TypeDescription::new(ARRAY.clone(), root_column));
-            let fields = &root.field_names;
-            for (idx, column) in sub_types.iter().enumerate() {
+
+            for (_, column) in sub_types.iter().enumerate() {
                 let child = create_schema(types, *column as usize)?;
-                td.add_field(fields[idx].to_string(), child);
+                // TODO(weny): remove dummy name.
+                td.add_field("root".to_string(), child);
             }
 
             Ok(td)
