@@ -29,7 +29,13 @@ pub enum Error {
     #[snafu(display("Out of sepc, message: {}", msg))]
     OutOfSpec { msg: String, location: Location },
 
-    #[snafu(display("failed to new string builder: {}", source))]
+    #[snafu(display("Error from map builder: {}", source))]
+    MapBuilder {
+        source: arrow::error::ArrowError,
+        location: Location,
+    },
+
+    #[snafu(display("Failed to create new string builder: {}", source))]
     StringBuilder {
         source: arrow::error::ArrowError,
         location: Location,

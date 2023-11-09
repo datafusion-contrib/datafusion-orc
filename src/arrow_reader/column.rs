@@ -19,6 +19,7 @@ pub mod date;
 pub mod float;
 pub mod int;
 pub mod list;
+pub mod map;
 pub mod present;
 pub mod string;
 pub mod struct_column;
