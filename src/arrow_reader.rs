@@ -8,7 +8,7 @@ use arrow::array::{
     Array, ArrayBuilder, ArrayRef, BinaryArray, BinaryBuilder, BooleanArray, BooleanBuilder,
     Date32Array, Date32Builder, Float32Array, Float32Builder, Float64Builder, Int16Array,
     Int16Builder, Int32Array, Int32Builder, Int64Array, Int64Builder, Int8Array, Int8Builder,
-    ListBuilder, PrimitiveBuilder, StringArray, StringBuilder, StringDictionaryBuilder,
+    ListBuilder, MapBuilder, PrimitiveBuilder, StringArray, StringBuilder, StringDictionaryBuilder,
     StructBuilder, TimestampNanosecondBuilder,
 };
 use arrow::array::{Float64Array, TimestampNanosecondArray};
@@ -24,6 +24,7 @@ use chrono::{Datelike, NaiveDate, NaiveDateTime};
 use snafu::{OptionExt, ResultExt};
 
 use self::column::list::{new_list_iter, ListDecoder};
+use self::column::map::{new_map_iter, MapDecoder};
 use self::column::struct_column::new_struct_iter;
 use self::column::tinyint::new_i8_iter;
 use self::column::Column;
@@ -36,6 +37,7 @@ use crate::arrow_reader::column::string::StringDecoder;
 use crate::arrow_reader::column::struct_column::StructDecoder;
 use crate::arrow_reader::column::timestamp::new_timestamp_iter;
 use crate::arrow_reader::column::NullableIterator;
+use crate::builder::BoxedArrayBuilder;
 use crate::error::{self, Result};
 use crate::proto::stream::Kind;
 use crate::proto::{StripeFooter, StripeInformation};
@@ -156,6 +158,7 @@ pub enum Decoder {
     Binary(NullableIterator<Vec<u8>>),
     Struct(StructDecoder),
     List(ListDecoder),
+    Map(MapDecoder),
 }
 
 macro_rules! impl_append_struct_value {
@@ -321,35 +324,6 @@ pub fn append_struct_null(
     Ok(())
 }
 
-pub struct BoxedArrayBuilder {
-    pub(crate) builder: Box<dyn ArrayBuilder>,
-}
-impl ArrayBuilder for BoxedArrayBuilder {
-    fn len(&self) -> usize {
-        self.builder.len()
-    }
-
-    fn finish(&mut self) -> ArrayRef {
-        self.builder.finish()
-    }
-
-    fn finish_cloned(&self) -> ArrayRef {
-        self.builder.finish_cloned()
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self.builder.as_any()
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self.builder.as_any_mut()
-    }
-
-    fn into_box_any(self: Box<Self>) -> Box<dyn std::any::Any> {
-        self.builder.into_box_any()
-    }
-}
-
 impl Decoder {
     pub fn new_array_builder(&self, capacity: usize) -> Box<dyn ArrayBuilder> {
         match self {
@@ -385,6 +359,15 @@ impl Decoder {
             Decoder::List(decoder) => {
                 let builder = decoder.inner.new_array_builder(capacity);
                 Box::new(ListBuilder::new(BoxedArrayBuilder { builder }))
+            }
+            Decoder::Map(decoder) => {
+                let key = BoxedArrayBuilder {
+                    builder: decoder.key.new_array_builder(capacity),
+                };
+                let value = BoxedArrayBuilder {
+                    builder: decoder.value.new_array_builder(capacity),
+                };
+                Box::new(MapBuilder::new(None, key, value))
             }
         }
     }
@@ -581,6 +564,14 @@ impl Decoder {
 
                 has_more = iter.collect_chunk(builder, chunk).transpose()?.is_some();
             }
+            Decoder::Map(iter) => {
+                let builder = builder
+                    .as_any_mut()
+                    .downcast_mut::<MapBuilder<BoxedArrayBuilder, BoxedArrayBuilder>>()
+                    .unwrap();
+
+                has_more = iter.collect_chunk(builder, chunk).transpose()?.is_some();
+            }
         }
 
         Ok(has_more)
@@ -684,6 +675,13 @@ impl Decoder {
                     .unwrap()
                     .append_null();
             }
+            Decoder::Map(_) => {
+                let _ = builder
+                    .as_any_mut()
+                    .downcast_mut::<MapBuilder<BoxedArrayBuilder, BoxedArrayBuilder>>()
+                    .unwrap()
+                    .append(false);
+            }
         }
 
         Ok(())
@@ -750,7 +748,7 @@ pub fn reader_factory(col: &Column, stripe: &Stripe) -> Result<Decoder> {
             Decoder::Timestamp(new_timestamp_iter(col, stripe)?)
         }
         crate::proto::r#type::Kind::List => Decoder::List(new_list_iter(col, stripe)?),
-        crate::proto::r#type::Kind::Map => todo!(),
+        crate::proto::r#type::Kind::Map => Decoder::Map(new_map_iter(col, stripe)?),
         crate::proto::r#type::Kind::Struct => Decoder::Struct(new_struct_iter(col, stripe)?),
         crate::proto::r#type::Kind::Union => todo!(),
         crate::proto::r#type::Kind::Decimal => todo!(),

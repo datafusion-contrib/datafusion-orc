@@ -110,6 +110,17 @@ nested_array = {
 
 _write("struct<value:array<int>>", nested_array, "nested_array.orc")
 
+nested_map = {
+    "map": [
+            {"zero": 0, "one": 1},
+            None,
+            {"two": 2, "tree": 3},
+            {"one": 1, "two": 2, "nill": None},
+    ],
+}
+
+_write("struct<map:map<string,int>>", nested_map, "nested_map.orc")
+
 
 _write(
     infer_schema(data),

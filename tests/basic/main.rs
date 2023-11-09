@@ -265,6 +265,26 @@ pub fn basic_test_nested_array() {
 }
 
 #[test]
+pub fn basic_test_nested_map() {
+    let path = basic_path("nested_map.orc");
+    let reader = new_arrow_reader_root(&path);
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
+
+    let expected = r#"+--------------------------+
+| map                      |
++--------------------------+
+| {zero: 0, one: 1}        |
+|                          |
+| {two: 2, tree: 3}        |
+| {one: 1, two: 2, nill: } |
++--------------------------+"#;
+    assert_eq!(
+        expected,
+        pretty::pretty_format_batches(&batch).unwrap().to_string()
+    )
+}
+
+#[test]
 pub fn basic_test_0() {
     let path = basic_path("test.orc");
     let reader = new_arrow_reader_root(&path);
