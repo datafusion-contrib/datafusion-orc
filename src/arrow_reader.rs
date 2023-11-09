@@ -8,8 +8,8 @@ use arrow::array::{
     Array, ArrayBuilder, ArrayRef, BinaryArray, BinaryBuilder, BooleanArray, BooleanBuilder,
     Date32Array, Date32Builder, Float32Array, Float32Builder, Float64Builder, Int16Array,
     Int16Builder, Int32Array, Int32Builder, Int64Array, Int64Builder, Int8Array, Int8Builder,
-    PrimitiveBuilder, StringArray, StringBuilder, StringDictionaryBuilder, StructBuilder,
-    TimestampNanosecondBuilder,
+    ListBuilder, PrimitiveBuilder, StringArray, StringBuilder, StringDictionaryBuilder,
+    StructBuilder, TimestampNanosecondBuilder,
 };
 use arrow::array::{Float64Array, TimestampNanosecondArray};
 use arrow::datatypes::{
@@ -23,6 +23,7 @@ use bytes::Bytes;
 use chrono::{Datelike, NaiveDate, NaiveDateTime};
 use snafu::{OptionExt, ResultExt};
 
+use self::column::list::{new_list_iter, ListDecoder};
 use self::column::struct_column::new_struct_iter;
 use self::column::tinyint::new_i8_iter;
 use self::column::Column;
@@ -154,6 +155,7 @@ pub enum Decoder {
     String(StringDecoder),
     Binary(NullableIterator<Vec<u8>>),
     Struct(StructDecoder),
+    List(ListDecoder),
 }
 
 macro_rules! impl_append_struct_value {
@@ -319,6 +321,35 @@ pub fn append_struct_null(
     Ok(())
 }
 
+pub struct BoxedArrayBuilder {
+    pub(crate) builder: Box<dyn ArrayBuilder>,
+}
+impl ArrayBuilder for BoxedArrayBuilder {
+    fn len(&self) -> usize {
+        self.builder.len()
+    }
+
+    fn finish(&mut self) -> ArrayRef {
+        self.builder.finish()
+    }
+
+    fn finish_cloned(&self) -> ArrayRef {
+        self.builder.finish_cloned()
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self.builder.as_any()
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self.builder.as_any_mut()
+    }
+
+    fn into_box_any(self: Box<Self>) -> Box<dyn std::any::Any> {
+        self.builder.into_box_any()
+    }
+}
+
 impl Decoder {
     pub fn new_array_builder(&self, capacity: usize) -> Box<dyn ArrayBuilder> {
         match self {
@@ -351,6 +382,10 @@ impl Decoder {
             },
             Decoder::Binary(_) => Box::new(BinaryBuilder::new()),
             Decoder::Struct(decoder) => decoder.new_builder(capacity),
+            Decoder::List(decoder) => {
+                let builder = decoder.inner.new_array_builder(capacity);
+                Box::new(ListBuilder::new(BoxedArrayBuilder { builder }))
+            }
         }
     }
 
@@ -538,6 +573,14 @@ impl Decoder {
                     }
                 }
             }
+            Decoder::List(iter) => {
+                let builder = builder
+                    .as_any_mut()
+                    .downcast_mut::<ListBuilder<BoxedArrayBuilder>>()
+                    .unwrap();
+
+                has_more = iter.collect_chunk(builder, chunk).transpose()?.is_some();
+            }
         }
 
         Ok(has_more)
@@ -634,6 +677,9 @@ impl Decoder {
                     append_struct_null(idx, filed, builder, &iter.decoders[idx])?;
                 }
             }
+            &Decoder::List(_) => {
+                unreachable!("unreachable append null list")
+            }
         }
 
         Ok(())
@@ -699,7 +745,7 @@ pub fn reader_factory(col: &Column, stripe: &Stripe) -> Result<Decoder> {
         crate::proto::r#type::Kind::Timestamp => {
             Decoder::Timestamp(new_timestamp_iter(col, stripe)?)
         }
-        crate::proto::r#type::Kind::List => todo!(),
+        crate::proto::r#type::Kind::List => Decoder::List(new_list_iter(col, stripe)?),
         crate::proto::r#type::Kind::Map => todo!(),
         crate::proto::r#type::Kind::Struct => Decoder::Struct(new_struct_iter(col, stripe)?),
         crate::proto::r#type::Kind::Union => todo!(),
