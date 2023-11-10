@@ -12,18 +12,16 @@ pub struct ByteRleIter<R: Read> {
     num_literals: usize,
     used: usize,
     repeat: bool,
-    remaining: usize,
 }
 
 impl<R: Read> ByteRleIter<R> {
-    pub fn new(reader: R, length: usize) -> Self {
+    pub fn new(reader: R) -> Self {
         Self {
             reader,
             literals: [0u8; MAX_LITERAL_SIZE],
             num_literals: 0,
             used: 0,
             repeat: false,
-            remaining: length,
         }
     }
 
@@ -59,13 +57,10 @@ impl<R: Read> Iterator for ByteRleIter<R> {
     type Item = Result<u8>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.remaining == 0 {
-            return None;
-        }
         if self.used == self.num_literals {
             match self.read_values() {
                 Ok(_) => {}
-                Err(err) => return Some(Err(err)),
+                Err(_err) => return None,
             }
         }
 
@@ -75,7 +70,6 @@ impl<R: Read> Iterator for ByteRleIter<R> {
             self.literals[self.used]
         };
         self.used += 1;
-        self.remaining -= 1;
         Some(Ok(result))
     }
 }
@@ -90,9 +84,7 @@ mod test {
 
         let data = &mut data.as_ref();
 
-        let iter = ByteRleIter::new(data, 100)
-            .collect::<Result<Vec<_>>>()
-            .unwrap();
+        let iter = ByteRleIter::new(data).collect::<Result<Vec<_>>>().unwrap();
 
         assert_eq!(iter, vec![0; 100]);
 
@@ -100,9 +92,7 @@ mod test {
 
         let data = &mut data.as_ref();
 
-        let iter = ByteRleIter::new(data, 4)
-            .collect::<Result<Vec<_>>>()
-            .unwrap();
+        let iter = ByteRleIter::new(data).collect::<Result<Vec<_>>>().unwrap();
 
         assert_eq!(iter, vec![1; 4]);
 
@@ -110,9 +100,7 @@ mod test {
 
         let data = &mut data.as_ref();
 
-        let iter = ByteRleIter::new(data, 2)
-            .collect::<Result<Vec<_>>>()
-            .unwrap();
+        let iter = ByteRleIter::new(data).collect::<Result<Vec<_>>>().unwrap();
 
         assert_eq!(iter, vec![0x44, 0x45]);
     }
