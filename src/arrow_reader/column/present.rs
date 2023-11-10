@@ -12,9 +12,7 @@ pub fn new_present_iter(
     let iter = stripe
         .stream_map
         .get(column, Kind::Present)
-        .map(|reader| {
-            Box::new(BooleanIter::new(reader, rows)) as Box<dyn Iterator<Item = Result<bool>>>
-        })
+        .map(|reader| Box::new(BooleanIter::new(reader)) as Box<dyn Iterator<Item = Result<bool>>>)
         .unwrap_or_else(|| Box::new(DummyPresentIter::new(rows)));
 
     Ok(iter)

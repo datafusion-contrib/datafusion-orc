@@ -1,88 +1,34 @@
 use std::io::Read;
 
-use snafu::ResultExt;
+use crate::error::Result;
 
-use crate::error::{self, Result};
-use crate::reader::decode::util::read_u8;
-
-#[derive(Debug, Copy, Clone, PartialEq)]
-#[allow(clippy::large_enum_variant)]
-pub enum BooleanRun {
-    Run(u8, u16),
-    Literals([u8; 255]),
-}
-
-pub struct BooleanRleRunIter<R: Read> {
-    reader: R,
-}
-
-impl<R: Read> BooleanRleRunIter<R> {
-    pub fn new(reader: R) -> Self {
-        Self { reader }
-    }
-
-    pub fn into_inner(self) -> R {
-        self.reader
-    }
-}
-
-fn read_literals<R: Read>(reader: &mut R, header: i8) -> Result<[u8; 255]> {
-    let length = (-header) as usize;
-
-    let mut literals = [0u8; 255];
-
-    reader
-        .take(length as u64)
-        .read_exact(&mut literals[..length])
-        .context(error::IoSnafu)?;
-
-    Ok(literals)
-}
-
-impl<R: Read> Iterator for BooleanRleRunIter<R> {
-    type Item = Result<BooleanRun>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        let header = match read_u8(&mut self.reader) {
-            Ok(header) => header as i8,
-            Err(e) => return Some(Err(e)),
-        };
-        if header < 0 {
-            Some(read_literals(&mut self.reader, header).map(BooleanRun::Literals))
-        } else {
-            let length = header as u16 + 3;
-            // this is not ok - it may require more than one byte
-            let value = match read_u8(&mut self.reader) {
-                Ok(value) => value,
-                Err(e) => return Some(Err(e)),
-            };
-            Some(Ok(BooleanRun::Run(value, length)))
-        }
-    }
-}
+use super::byte_rle::ByteRleIter;
 
 pub struct BooleanIter<R: Read> {
-    iter: BooleanRleRunIter<R>,
-    current: Option<BooleanRun>,
-    position: u8,
-    byte_position: usize,
-    remaining: usize,
+    iter: ByteRleIter<R>,
+    data: u8,
+    bits_in_data: usize,
 }
 
 impl<R: Read> BooleanIter<R> {
-    pub fn new(reader: R, length: usize) -> Self {
+    pub fn new(reader: R) -> Self {
         Self {
-            iter: BooleanRleRunIter::new(reader),
-            current: None,
-            position: 0,
-            byte_position: 0,
-            remaining: length,
+            iter: ByteRleIter::new(reader),
+            bits_in_data: 0,
+            data: 0,
         }
     }
 
     pub fn into_inner(self) -> R {
         self.iter.into_inner()
+    }
+
+    pub fn value(&mut self) -> bool {
+        let value = (self.data & 0x80) != 0;
+        self.data <<= 1;
+        self.bits_in_data -= 1;
+
+        value
     }
 }
 
@@ -91,69 +37,20 @@ impl<R: Read> Iterator for BooleanIter<R> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(run) = &self.current {
-            match run {
-                BooleanRun::Run(value, repetitions) => {
-                    let repetitions = *repetitions;
-                    let mask = 128u8 >> self.position;
-                    let result = value & mask == mask;
-                    self.position += 1;
-                    if self.remaining == 0 {
-                        self.current = None;
-                        return None;
-                    } else {
-                        self.remaining -= 1;
-                    }
-                    if self.position == 8 {
-                        if repetitions == 0 {
-                            self.current = None;
-                        } else {
-                            self.current = Some(BooleanRun::Run(*value, repetitions - 1));
-                        }
-                        self.position = 0;
-                    }
-                    Some(Ok(result))
+        // read more data if necessary
+        if self.bits_in_data == 0 {
+            match self.iter.next() {
+                Some(Ok(data)) => {
+                    self.data = data;
+                    self.bits_in_data = 8;
+                    Some(Ok(self.value()))
                 }
-                BooleanRun::Literals(bytes) => {
-                    let mask = 128u8 >> self.position;
-                    let result = bytes[self.byte_position] & mask == mask;
-                    self.position += 1;
-                    if self.remaining == 0 {
-                        self.current = None;
-                        return None;
-                    } else {
-                        self.remaining -= 1;
-                    }
-                    if self.position == 8 {
-                        if bytes.len() == 1 {
-                            self.current = None;
-                            self.byte_position = 0;
-                        } else {
-                            self.byte_position += 1;
-                        }
-                        self.position = 0;
-                    }
-                    Some(Ok(result))
-                }
-            }
-        } else if self.remaining > 0 {
-            match self.iter.next()? {
-                Ok(run) => {
-                    self.current = Some(run);
-                    self.next()
-                }
-                Err(e) => {
-                    self.remaining = 0;
-                    Some(Err(e))
-                }
+                Some(Err(err)) => Some(Err(err)),
+                None => None,
             }
         } else {
-            None
+            Some(Ok(self.value()))
         }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.remaining, Some(self.remaining))
     }
 }
 
@@ -167,10 +64,8 @@ mod test {
 
         let data = &mut data.as_ref();
 
-        let iter = BooleanIter::new(data, 100)
-            .collect::<Result<Vec<_>>>()
-            .unwrap();
-        assert_eq!(iter, vec![false; 100])
+        let iter = BooleanIter::new(data).collect::<Result<Vec<_>>>().unwrap();
+        assert_eq!(iter, vec![false; 800])
     }
 
     #[test]
@@ -179,9 +74,7 @@ mod test {
 
         let data = &mut data.as_ref();
 
-        let iter = BooleanIter::new(data, 16)
-            .collect::<Result<Vec<_>>>()
-            .unwrap();
+        let iter = BooleanIter::new(data).collect::<Result<Vec<_>>>().unwrap();
         assert_eq!(
             iter,
             vec![
@@ -198,12 +91,10 @@ mod test {
 
         let data = &mut data.as_ref();
 
-        let iter = BooleanIter::new(data, 8)
-            .collect::<Result<Vec<_>>>()
-            .unwrap();
+        let iter = BooleanIter::new(data).collect::<Result<Vec<_>>>().unwrap();
         assert_eq!(
             iter,
-            vec![true, false, false, false, false, false, false, false,]
+            vec![true, false, false, false, false, false, false, false]
         )
     }
 }
