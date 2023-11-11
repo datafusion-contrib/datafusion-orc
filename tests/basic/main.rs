@@ -244,6 +244,27 @@ pub fn basic_test_nested_struct() {
 }
 
 #[test]
+pub fn basic_test_nested_array() {
+    let path = basic_path("nested_array.orc");
+    let reader = new_arrow_reader_root(&path);
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
+
+    let expected = r#"+--------------------+
+| value              |
++--------------------+
+| [1, , 3, 43, 5]    |
+| [5, , 32, 4, 15]   |
+| [16, , 3, 4, 5, 6] |
+|                    |
+| [3, ]              |
++--------------------+"#;
+    assert_eq!(
+        expected,
+        pretty::pretty_format_batches(&batch).unwrap().to_string()
+    )
+}
+
+#[test]
 pub fn basic_test_0() {
     let path = basic_path("test.orc");
     let reader = new_arrow_reader_root(&path);
