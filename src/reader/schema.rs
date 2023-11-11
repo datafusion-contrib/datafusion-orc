@@ -64,10 +64,16 @@ pub fn create_field((name, typ): (&str, &Arc<TypeDescription>)) -> Field {
             let children = typ.children();
             assert_eq!(children.len(), 2);
 
-            let (name, typ) = &children[1];
-            let value = create_field((name, typ));
+            let (_, typ) = &children[0];
+            let key = create_field(("key", typ));
 
-            Field::new(name, DataType::Map(Arc::new(value), false), true)
+            let (_, typ) = &children[1];
+            let value = create_field(("value", typ));
+            let fields = vec![key, value];
+
+            let data_type = DataType::Struct(Fields::from(fields));
+            let field = Field::new(name, data_type, true);
+            Field::new(name, DataType::Map(Arc::new(field), false), true)
         }
         Kind::Struct => {
             let children = typ.children();
@@ -296,7 +302,7 @@ pub fn create_schema(types: &[Type], root_column: usize) -> Result<Arc<TypeDescr
             );
 
             let td = Arc::new(TypeDescription::new(MAP.clone(), root_column));
-            let fields = &root.field_names;
+            let fields = &["key", "value"];
             for (idx, column) in sub_types.iter().enumerate() {
                 let child = create_schema(types, *column as usize)?;
                 td.add_field(fields[idx].to_string(), child);
