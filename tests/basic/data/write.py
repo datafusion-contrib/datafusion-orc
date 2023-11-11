@@ -98,6 +98,19 @@ nested_struct = {
 
 _write("struct<nest:struct<a:float,b:boolean>>", nested_struct, "nested_struct.orc")
 
+nested_array = {
+    "value": [
+        [1, None, 3, 43, 5],
+        [5, None, 32, 4, 15],
+        [16, None, 3, 4, 5, 6],
+        None,
+        [3, None],
+    ],
+}
+
+_write("struct<value:array<int>>", nested_array, "nested_array.orc")
+
+
 _write(
     infer_schema(data),
     data,
