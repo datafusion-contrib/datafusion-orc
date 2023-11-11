@@ -678,7 +678,11 @@ impl Decoder {
                 }
             }
             &Decoder::List(_) => {
-                unreachable!("unreachable append null list")
+                builder
+                    .as_any_mut()
+                    .downcast_mut::<ListBuilder<BoxedArrayBuilder>>()
+                    .unwrap()
+                    .append_null();
             }
         }
 

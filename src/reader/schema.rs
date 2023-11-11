@@ -279,11 +279,10 @@ pub fn create_schema(types: &[Type], root_column: usize) -> Result<Arc<TypeDescr
 
             let td = Arc::new(TypeDescription::new(ARRAY.clone(), root_column));
 
-            for (_, column) in sub_types.iter().enumerate() {
-                let child = create_schema(types, *column as usize)?;
-                // TODO(weny): remove dummy name.
-                td.add_field("root".to_string(), child);
-            }
+            let column = sub_types[0];
+            let child = create_schema(types, column as usize)?;
+            // TODO(weny): remove dummy name.
+            td.add_field("root".to_string(), child);
 
             Ok(td)
         }
