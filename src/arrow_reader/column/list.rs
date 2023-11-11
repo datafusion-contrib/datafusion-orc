@@ -17,27 +17,43 @@ pub struct ListDecoder {
 }
 
 impl ListDecoder {
+    fn append_value(&mut self, root_builder: &mut ListBuilder<BoxedArrayBuilder>) -> Result<()> {
+        let len = self.lengths.next().unwrap()?;
+        let _ = self
+            .inner
+            .append_value(&mut root_builder.values().builder, len as usize);
+
+        Ok(())
+    }
+
+    fn next(&mut self, root_builder: &mut ListBuilder<BoxedArrayBuilder>) -> Option<Result<()>> {
+        match self.present.next() {
+            Some(present) => {
+                if present {
+                    if let Err(err) = self.append_value(root_builder) {
+                        return Some(Err(err));
+                    }
+                }
+                root_builder.append(present);
+            }
+            None => return None,
+        }
+
+        Some(Ok(()))
+    }
+
     pub fn collect_chunk(
         &mut self,
         root_builder: &mut ListBuilder<BoxedArrayBuilder>,
         chunk: usize,
     ) -> Option<Result<()>> {
         for _ in 0..chunk {
-            match self.present.next() {
-                Some(present) => {
-                    if present {
-                        match self.lengths.next().unwrap() {
-                            Ok(len) => {
-                                let _ = self
-                                    .inner
-                                    .append_value(&mut root_builder.values().builder, len as usize);
-                            }
-                            Err(err) => return Some(Err(err)),
-                        }
-                    }
-                    root_builder.append(present);
+            match self.next(root_builder) {
+                Some(Ok(_)) => {
+                    // continue
                 }
-                None => return None,
+                Some(Err(err)) => return Some(Err(err)),
+                None => break,
             }
         }
 
