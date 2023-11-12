@@ -30,7 +30,7 @@ Read [Apache ORC](https://orc.apache.org/) in Rust.
 | Timestamp instant         | ✗    |       |                       |                         |
 | Struct                    | ✓    |       |                       | Struct                  |
 | List                      | ✓    |       |                       | List                    |
-| Map                       | ✗    |       |                       |                         |
+| Map                       | ✓    |       |                       | Map                     |
 | Union                     | ✗    |       |                       |                         |
 
 
