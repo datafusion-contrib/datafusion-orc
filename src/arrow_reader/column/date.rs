@@ -14,7 +14,7 @@ pub struct DateIterator {
     data: Box<dyn Iterator<Item = Result<i64>> + Send>,
 }
 
-pub fn convert_date(data: i64) -> Result<NaiveDate> {
+fn convert_date(data: i64) -> Result<NaiveDate> {
     let days = Days::new(data.unsigned_abs());
     // safe unwrap as is valid date
     let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
@@ -41,11 +41,8 @@ impl Iterator for DateIterator {
 pub fn new_date_iter(column: &Column, stripe: &Stripe) -> Result<NullableIterator<NaiveDate>> {
     let present = new_present_iter(column, stripe)?.collect::<Result<Vec<_>>>()?;
 
-    let data = stripe
-        .stream_map
-        .get(column, Kind::Data)
-        .map(|reader| get_direct_signed_rle_reader(column, reader))
-        .context(error::InvalidColumnSnafu { name: &column.name })??;
+    let reader = stripe.stream_map.get(column, Kind::Data)?;
+    let data = get_direct_signed_rle_reader(column, reader)?;
 
     Ok(NullableIterator {
         present: Box::new(present.into_iter()),

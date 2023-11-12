@@ -1,5 +1,5 @@
 use arrow::array::MapBuilder;
-use snafu::{OptionExt, ResultExt};
+use snafu::ResultExt;
 
 use super::present::new_present_iter;
 use super::Column;
@@ -73,11 +73,8 @@ impl MapDecoder {
 pub fn new_map_iter(column: &Column, stripe: &Stripe) -> Result<MapDecoder> {
     let present = new_present_iter(column, stripe)?.collect::<Result<Vec<_>>>()?;
     let version: RleVersion = column.encoding().kind().into();
-    let lengths = stripe
-        .stream_map
-        .get(column, Kind::Length)
-        .map(|reader| version.get_unsigned_rle_reader(reader))
-        .context(error::InvalidColumnSnafu { name: &column.name })?;
+    let reader = stripe.stream_map.get(column, Kind::Length)?;
+    let lengths = version.get_unsigned_rle_reader(reader);
 
     let children = column.children();
     let key = &children[0];

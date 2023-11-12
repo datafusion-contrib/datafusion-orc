@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use arrow::array::StringArray;
-use snafu::{OptionExt, ResultExt};
+use snafu::ResultExt;
 
 use crate::arrow_reader::column::present::new_present_iter;
 use crate::arrow_reader::column::{Column, NullableIterator};
 use crate::arrow_reader::Stripe;
-use crate::error::{self, Result};
+use crate::error::{InvalidUft8Snafu, Result};
 use crate::proto::column_encoding::Kind as ColumnEncodingKind;
 use crate::proto::stream::Kind;
 use crate::reader::decode::variable_length::Values;
@@ -18,21 +18,23 @@ pub struct DirectStringIterator {
     lengths: Box<dyn Iterator<Item = Result<u64>> + Send>,
 }
 
+impl DirectStringIterator {
+    fn iter_next(&mut self) -> Result<Option<String>> {
+        let next = match self.lengths.next() {
+            Some(length) => {
+                let value = self.values.next(length? as usize)?;
+                Some(String::from_utf8(value.to_vec()).context(InvalidUft8Snafu)?)
+            }
+            None => None,
+        };
+        Ok(next)
+    }
+}
+
 impl Iterator for DirectStringIterator {
     type Item = Result<String>;
     fn next(&mut self) -> Option<Self::Item> {
-        match self.lengths.next() {
-            Some(Ok(length)) => match self.values.next(length as usize) {
-                Ok(value) => Some(
-                    std::str::from_utf8(value)
-                        .map(|x| x.to_string())
-                        .context(error::InvalidUft8Snafu),
-                ),
-                Err(err) => Some(Err(err)),
-            },
-            Some(Err(err)) => Some(Err(err)),
-            None => None,
-        }
+        self.iter_next().transpose()
     }
 }
 
@@ -43,17 +45,11 @@ pub fn new_direct_string_iter(
 ) -> Result<NullableIterator<String>> {
     let present = new_present_iter(column, stripe)?.collect::<Result<Vec<_>>>()?;
 
-    let values = stripe
-        .stream_map
-        .get(column, Kind::Data)
-        .map(|reader| Box::new(Values::new(reader, vec![])))
-        .context(error::InvalidColumnSnafu { name: &column.name })?;
+    let reader = stripe.stream_map.get(column, Kind::Data)?;
+    let values = Box::new(Values::new(reader, vec![]));
 
-    let lengths = stripe
-        .stream_map
-        .get(column, Kind::Length)
-        .map(|reader| rle_version.get_unsigned_rle_reader(reader))
-        .context(error::InvalidColumnSnafu { name: &column.name })?;
+    let reader = stripe.stream_map.get(column, Kind::Length)?;
+    let lengths = rle_version.get_unsigned_rle_reader(reader);
 
     Ok(NullableIterator {
         present: Box::new(present.into_iter()),
@@ -69,26 +65,18 @@ pub fn new_arrow_dict_string_decoder(
     let present = new_present_iter(column, stripe)?.collect::<Result<Vec<_>>>()?;
 
     // DictionaryData
-    let values = stripe
-        .stream_map
-        .get(column, Kind::DictionaryData)
-        .map(|reader| Box::new(Values::new(reader, vec![])))
-        .context(error::InvalidColumnSnafu { name: &column.name })?;
+    let reader = stripe.stream_map.get(column, Kind::DictionaryData)?;
+    let values = Box::new(Values::new(reader, vec![]));
 
-    let lengths = stripe
-        .stream_map
-        .get(column, Kind::Length)
-        .map(|reader| rle_version.get_unsigned_rle_reader(reader))
-        .context(error::InvalidColumnSnafu { name: &column.name })?;
+    let reader = stripe.stream_map.get(column, Kind::Length)?;
+    let lengths = rle_version.get_unsigned_rle_reader(reader);
+
     let iter = DirectStringIterator { values, lengths };
 
     let values = iter.collect::<Result<Vec<_>>>()?;
 
-    let indexes = stripe
-        .stream_map
-        .get(column, Kind::Data)
-        .map(|reader| rle_version.get_unsigned_rle_reader(reader))
-        .context(error::InvalidColumnSnafu { name: &column.name })?;
+    let reader = stripe.stream_map.get(column, Kind::Data)?;
+    let indexes = rle_version.get_unsigned_rle_reader(reader);
 
     let dictionary = StringArray::from_iter(values.into_iter().map(Some));
 

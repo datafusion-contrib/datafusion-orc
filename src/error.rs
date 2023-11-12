@@ -1,5 +1,5 @@
 use std::io;
-use std::str::Utf8Error;
+use std::string::FromUtf8Error;
 
 use arrow::error::ArrowError;
 pub use snafu::prelude::*;
@@ -84,7 +84,7 @@ pub enum Error {
     #[snafu(display("Invalid utf8, source: {}", source))]
     InvalidUft8 {
         location: Location,
-        source: Utf8Error,
+        source: FromUtf8Error,
     },
 
     #[snafu(display("Out of bound at: {}", index))]
