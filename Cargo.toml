@@ -19,7 +19,6 @@ rust-version = "1.70"
 [dependencies]
 arrow = { version = "47.0", features = ["prettyprint"] }
 bytes = "1.4"
-chrono = "0.4"
 fallible-streaming-iterator = { version = "0.1" }
 flate2 = "1"
 futures = { version = "0.3", default-features = false, features = ["std"] }
