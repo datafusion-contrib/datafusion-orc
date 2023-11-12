@@ -15,7 +15,6 @@ use crate::reader::Reader;
 
 pub mod binary;
 pub mod boolean;
-pub mod date;
 pub mod float;
 pub mod int;
 pub mod list;
