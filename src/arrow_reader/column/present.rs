@@ -11,7 +11,7 @@ pub fn new_present_iter(
     let rows = column.number_of_rows as usize;
     let iter = stripe
         .stream_map
-        .get(column, Kind::Present)
+        .get_opt(column, Kind::Present)
         .map(|reader| Box::new(BooleanIter::new(reader)) as Box<dyn Iterator<Item = Result<bool>>>)
         .unwrap_or_else(|| Box::new(DummyPresentIter::new(rows)));
 

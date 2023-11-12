@@ -38,7 +38,7 @@ use crate::arrow_reader::column::struct_column::StructDecoder;
 use crate::arrow_reader::column::timestamp::new_timestamp_iter;
 use crate::arrow_reader::column::NullableIterator;
 use crate::builder::BoxedArrayBuilder;
-use crate::error::{self, Result};
+use crate::error::{self, InvalidColumnSnafu, Result};
 use crate::proto::stream::Kind;
 use crate::proto::{StripeFooter, StripeInformation};
 use crate::reader::decompress::{Compression, Decompressor};
@@ -887,7 +887,13 @@ pub struct StreamMap {
 }
 
 impl StreamMap {
-    pub fn get(&self, column: &Column, kind: Kind) -> Option<Decompressor> {
+    pub fn get(&self, column: &Column, kind: Kind) -> Result<Decompressor> {
+        self.get_opt(column, kind).context(InvalidColumnSnafu {
+            name: column.name(),
+        })
+    }
+
+    pub fn get_opt(&self, column: &Column, kind: Kind) -> Option<Decompressor> {
         let column_id = column.column_id();
 
         self.inner

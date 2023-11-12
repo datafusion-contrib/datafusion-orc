@@ -40,7 +40,7 @@ pub struct RleReaderV2<R> {
 const MAX_SCOPE: usize = 512;
 
 impl<R: Read> RleReaderV2<R> {
-    pub fn try_new(reader: R, signed: bool, skip_corrupt: bool) -> Self {
+    pub fn new(reader: R, signed: bool, skip_corrupt: bool) -> Self {
         Self {
             reader,
             num_literals: 0,
@@ -117,8 +117,8 @@ impl<R: Read> Iterator for RleReaderV2<R> {
 pub struct UnsignedRleReaderV2<R>(RleReaderV2<R>);
 
 impl<R: Read> UnsignedRleReaderV2<R> {
-    pub fn try_new(reader: R, skip_corrupt: bool) -> Self {
-        Self(RleReaderV2::try_new(reader, false, skip_corrupt))
+    pub fn new(reader: R, skip_corrupt: bool) -> Self {
+        Self(RleReaderV2::new(reader, false, skip_corrupt))
     }
 }
 
@@ -143,7 +143,7 @@ mod test {
         let expected = [1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1, 1];
 
         let cursor = Cursor::new(data);
-        let reader = UnsignedRleReaderV2::try_new(cursor, false);
+        let reader = UnsignedRleReaderV2::new(cursor, false);
         let a = reader.collect::<Result<Vec<_>>>().unwrap();
         assert_eq!(a, expected);
 
@@ -152,7 +152,7 @@ mod test {
         let expected = [23713, 43806, 57005, 48879];
 
         let cursor = Cursor::new(data);
-        let reader = UnsignedRleReaderV2::try_new(cursor, false);
+        let reader = UnsignedRleReaderV2::new(cursor, false);
         let a = reader.collect::<Result<Vec<_>>>().unwrap();
         assert_eq!(a, expected);
 
@@ -167,7 +167,7 @@ mod test {
         ];
 
         let cursor = Cursor::new(data);
-        let reader = UnsignedRleReaderV2::try_new(cursor, false);
+        let reader = UnsignedRleReaderV2::new(cursor, false);
         let a = reader.collect::<Result<Vec<_>>>().unwrap();
         assert_eq!(a, expected);
 
@@ -175,7 +175,7 @@ mod test {
         let expected = [2u64, 3, 5, 7, 11, 13, 17, 19, 23, 29];
 
         let cursor = Cursor::new(data);
-        let reader = UnsignedRleReaderV2::try_new(cursor, false);
+        let reader = UnsignedRleReaderV2::new(cursor, false);
         let a = reader.collect::<Result<Vec<_>>>().unwrap();
         assert_eq!(a, expected);
 
@@ -183,7 +183,7 @@ mod test {
         let expected = [2u64, 3, 5, 7, 11, 13, 17, 19, 23, 29];
 
         let cursor = Cursor::new(data);
-        let reader = UnsignedRleReaderV2::try_new(cursor, false);
+        let reader = UnsignedRleReaderV2::new(cursor, false);
         let a = reader.collect::<Result<Vec<_>>>().unwrap();
         assert_eq!(a, expected);
 
@@ -191,7 +191,7 @@ mod test {
         let expected = [1u64, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 
         let cursor = Cursor::new(data);
-        let reader = UnsignedRleReaderV2::try_new(cursor, false);
+        let reader = UnsignedRleReaderV2::new(cursor, false);
         let a = reader.collect::<Result<Vec<_>>>().unwrap();
         assert_eq!(a, expected);
     }
@@ -202,7 +202,7 @@ mod test {
         let data: [u8; 3] = [0x0a, 0x27, 0x10];
 
         let cursor = Cursor::new(data);
-        let reader = UnsignedRleReaderV2::try_new(cursor, false);
+        let reader = UnsignedRleReaderV2::new(cursor, false);
         let a = reader.collect::<Result<Vec<_>>>().unwrap();
 
         assert_eq!(a, vec![10000, 10000, 10000, 10000, 10000]);
@@ -214,7 +214,7 @@ mod test {
         let data: [u8; 10] = [0x5e, 0x03, 0x5c, 0xa1, 0xab, 0x1e, 0xde, 0xad, 0xbe, 0xef];
 
         let cursor = Cursor::new(data);
-        let reader = UnsignedRleReaderV2::try_new(cursor, false);
+        let reader = UnsignedRleReaderV2::new(cursor, false);
         let a = reader.collect::<Result<Vec<_>>>().unwrap();
 
         assert_eq!(a, vec![23713, 43806, 57005, 48879]);
@@ -226,7 +226,7 @@ mod test {
         let data = [110u8, 3, 0, 185, 66, 1, 86, 60, 1, 189, 90, 1, 125, 222];
 
         let cursor = Cursor::new(data);
-        let reader = RleReaderV2::try_new(cursor, true, false);
+        let reader = RleReaderV2::new(cursor, true, false);
         let a = reader.collect::<Result<Vec<_>>>().unwrap();
 
         assert_eq!(a, vec![23713, 43806, 57005, 48879]);
@@ -241,7 +241,7 @@ mod test {
         let data: [u8; 8] = [0xc6, 0x09, 0x02, 0x02, 0x22, 0x42, 0x42, 0x46];
 
         let cursor = Cursor::new(data);
-        let reader = UnsignedRleReaderV2::try_new(cursor, false);
+        let reader = UnsignedRleReaderV2::new(cursor, false);
         let a = reader.collect::<Result<Vec<_>>>().unwrap();
 
         assert_eq!(a, vec![2, 3, 5, 7, 11, 13, 17, 19, 23, 29]);
@@ -259,7 +259,7 @@ mod test {
         ];
 
         let cursor = Cursor::new(data);
-        let reader = RleReaderV2::try_new(cursor, false, false);
+        let reader = RleReaderV2::new(cursor, false, false);
         let a = reader
             .collect::<Result<Vec<_>>>()
             .unwrap()
@@ -301,7 +301,7 @@ mod test {
         ];
 
         let cursor = Cursor::new(data);
-        let reader = RleReaderV2::try_new(cursor, false, false);
+        let reader = RleReaderV2::new(cursor, false, false);
         let a = reader.collect::<Result<Vec<_>>>().unwrap();
 
         assert_eq!(a.len(), expected.len());
