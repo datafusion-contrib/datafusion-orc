@@ -20,7 +20,6 @@ use arrow::datatypes::{Field, TimeUnit};
 use arrow::error::ArrowError;
 use arrow::record_batch::{RecordBatch, RecordBatchReader};
 use bytes::Bytes;
-use chrono::{Datelike, NaiveDate, NaiveDateTime};
 use snafu::{OptionExt, ResultExt};
 
 use self::column::list::{new_list_iter, ListDecoder};
@@ -30,7 +29,6 @@ use self::column::tinyint::new_i8_iter;
 use self::column::Column;
 use crate::arrow_reader::column::binary::new_binary_iterator;
 use crate::arrow_reader::column::boolean::new_boolean_iter;
-use crate::arrow_reader::column::date::{new_date_iter, UNIX_EPOCH_FROM_CE};
 use crate::arrow_reader::column::float::{new_f32_iter, new_f64_iter};
 use crate::arrow_reader::column::int::new_i64_iter;
 use crate::arrow_reader::column::string::StringDecoder;
@@ -152,8 +150,8 @@ pub enum Decoder {
     Boolean(NullableIterator<bool>),
     Float32(NullableIterator<f32>),
     Float64(NullableIterator<f64>),
-    Timestamp(NullableIterator<NaiveDateTime>),
-    Date(NullableIterator<NaiveDate>),
+    Timestamp(NullableIterator<i64>),
+    Date(NullableIterator<i64>),
     String(StringDecoder),
     Binary(NullableIterator<Vec<u8>>),
     Struct(StructDecoder),
@@ -476,8 +474,7 @@ impl Decoder {
                         .downcast_mut::<TimestampNanosecondBuilder>()
                         .unwrap();
                     for value in values {
-                        builder
-                            .append_option(value.map(|value| value.timestamp_nanos_opt().unwrap()));
+                        builder.append_option(value);
                     }
                 }
             }
@@ -490,10 +487,10 @@ impl Decoder {
                         .downcast_mut::<Date32Builder>()
                         .unwrap();
 
+                    // Dates are just signed integers indicating no. of days since epoch
+                    // Same as for Arrow, so no conversion needed
                     for value in values {
-                        builder.append_option(
-                            value.map(|value| value.num_days_from_ce() - UNIX_EPOCH_FROM_CE),
-                        );
+                        builder.append_option(value.map(|v| v as i32));
                     }
                 }
             }
@@ -752,7 +749,7 @@ pub fn reader_factory(col: &Column, stripe: &Stripe) -> Result<Decoder> {
         crate::proto::r#type::Kind::Struct => Decoder::Struct(new_struct_iter(col, stripe)?),
         crate::proto::r#type::Kind::Union => todo!(),
         crate::proto::r#type::Kind::Decimal => todo!(),
-        crate::proto::r#type::Kind::Date => Decoder::Date(new_date_iter(col, stripe)?),
+        crate::proto::r#type::Kind::Date => Decoder::Date(new_i64_iter(col, stripe)?),
         crate::proto::r#type::Kind::Varchar => Decoder::String(StringDecoder::new(col, stripe)?),
         crate::proto::r#type::Kind::Char => Decoder::String(StringDecoder::new(col, stripe)?),
         crate::proto::r#type::Kind::TimestampInstant => todo!(),

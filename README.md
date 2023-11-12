@@ -1,5 +1,5 @@
 # datafusion-orc
-Implementation of ORC file format
+Implementation of ORC file format read/write with Arrow in-memory format
 
 [![test](https://github.com/datafusion-contrib/datafusion-orc/actions/workflows/ci.yml/badge.svg)](https://github.com/datafusion-contrib/datafusion-orc/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/WenyXu/orc-rs/branch/main/graph/badge.svg?token=2CSHZX02XM)](https://codecov.io/gh/WenyXu/orc-rs)
@@ -16,22 +16,22 @@ Read [Apache ORC](https://orc.apache.org/) in Rust.
 
 ## Current Support
 
-| Column Encoding           | Read | Write | Rust Type             | Arrow  DataType         |
-| ------------------------- | ---- | ----- | --------------------- | ----------------------- |
-| SmallInt, Int, BigInt     | ✓    |       | i16, i32, i64         | Int16, Int32, Int64     |
-| Float, Double             | ✓    |       | f32, f64              | Float32, Float64        |
-| String, Char, and VarChar | ✓    |       | string                | Utf8                    |
-| Boolean                   | ✓    |       | bool                  | Boolean                 |
-| TinyInt                   | ✓    |       | i8                    | Int8                    |
-| Binary                    | ✓    |       | Vec\<u8\>             | Binary                  |
-| Decimal                   | ✗    |       |                       |                         |
-| Date                      | ✓    |       | chrono::NaiveDate     | Date32                  |
-| Timestamp                 | ✓    |       | chrono::NaiveDateTime | Timestamp(Nanosecond,_) |
-| Timestamp instant         | ✗    |       |                       |                         |
-| Struct                    | ✓    |       |                       | Struct                  |
-| List                      | ✓    |       |                       | List                    |
-| Map                       | ✓    |       |                       | Map                     |
-| Union                     | ✗    |       |                       |                         |
+| Column Encoding           | Read | Write | Arrow DataType          |
+| ------------------------- | ---- | ----- | ----------------------- |
+| SmallInt, Int, BigInt     | ✓    |       | Int16, Int32, Int64     |
+| Float, Double             | ✓    |       | Float32, Float64        |
+| String, Char, and VarChar | ✓    |       | Utf8                    |
+| Boolean                   | ✓    |       | Boolean                 |
+| TinyInt                   | ✓    |       | Int8                    |
+| Binary                    | ✓    |       | Binary                  |
+| Decimal                   | ✗    |       |                         |
+| Date                      | ✓    |       | Date32                  |
+| Timestamp                 | ✓    |       | Timestamp(Nanosecond,_) |
+| Timestamp instant         | ✗    |       |                         |
+| Struct                    | ✓    |       | Struct                  |
+| List                      | ✓    |       | List                    |
+| Map                       | ✓    |       | Map                     |
+| Union                     | ✗    |       |                         |
 
 
 ## Compression Support
@@ -44,7 +44,4 @@ Read [Apache ORC](https://orc.apache.org/) in Rust.
 | LZO         | ✓    | ✗     |
 | LZ4         | ✓    | ✗     |
 | ZSTD        | ✓    | ✗     |
-
-
-
 

@@ -72,12 +72,6 @@ pub enum Error {
         encoding: proto::column_encoding::Kind,
     },
 
-    #[snafu(display("Failed to convert to timestamp"))]
-    InvalidTimestamp { location: Location },
-
-    #[snafu(display("Failed to convert to date"))]
-    InvalidDate { location: Location },
-
     #[snafu(display("Failed to add day to a date"))]
     AddDays { location: Location },
 
