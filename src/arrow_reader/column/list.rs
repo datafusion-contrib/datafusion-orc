@@ -1,10 +1,6 @@
 use arrow::array::ListBuilder;
-use snafu::OptionExt;
 
-use crate::{
-    arrow_reader::{reader_factory, BoxedArrayBuilder, Decoder, Stripe},
-    error,
-};
+use crate::arrow_reader::{reader_factory, BoxedArrayBuilder, Decoder, Stripe};
 use crate::{proto::stream::Kind, reader::decode::RleVersion};
 
 use super::{present::new_present_iter, Column};
@@ -64,11 +60,8 @@ impl ListDecoder {
 pub fn new_list_iter(column: &Column, stripe: &Stripe) -> Result<ListDecoder> {
     let present = new_present_iter(column, stripe)?.collect::<Result<Vec<_>>>()?;
     let version: RleVersion = column.encoding().kind().into();
-    let lengths = stripe
-        .stream_map
-        .get(column, Kind::Length)
-        .map(|reader| version.get_unsigned_rle_reader(reader))
-        .context(error::InvalidColumnSnafu { name: &column.name })?;
+    let reader = stripe.stream_map.get(column, Kind::Length)?;
+    let lengths = version.get_unsigned_rle_reader(reader);
 
     let children = column.children();
     let child = &children[0];

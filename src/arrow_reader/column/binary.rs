@@ -12,34 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snafu::OptionExt;
-
 use crate::arrow_reader::column::present::new_present_iter;
 use crate::arrow_reader::column::{Column, NullableIterator};
 use crate::arrow_reader::Stripe;
-use crate::error;
+use crate::error::Result;
 use crate::proto::stream::Kind;
 use crate::reader::decode::get_direct_unsigned_rle_reader;
 use crate::reader::decode::variable_length::Values;
 use crate::reader::decompress::Decompressor;
 
-pub fn new_binary_iterator(
-    column: &Column,
-    stripe: &Stripe,
-) -> error::Result<NullableIterator<Vec<u8>>> {
-    let null_mask = new_present_iter(column, stripe)?.collect::<error::Result<Vec<_>>>()?;
+pub fn new_binary_iterator(column: &Column, stripe: &Stripe) -> Result<NullableIterator<Vec<u8>>> {
+    let null_mask = new_present_iter(column, stripe)?.collect::<Result<Vec<_>>>()?;
 
     let values = stripe
         .stream_map
         .get(column, Kind::Data)
-        .map(|reader| Box::new(Values::new(reader, vec![])))
-        .context(error::InvalidColumnSnafu { name: &column.name })?;
+        .map(|reader| Box::new(Values::new(reader, vec![])))?;
 
-    let lengths = stripe
-        .stream_map
-        .get(column, Kind::Length)
-        .map(|reader| get_direct_unsigned_rle_reader(column, reader))
-        .context(error::InvalidColumnSnafu { name: &column.name })??;
+    let lengths = stripe.stream_map.get(column, Kind::Length)?;
+    let lengths = get_direct_unsigned_rle_reader(column, lengths)?;
 
     Ok(NullableIterator {
         present: Box::new(null_mask.into_iter()),
@@ -49,20 +40,23 @@ pub fn new_binary_iterator(
 
 pub struct DirectBinaryIterator {
     values: Box<Values<Decompressor>>,
-    lengths: Box<dyn Iterator<Item = error::Result<u64>> + Send>,
+    lengths: Box<dyn Iterator<Item = Result<u64>> + Send>,
+}
+
+impl DirectBinaryIterator {
+    fn iter_next(&mut self) -> Result<Option<Vec<u8>>> {
+        let next = match self.lengths.next() {
+            Some(length) => Some(self.values.next(length? as usize)?.to_vec()),
+            None => None,
+        };
+        Ok(next)
+    }
 }
 
 impl Iterator for DirectBinaryIterator {
-    type Item = error::Result<Vec<u8>>;
+    type Item = Result<Vec<u8>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.lengths.next() {
-            Some(Ok(length)) => match self.values.next(length as usize) {
-                Ok(value) => Some(Ok(value.to_vec())),
-                Err(err) => Some(Err(err)),
-            },
-            Some(Err(err)) => Some(Err(err)),
-            None => None,
-        }
+        self.iter_next().transpose()
     }
 }
