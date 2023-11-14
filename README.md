@@ -45,3 +45,7 @@ Read [Apache ORC](https://orc.apache.org/) in Rust.
 | LZ4         | ✓    | ✗     |
 | ZSTD        | ✓    | ✗     |
 
+## Benchmark
+
+Run `cargo bench` for simple benchmarks.
+

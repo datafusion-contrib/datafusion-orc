@@ -336,6 +336,16 @@ pub fn v0_file_test() {
     assert_eq!(expected_row_count as usize, total_rows);
 }
 
+#[test]
+pub fn v1_file_test() {
+    let path = basic_path("demo-12-zlib.orc");
+    let reader = new_arrow_reader_root(&path);
+    let expected_row_count = reader.total_row_count();
+    let batches = reader.collect::<Result<Vec<_>, _>>().unwrap();
+    let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+    assert_eq!(expected_row_count as usize, total_rows);
+}
+
 #[tokio::test]
 pub async fn v0_file_test_async() {
     let path = basic_path("demo-11-zlib.orc");
