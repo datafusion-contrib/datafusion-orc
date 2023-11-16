@@ -63,14 +63,27 @@ pub enum CompressionType {
     Zstd,
 }
 
-fn decode_header(bytes: &[u8]) -> (bool, usize) {
-    let a: [u8; 3] = (&bytes[..3]).try_into().unwrap();
-    let a = [0, a[0], a[1], a[2]];
-    let length = u32::from_le_bytes(a);
-    let is_original = a[1] & 1 == 1;
-    let length = (length >> (8 + 1)) as usize;
+/// Indicates length of block and whether it's compressed or not.
+#[derive(Debug, PartialEq, Eq)]
+enum CompressionHeader {
+    Original(u32),
+    Compressed(u32),
+}
 
-    (is_original, length)
+/// ORC files are compressed in blocks, with a 3 byte header at the start
+/// of these blocks indicating the length of the block and whether it's
+/// compressed or not.
+fn decode_header(bytes: [u8; 3]) -> CompressionHeader {
+    let bytes = [bytes[0], bytes[1], bytes[2], 0];
+    let length = u32::from_le_bytes(bytes);
+    let is_original = length & 1 == 1;
+    // to clear the is_original bit
+    let length = length >> 1;
+    if is_original {
+        CompressionHeader::Original(length)
+    } else {
+        CompressionHeader::Compressed(length)
+    }
 }
 
 fn decompress_block(
@@ -164,21 +177,24 @@ impl FallibleStreamingIterator for DecompressorIter {
 
         match self.compression {
             Some(compression) => {
-                // todo: take stratch from current State::Compressed for re-use
-                let (is_original, length) = decode_header(&self.stream);
-                let _ = self.stream.split_to(3);
-                let maybe_compressed = self.stream.split_to(length);
-
-                if is_original {
-                    self.current = Some(State::Original(maybe_compressed.into()));
-                } else {
-                    decompress_block(compression, &maybe_compressed, &mut self.scratch)?;
-                    self.current = Some(State::Compressed(std::mem::take(&mut self.scratch)));
-                }
+                // TODO: take stratch from current State::Compressed for re-use
+                let header = self.stream.split_to(3);
+                let header = [header[0], header[1], header[2]];
+                match decode_header(header) {
+                    CompressionHeader::Original(length) => {
+                        let original = self.stream.split_to(length as usize);
+                        self.current = Some(State::Original(original.into()));
+                    }
+                    CompressionHeader::Compressed(length) => {
+                        let compressed = self.stream.split_to(length as usize);
+                        decompress_block(compression, &compressed, &mut self.scratch)?;
+                        self.current = Some(State::Compressed(std::mem::take(&mut self.scratch)));
+                    }
+                };
                 Ok(())
             }
             None => {
-                // todo: take stratch from current State::Compressed for re-use
+                // TODO: take stratch from current State::Compressed for re-use
                 self.current = Some(State::Original(self.stream.clone().into()));
                 self.stream.clear();
                 Ok(())
@@ -261,20 +277,19 @@ mod tests {
     #[test]
     fn decode_uncompressed() {
         // 5 uncompressed = [0x0b, 0x00, 0x00] = [0b1011, 0, 0]
-        let bytes = &[0b1011, 0, 0, 0];
+        let bytes = [0b1011, 0, 0];
 
-        let (is_original, length) = decode_header(bytes);
-        assert!(is_original);
-        assert_eq!(length, 5);
+        let expected = CompressionHeader::Original(5);
+        let actual = decode_header(bytes);
+        assert_eq!(expected, actual);
     }
 
     #[test]
     fn decode_compressed() {
         // 100_000 compressed = [0x40, 0x0d, 0x03] = [0b01000000, 0b00001101, 0b00000011]
-        let bytes = &[0b01000000, 0b00001101, 0b00000011, 0];
-
-        let (is_original, length) = decode_header(bytes);
-        assert!(!is_original);
-        assert_eq!(length, 100_000);
+        let bytes = [0b0100_0000, 0b0000_1101, 0b0000_0011];
+        let expected = CompressionHeader::Compressed(100_000);
+        let actual = decode_header(bytes);
+        assert_eq!(expected, actual);
     }
 }
