@@ -112,7 +112,7 @@ impl ChunkReader for File {
         self.metadata().map(|m| m.len()).unwrap_or(0u64)
     }
 
-    /// Care needs to be taken when using this simulatenously as underlying
+    /// Care needs to be taken when using this simultanously as underlying
     /// file descriptor is the same and will be affected by other invocations.
     ///
     /// See [`File::try_clone()`] for more details.
