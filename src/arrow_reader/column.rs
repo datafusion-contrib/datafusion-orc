@@ -115,10 +115,10 @@ impl Column {
         name: &str,
         column: &Arc<TypeDescription>,
         footer: &Arc<StripeFooter>,
-        stripe: &StripeInformation,
+        number_of_rows: u64,
     ) -> Self {
         Self {
-            number_of_rows: stripe.number_of_rows(),
+            number_of_rows,
             footer: footer.clone(),
             column: column.clone(),
             name: name.to_string(),

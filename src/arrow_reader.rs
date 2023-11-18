@@ -38,10 +38,11 @@ use crate::arrow_reader::column::NullableIterator;
 use crate::builder::BoxedArrayBuilder;
 use crate::error::{self, InvalidColumnSnafu, Result};
 use crate::proto::stream::Kind;
-use crate::proto::{StripeFooter, StripeInformation};
+use crate::proto::StripeFooter;
 use crate::reader::decompress::{Compression, Decompressor};
 use crate::reader::schema::{create_field, TypeDescription};
 use crate::reader::Reader;
+use crate::stripe::StripeMetadata;
 
 pub struct ArrowReader<R: Read> {
     cursor: Cursor<R>,
@@ -65,7 +66,7 @@ impl<R: Read> ArrowReader<R> {
     }
 
     pub fn total_row_count(&self) -> u64 {
-        self.cursor.reader.metadata().footer.number_of_rows()
+        self.cursor.reader.metadata().number_of_rows()
     }
 }
 
@@ -97,15 +98,9 @@ pub fn create_arrow_schema<R>(cursor: &Cursor<R>) -> Schema {
     let metadata = cursor
         .reader
         .metadata()
-        .footer
-        .metadata
+        .user_custom_metadata()
         .iter()
-        .map(|kv| {
-            (
-                kv.name().to_string(),
-                String::from_utf8_lossy(kv.value()).to_string(),
-            )
-        })
+        .map(|(key, value)| (key.clone(), String::from_utf8_lossy(value).to_string()))
         .collect::<HashMap<_, _>>();
 
     let fields = cursor
@@ -830,7 +825,8 @@ impl<R> Cursor<R> {
         let mut columns = Vec::with_capacity(fields.len());
         for name in fields {
             let field = r
-                .schema
+                .metadata()
+                .type_description()
                 .field(name.as_ref())
                 .context(error::FieldNotFoundSnafu {
                     name: name.as_ref(),
@@ -845,9 +841,12 @@ impl<R> Cursor<R> {
     }
 
     pub fn root(r: Reader<R>) -> Result<Self> {
-        let root = &r.metadata().footer.types[0];
-        let fields = &root.field_names.clone();
-        Self::new(r, fields)
+        let columns = r.metadata().type_description().children();
+        Ok(Self {
+            reader: r,
+            columns: Arc::new(columns),
+            stripe_offset: 0,
+        })
     }
 }
 
@@ -855,8 +854,8 @@ impl<R: Read + Seek> Iterator for Cursor<R> {
     type Item = Result<Stripe>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(info) = self.reader.stripe(self.stripe_offset) {
-            let stripe = Stripe::new(&mut self.reader, &self.columns, self.stripe_offset, info);
+        if let Some(info) = self.reader.stripe(self.stripe_offset).cloned() {
+            let stripe = Stripe::new(&mut self.reader, &self.columns, self.stripe_offset, &info);
 
             self.stripe_offset += 1;
 
@@ -872,7 +871,6 @@ pub struct Stripe {
     pub(crate) footer: Arc<StripeFooter>,
     pub(crate) columns: Vec<Column>,
     pub(crate) stripe_offset: usize,
-    pub(crate) info: StripeInformation,
     /// <(ColumnId, Kind), Bytes>
     pub(crate) stream_map: Arc<StreamMap>,
 }
@@ -905,18 +903,15 @@ impl Stripe {
         r: &mut Reader<R>,
         column_defs: &[(String, Arc<TypeDescription>)],
         stripe: usize,
-        info: StripeInformation,
+        info: &StripeMetadata,
     ) -> Result<Self> {
         let footer = Arc::new(r.stripe_footer(stripe).clone());
 
-        let compression = Compression::from_proto(
-            r.metadata().postscript.compression(),
-            r.metadata().postscript.compression_block_size,
-        );
+        let compression = r.metadata().compression();
         //TODO(weny): add tz
         let mut columns = Vec::with_capacity(column_defs.len());
         for (name, typ) in column_defs.iter() {
-            columns.push(Column::new(name, typ, &footer, &info));
+            columns.push(Column::new(name, typ, &footer, info.number_of_rows()));
         }
 
         let mut stream_map = HashMap::new();
@@ -937,7 +932,6 @@ impl Stripe {
             footer,
             columns,
             stripe_offset: stripe,
-            info,
             stream_map: Arc::new(StreamMap {
                 inner: stream_map,
                 compression,
@@ -951,9 +945,5 @@ impl Stripe {
 
     pub fn stripe_offset(&self) -> usize {
         self.stripe_offset
-    }
-
-    pub fn stripe_info(&self) -> &StripeInformation {
-        &self.info
     }
 }
