@@ -24,10 +24,6 @@ impl ColumnStatistics {
     }
 }
 
-// TODO: Currently mapping exactly to proto.
-//       But we can replace with our own specific types
-//       if makes things easier (e.g. use a Decimal type
-//       instead of just string)
 #[derive(Debug, Clone)]
 pub enum TypeStatistics {
     /// For TinyInt, SmallInt, Int and BigInt
