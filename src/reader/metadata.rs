@@ -22,7 +22,9 @@
 //! If they are compressed then their lengths indicate their
 //! compressed lengths.
 
+use std::collections::HashMap;
 use std::io::{Read, SeekFrom};
+use std::sync::Arc;
 
 use bytes::Bytes;
 use prost::Message;
@@ -30,10 +32,13 @@ use snafu::{OptionExt, ResultExt};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 use crate::error::{self, Result};
-use crate::proto::{Footer, Metadata, PostScript, StripeFooter};
+use crate::proto::{self, Footer, Metadata, PostScript, StripeFooter};
 use crate::reader::decompress::Decompressor;
+use crate::statistics::ColumnStatistics;
+use crate::stripe::StripeMetadata;
 
 use super::decompress::Compression;
+use super::schema::{create_schema, TypeDescription};
 use super::ChunkReader;
 
 const DEFAULT_FOOTER_SIZE: u64 = 16 * 1024;
@@ -41,10 +46,84 @@ const DEFAULT_FOOTER_SIZE: u64 = 16 * 1024;
 /// The file's metadata.
 #[derive(Debug)]
 pub struct FileMetadata {
-    pub postscript: PostScript,
-    pub footer: Footer,
-    pub metadata: Metadata,
-    pub stripe_footers: Vec<StripeFooter>,
+    compression: Option<Compression>,
+    type_description: Arc<TypeDescription>,
+    number_of_rows: u64,
+    /// Statistics of columns across entire file
+    column_statistics: Vec<ColumnStatistics>,
+    stripes: Vec<StripeMetadata>,
+    user_custom_metadata: HashMap<String, Vec<u8>>,
+    // TODO: for now keeping this, but ideally won't want all stripe footers here
+    //       since don't want to require parsing all stripe footers in file unless actually required
+    stripe_footers: Vec<StripeFooter>,
+}
+
+impl FileMetadata {
+    fn from_proto(
+        postscript: &proto::PostScript,
+        footer: &proto::Footer,
+        metadata: &proto::Metadata,
+        stripe_footers: Vec<StripeFooter>,
+    ) -> Result<Self> {
+        let compression =
+            Compression::from_proto(postscript.compression(), postscript.compression_block_size);
+        let type_description = create_schema(&footer.types, 0)?;
+        let number_of_rows = footer.number_of_rows();
+        let column_statistics = footer
+            .statistics
+            .iter()
+            .map(TryFrom::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        let stripes = footer
+            .stripes
+            .iter()
+            .zip(metadata.stripe_stats.iter())
+            .map(TryFrom::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        let user_custom_metadata = footer
+            .metadata
+            .iter()
+            .map(|kv| (kv.name().to_owned(), kv.value().to_vec()))
+            .collect::<HashMap<_, _>>();
+
+        Ok(Self {
+            compression,
+            type_description,
+            number_of_rows,
+            column_statistics,
+            stripes,
+            user_custom_metadata,
+            stripe_footers,
+        })
+    }
+
+    pub fn number_of_rows(&self) -> u64 {
+        self.number_of_rows
+    }
+
+    pub fn compression(&self) -> Option<Compression> {
+        self.compression
+    }
+
+    pub fn type_description(&self) -> &Arc<TypeDescription> {
+        &self.type_description
+    }
+
+    pub fn column_file_statistics(&self) -> &[ColumnStatistics] {
+        &self.column_statistics
+    }
+
+    pub fn stripe_metadatas(&self) -> &[StripeMetadata] {
+        &self.stripes
+    }
+
+    pub fn stripe_footers(&self) -> &[StripeFooter] {
+        &self.stripe_footers
+    }
+
+    pub fn user_custom_metadata(&self) -> &HashMap<String, Vec<u8>> {
+        &self.user_custom_metadata
+    }
 }
 
 pub fn read_metadata<R>(reader: &mut R) -> Result<FileMetadata>
@@ -121,12 +200,7 @@ where
         stripe_footers.push(deserialize_stripe_footer(&scratch, compression)?);
     }
 
-    Ok(FileMetadata {
-        postscript,
-        footer,
-        metadata,
-        stripe_footers,
-    })
+    FileMetadata::from_proto(&postscript, &footer, &metadata, stripe_footers)
 }
 
 // TODO: refactor like for sync
@@ -241,12 +315,7 @@ where
         stripe_footers.push(deserialize_stripe_footer(&scratch, compression)?);
     }
 
-    Ok(FileMetadata {
-        postscript,
-        footer,
-        metadata,
-        stripe_footers,
-    })
+    FileMetadata::from_proto(&postscript, &footer, &metadata, stripe_footers)
 }
 
 fn deserialize_footer(bytes: &[u8], compression: Option<Compression>) -> Result<Footer> {

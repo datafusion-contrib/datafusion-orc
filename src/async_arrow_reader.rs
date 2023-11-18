@@ -17,10 +17,9 @@ use crate::arrow_reader::{
     create_arrow_schema, Cursor, NaiveStripeDecoder, StreamMap, Stripe, DEFAULT_BATCH_SIZE,
 };
 use crate::error::Result;
-use crate::proto::StripeInformation;
-use crate::reader::decompress::Compression;
 use crate::reader::schema::TypeDescription;
 use crate::reader::Reader;
+use crate::stripe::StripeMetadata;
 
 pub type BoxedDecoder = Box<dyn Iterator<Item = Result<RecordBatch>> + Send>;
 
@@ -68,7 +67,7 @@ pub struct ArrowStreamReader<R: AsyncRead + AsyncSeek + Unpin + Send> {
 }
 
 impl<R: AsyncRead + AsyncSeek + Unpin + Send + 'static> StripeFactory<R> {
-    pub async fn read_next_stripe_inner(&mut self, info: StripeInformation) -> Result<Stripe> {
+    pub async fn read_next_stripe_inner(&mut self, info: &StripeMetadata) -> Result<Stripe> {
         let inner = &mut self.inner;
 
         let column_defs = inner.columns.clone();
@@ -79,10 +78,10 @@ impl<R: AsyncRead + AsyncSeek + Unpin + Send + 'static> StripeFactory<R> {
     }
 
     pub async fn read_next_stripe(mut self) -> Result<(Self, Option<Stripe>)> {
-        let info = self.inner.reader.stripe(self.inner.stripe_offset);
+        let info = self.inner.reader.stripe(self.inner.stripe_offset).cloned();
 
         if let Some(info) = info {
-            match self.read_next_stripe_inner(info).await {
+            match self.read_next_stripe_inner(&info).await {
                 Ok(stripe) => Ok((self, Some(stripe))),
                 Err(err) => Err(err),
             }
@@ -186,18 +185,15 @@ impl Stripe {
         r: &mut Reader<R>,
         column_defs: Arc<Vec<(String, Arc<TypeDescription>)>>,
         stripe: usize,
-        info: StripeInformation,
+        info: &StripeMetadata,
     ) -> Result<Self> {
         let footer = Arc::new(r.stripe_footer(stripe).clone());
 
-        let compression = Compression::from_proto(
-            r.metadata().postscript.compression(),
-            r.metadata().postscript.compression_block_size,
-        );
+        let compression = r.metadata().compression();
         //TODO(weny): add tz
         let mut columns = Vec::with_capacity(column_defs.len());
         for (name, typ) in column_defs.iter() {
-            columns.push(Column::new(name, typ, &footer, &info));
+            columns.push(Column::new(name, typ, &footer, info.number_of_rows()));
         }
 
         let mut stream_map = HashMap::new();
@@ -218,7 +214,6 @@ impl Stripe {
             footer,
             columns,
             stripe_offset: stripe,
-            info,
             stream_map: Arc::new(StreamMap {
                 inner: stream_map,
                 compression,
