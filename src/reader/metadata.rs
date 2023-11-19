@@ -24,7 +24,6 @@
 
 use std::collections::HashMap;
 use std::io::{Read, SeekFrom};
-use std::sync::Arc;
 
 use bytes::Bytes;
 use prost::Message;
@@ -34,11 +33,11 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 use crate::error::{self, Result};
 use crate::proto::{self, Footer, Metadata, PostScript, StripeFooter};
 use crate::reader::decompress::Decompressor;
+use crate::schema::RootDataType;
 use crate::statistics::ColumnStatistics;
 use crate::stripe::StripeMetadata;
 
 use super::decompress::Compression;
-use super::schema::{create_schema, TypeDescription};
 use super::ChunkReader;
 
 const DEFAULT_FOOTER_SIZE: u64 = 16 * 1024;
@@ -47,7 +46,7 @@ const DEFAULT_FOOTER_SIZE: u64 = 16 * 1024;
 #[derive(Debug)]
 pub struct FileMetadata {
     compression: Option<Compression>,
-    type_description: Arc<TypeDescription>,
+    root_data_type: RootDataType,
     number_of_rows: u64,
     /// Statistics of columns across entire file
     column_statistics: Vec<ColumnStatistics>,
@@ -67,7 +66,7 @@ impl FileMetadata {
     ) -> Result<Self> {
         let compression =
             Compression::from_proto(postscript.compression(), postscript.compression_block_size);
-        let type_description = create_schema(&footer.types, 0)?;
+        let root_data_type = RootDataType::from_proto(&footer.types)?;
         let number_of_rows = footer.number_of_rows();
         let column_statistics = footer
             .statistics
@@ -88,7 +87,7 @@ impl FileMetadata {
 
         Ok(Self {
             compression,
-            type_description,
+            root_data_type,
             number_of_rows,
             column_statistics,
             stripes,
@@ -105,8 +104,8 @@ impl FileMetadata {
         self.compression
     }
 
-    pub fn type_description(&self) -> &Arc<TypeDescription> {
-        &self.type_description
+    pub fn root_data_type(&self) -> &RootDataType {
+        &self.root_data_type
     }
 
     pub fn column_file_statistics(&self) -> &[ColumnStatistics] {

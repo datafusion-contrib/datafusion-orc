@@ -17,8 +17,8 @@ use crate::arrow_reader::{
     create_arrow_schema, Cursor, NaiveStripeDecoder, StreamMap, Stripe, DEFAULT_BATCH_SIZE,
 };
 use crate::error::Result;
-use crate::reader::schema::TypeDescription;
 use crate::reader::Reader;
+use crate::schema::RootDataType;
 use crate::stripe::StripeMetadata;
 
 pub type BoxedDecoder = Box<dyn Iterator<Item = Result<RecordBatch>> + Send>;
@@ -70,11 +70,11 @@ impl<R: AsyncRead + AsyncSeek + Unpin + Send + 'static> StripeFactory<R> {
     pub async fn read_next_stripe_inner(&mut self, info: &StripeMetadata) -> Result<Stripe> {
         let inner = &mut self.inner;
 
-        let column_defs = inner.columns.clone();
+        let root_data_type = inner.root_data_type.clone();
         let stripe_offset = inner.stripe_offset;
         inner.stripe_offset += 1;
 
-        Stripe::new_async(&mut inner.reader, column_defs, stripe_offset, info).await
+        Stripe::new_async(&mut inner.reader, root_data_type, stripe_offset, info).await
     }
 
     pub async fn read_next_stripe(mut self) -> Result<(Self, Option<Stripe>)> {
@@ -181,9 +181,10 @@ impl<R: AsyncRead + AsyncSeek + Unpin + Send + 'static> Stream for ArrowStreamRe
 }
 
 impl Stripe {
+    // TODO: reduce duplication with sync version in arrow_reader.rs
     pub async fn new_async<R: AsyncRead + AsyncSeek + Unpin + Send>(
         r: &mut Reader<R>,
-        column_defs: Arc<Vec<(String, Arc<TypeDescription>)>>,
+        root_data_type: RootDataType,
         stripe: usize,
         info: &StripeMetadata,
     ) -> Result<Self> {
@@ -191,10 +192,11 @@ impl Stripe {
 
         let compression = r.metadata().compression();
         //TODO(weny): add tz
-        let mut columns = Vec::with_capacity(column_defs.len());
-        for (name, typ) in column_defs.iter() {
-            columns.push(Column::new(name, typ, &footer, info.number_of_rows()));
-        }
+        let columns = root_data_type
+            .children()
+            .iter()
+            .map(|(name, data_type)| Column::new(name, data_type, &footer, info.number_of_rows()))
+            .collect();
 
         let mut stream_map = HashMap::new();
         let mut stream_offset = info.offset();
