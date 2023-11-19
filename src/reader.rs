@@ -1,7 +1,6 @@
 pub mod decode;
 pub mod decompress;
 pub mod metadata;
-pub mod schema;
 
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
@@ -9,10 +8,10 @@ use std::io::{BufReader, Read, Seek, SeekFrom};
 use tokio::io::{AsyncRead, AsyncSeek};
 
 use self::metadata::{read_metadata, FileMetadata};
-use self::schema::TypeDescription;
 use crate::error::Result;
 use crate::proto::StripeFooter;
 use crate::reader::metadata::read_metadata_async;
+use crate::schema::RootDataType;
 use crate::stripe::StripeMetadata;
 
 pub struct Reader<R> {
@@ -32,8 +31,8 @@ impl<R> Reader<R> {
         &self.metadata
     }
 
-    pub fn schema(&self) -> &TypeDescription {
-        self.metadata.type_description()
+    pub fn schema(&self) -> &RootDataType {
+        self.metadata.root_data_type()
     }
 
     pub fn stripe(&self, index: usize) -> Option<&StripeMetadata> {
