@@ -3,15 +3,13 @@ use std::sync::Arc;
 
 use arrow::datatypes::Field;
 use bytes::Bytes;
-use snafu::{OptionExt, ResultExt};
+use snafu::ResultExt;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 use crate::error::{self, Result};
-use crate::proto::stream::Kind;
-use crate::proto::{ColumnEncoding, StripeFooter, StripeInformation};
-
-use crate::reader::schema::{create_field, TypeDescription};
+use crate::proto::{ColumnEncoding, StripeFooter};
 use crate::reader::Reader;
+use crate::schema::DataType;
 
 pub mod binary;
 pub mod boolean;
@@ -30,18 +28,20 @@ pub struct Column {
     number_of_rows: u64,
     footer: Arc<StripeFooter>,
     name: String,
-    column: Arc<TypeDescription>,
+    data_type: DataType,
 }
 
 impl From<Column> for Field {
     fn from(value: Column) -> Self {
-        create_field((&value.name, &value.column))
+        let dt = value.data_type.to_arrow_data_type();
+        Field::new(value.name, dt, true)
     }
 }
 
 impl From<&Column> for Field {
     fn from(value: &Column) -> Self {
-        create_field((&value.name, &value.column))
+        let dt = value.data_type.to_arrow_data_type();
+        Field::new(value.name.clone(), dt, true)
     }
 }
 
@@ -64,6 +64,114 @@ macro_rules! impl_read_stream {
 }
 
 impl Column {
+    pub fn new(
+        name: &str,
+        data_type: &DataType,
+        footer: &Arc<StripeFooter>,
+        number_of_rows: u64,
+    ) -> Self {
+        Self {
+            number_of_rows,
+            footer: footer.clone(),
+            data_type: data_type.clone(),
+            name: name.to_string(),
+        }
+    }
+
+    pub fn dictionary_size(&self) -> usize {
+        let column = self.data_type.column_index();
+        self.footer.columns[column]
+            .dictionary_size
+            .unwrap_or_default() as usize
+    }
+
+    pub fn encoding(&self) -> ColumnEncoding {
+        let column = self.data_type.column_index();
+        self.footer.columns[column].clone()
+    }
+
+    pub fn number_of_rows(&self) -> usize {
+        self.number_of_rows as usize
+    }
+
+    pub fn data_type(&self) -> &DataType {
+        &self.data_type
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn column_id(&self) -> u32 {
+        self.data_type.column_index() as u32
+    }
+
+    pub fn children(&self) -> Vec<Column> {
+        match &self.data_type {
+            DataType::Boolean { .. }
+            | DataType::Byte { .. }
+            | DataType::Short { .. }
+            | DataType::Int { .. }
+            | DataType::Long { .. }
+            | DataType::Float { .. }
+            | DataType::Double { .. }
+            | DataType::String { .. }
+            | DataType::Varchar { .. }
+            | DataType::Char { .. }
+            | DataType::Binary { .. }
+            | DataType::Decimal { .. }
+            | DataType::Timestamp { .. }
+            | DataType::TimestampWithLocalTimezone { .. }
+            | DataType::Date { .. } => vec![],
+            DataType::Struct { children, .. } => children
+                .iter()
+                .map(|(name, data_type)| Column {
+                    number_of_rows: self.number_of_rows,
+                    footer: self.footer.clone(),
+                    name: name.clone(),
+                    data_type: data_type.clone(),
+                })
+                .collect(),
+            DataType::List { child, .. } => {
+                vec![Column {
+                    number_of_rows: self.number_of_rows,
+                    footer: self.footer.clone(),
+                    name: "item".to_string(),
+                    data_type: *child.clone(),
+                }]
+            }
+            DataType::Map { key, value, .. } => {
+                vec![
+                    Column {
+                        number_of_rows: self.number_of_rows,
+                        footer: self.footer.clone(),
+                        name: "key".to_string(),
+                        data_type: *key.clone(),
+                    },
+                    Column {
+                        number_of_rows: self.number_of_rows,
+                        footer: self.footer.clone(),
+                        name: "value".to_string(),
+                        data_type: *value.clone(),
+                    },
+                ]
+            }
+            DataType::Union { variants, .. } => {
+                // TODO: might need corrections
+                variants
+                    .iter()
+                    .enumerate()
+                    .map(|(index, data_type)| Column {
+                        number_of_rows: self.number_of_rows,
+                        footer: self.footer.clone(),
+                        name: format!("{index}"),
+                        data_type: data_type.clone(),
+                    })
+                    .collect()
+            }
+        }
+    }
+
     pub fn read_stream<R: Read + Seek>(
         reader: &mut Reader<R>,
         start: u64,
@@ -78,96 +186,6 @@ impl Column {
         length: usize,
     ) -> Result<Bytes> {
         impl_read_stream!(reader, start, length.await)
-    }
-
-    pub fn get_stream_info(
-        name: &str,
-        column: &Arc<TypeDescription>,
-        footer: &Arc<StripeFooter>,
-        stripe: &StripeInformation,
-    ) -> Result<(u64, usize)> {
-        let mut start = 0; // the start of the stream
-
-        let column_idx = column.column_id() as u32;
-
-        let start = footer
-            .streams
-            .iter()
-            .map(|stream| {
-                start += stream.length();
-                (start, stream)
-            })
-            .find(|(_, stream)| stream.column() == column_idx && stream.kind() != Kind::RowIndex)
-            .map(|(start, stream)| start - stream.length())
-            .with_context(|| error::InvalidColumnSnafu { name })?;
-
-        let length = footer
-            .streams
-            .iter()
-            .filter(|stream| stream.column() == column_idx && stream.kind() != Kind::RowIndex)
-            .fold(0, |acc, stream| acc + stream.length()) as usize;
-        let start = stripe.offset() + start;
-
-        Ok((start, length))
-    }
-
-    pub fn new(
-        name: &str,
-        column: &Arc<TypeDescription>,
-        footer: &Arc<StripeFooter>,
-        number_of_rows: u64,
-    ) -> Self {
-        Self {
-            number_of_rows,
-            footer: footer.clone(),
-            column: column.clone(),
-            name: name.to_string(),
-        }
-    }
-
-    pub fn dictionary_size(&self) -> usize {
-        let column = self.column.column_id();
-        self.footer.columns[column]
-            .dictionary_size
-            .unwrap_or_default() as usize
-    }
-
-    pub fn encoding(&self) -> ColumnEncoding {
-        let column = self.column.column_id();
-        self.footer.columns[column].clone()
-    }
-
-    pub fn number_of_rows(&self) -> usize {
-        self.number_of_rows as usize
-    }
-
-    pub fn kind(&self) -> crate::proto::r#type::Kind {
-        self.column.kind()
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn column_id(&self) -> u32 {
-        self.column.column_id() as u32
-    }
-
-    pub fn children(&self) -> Vec<Column> {
-        let children = self.column.children();
-
-        let mut columns = Vec::with_capacity(children.len());
-
-        for (name, column) in children {
-            columns.push(Column {
-                number_of_rows: self.number_of_rows,
-                footer: self.footer.clone(),
-                name,
-                column,
-            });
-        }
-
-        columns
     }
 }
 

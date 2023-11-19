@@ -4,6 +4,7 @@ pub(crate) mod builder;
 pub mod error;
 pub mod proto;
 pub mod reader;
+pub mod schema;
 pub mod statistics;
 pub mod stripe;
 
