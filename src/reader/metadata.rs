@@ -30,7 +30,7 @@ use prost::Message;
 use snafu::{OptionExt, ResultExt};
 
 use crate::error::{self, EmptyFileSnafu, OutOfSpecSnafu, Result};
-use crate::proto::{self, Footer, Metadata, PostScript, StripeFooter};
+use crate::proto::{self, Footer, Metadata, PostScript};
 use crate::reader::decompress::Decompressor;
 use crate::schema::RootDataType;
 use crate::statistics::ColumnStatistics;
@@ -51,9 +51,6 @@ pub struct FileMetadata {
     column_statistics: Vec<ColumnStatistics>,
     stripes: Vec<StripeMetadata>,
     user_custom_metadata: HashMap<String, Vec<u8>>,
-    // TODO: for now keeping this, but ideally won't want all stripe footers here
-    //       since don't want to require parsing all stripe footers in file unless actually required
-    stripe_footers: Vec<StripeFooter>,
 }
 
 impl FileMetadata {
@@ -61,7 +58,6 @@ impl FileMetadata {
         postscript: &proto::PostScript,
         footer: &proto::Footer,
         metadata: &proto::Metadata,
-        stripe_footers: Vec<StripeFooter>,
     ) -> Result<Self> {
         let compression =
             Compression::from_proto(postscript.compression(), postscript.compression_block_size);
@@ -91,7 +87,6 @@ impl FileMetadata {
             column_statistics,
             stripes,
             user_custom_metadata,
-            stripe_footers,
         })
     }
 
@@ -113,10 +108,6 @@ impl FileMetadata {
 
     pub fn stripe_metadatas(&self) -> &[StripeMetadata] {
         &self.stripes
-    }
-
-    pub fn stripe_footers(&self) -> &[StripeFooter] {
-        &self.stripe_footers
     }
 
     pub fn user_custom_metadata(&self) -> &HashMap<String, Vec<u8>> {
@@ -190,22 +181,7 @@ pub fn read_metadata<R: ChunkReader>(reader: &mut R) -> Result<FileMetadata> {
         compression,
     )?;
 
-    let mut stripe_footers = Vec::with_capacity(footer.stripes.len());
-
-    // TODO: move out of here
-    // clippy read_zero_byte_vec lint causing issues so init to non-zero length
-    let mut scratch = vec![0];
-    for stripe in &footer.stripes {
-        let offset = stripe.offset() + stripe.index_length() + stripe.data_length();
-        let len = stripe.footer_length();
-
-        let mut read = reader.get_read(offset).context(error::IoSnafu)?;
-        scratch.resize(len as usize, 0);
-        read.read_exact(&mut scratch).context(error::IoSnafu)?;
-        stripe_footers.push(deserialize_stripe_footer(&scratch, compression)?);
-    }
-
-    FileMetadata::from_proto(&postscript, &footer, &metadata, stripe_footers)
+    FileMetadata::from_proto(&postscript, &footer, &metadata)
 }
 
 pub async fn read_metadata_async<R: AsyncChunkReader>(reader: &mut R) -> Result<FileMetadata> {
@@ -276,21 +252,7 @@ pub async fn read_metadata_async<R: AsyncChunkReader>(reader: &mut R) -> Result<
         compression,
     )?;
 
-    let mut stripe_footers = Vec::with_capacity(footer.stripes.len());
-
-    // TODO: move out of here
-    for stripe in &footer.stripes {
-        let offset = stripe.offset() + stripe.index_length() + stripe.data_length();
-        let len = stripe.footer_length();
-
-        let bytes = reader
-            .get_bytes(offset, len)
-            .await
-            .context(error::IoSnafu)?;
-        stripe_footers.push(deserialize_stripe_footer(&bytes, compression)?);
-    }
-
-    FileMetadata::from_proto(&postscript, &footer, &metadata, stripe_footers)
+    FileMetadata::from_proto(&postscript, &footer, &metadata)
 }
 
 fn deserialize_footer(bytes: &[u8], compression: Option<Compression>) -> Result<Footer> {
@@ -309,16 +271,4 @@ fn deserialize_footer_metadata(bytes: &[u8], compression: Option<Compression>) -
         .read_to_end(&mut buffer)
         .context(error::IoSnafu)?;
     Metadata::decode(buffer.as_slice()).context(error::DecodeProtoSnafu)
-}
-
-fn deserialize_stripe_footer(
-    bytes: &[u8],
-    compression: Option<Compression>,
-) -> Result<StripeFooter> {
-    let mut buffer = vec![];
-    // TODO: refactor to not need Bytes::copy_from_slice
-    Decompressor::new(Bytes::copy_from_slice(bytes), compression, vec![])
-        .read_to_end(&mut buffer)
-        .context(error::IoSnafu)?;
-    StripeFooter::decode(buffer.as_slice()).context(error::DecodeProtoSnafu)
 }

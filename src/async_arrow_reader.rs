@@ -10,12 +10,14 @@ use arrow::record_batch::RecordBatch;
 use futures::future::BoxFuture;
 use futures::{ready, Stream};
 use futures_util::FutureExt;
+use snafu::ResultExt;
 
 use crate::arrow_reader::column::Column;
 use crate::arrow_reader::{
-    create_arrow_schema, Cursor, NaiveStripeDecoder, StreamMap, Stripe, DEFAULT_BATCH_SIZE,
+    create_arrow_schema, deserialize_stripe_footer, Cursor, NaiveStripeDecoder, StreamMap, Stripe,
+    DEFAULT_BATCH_SIZE,
 };
-use crate::error::Result;
+use crate::error::{IoSnafu, Result};
 use crate::reader::metadata::FileMetadata;
 use crate::reader::AsyncChunkReader;
 use crate::schema::RootDataType;
@@ -200,9 +202,14 @@ impl Stripe {
         stripe: usize,
         info: &StripeMetadata,
     ) -> Result<Self> {
-        let footer = Arc::new(file_metadata.stripe_footers()[stripe].clone());
-
         let compression = file_metadata.compression();
+
+        let footer = reader
+            .get_bytes(info.footer_offset(), info.footer_length())
+            .await
+            .context(IoSnafu)?;
+        let footer = Arc::new(deserialize_stripe_footer(&footer, compression)?);
+
         //TODO(weny): add tz
         let columns = projected_data_type
             .children()

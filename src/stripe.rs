@@ -43,6 +43,10 @@ impl StripeMetadata {
     pub fn column_statistics(&self) -> &[ColumnStatistics] {
         &self.column_statistics
     }
+
+    pub fn footer_offset(&self) -> u64 {
+        self.offset + self.index_length + self.data_length
+    }
 }
 
 impl TryFrom<(&proto::StripeInformation, &proto::StripeStatistics)> for StripeMetadata {

@@ -1,6 +1,7 @@
 pub mod column;
 
 use std::collections::HashMap;
+use std::io::Read;
 use std::sync::Arc;
 
 use arrow::array::{
@@ -19,6 +20,7 @@ use arrow::datatypes::{Field, TimeUnit};
 use arrow::error::ArrowError;
 use arrow::record_batch::{RecordBatch, RecordBatchReader};
 use bytes::Bytes;
+use prost::Message;
 use snafu::{OptionExt, ResultExt};
 
 use self::column::list::{new_list_iter, ListDecoder};
@@ -35,7 +37,7 @@ use crate::arrow_reader::column::struct_column::StructDecoder;
 use crate::arrow_reader::column::timestamp::new_timestamp_iter;
 use crate::arrow_reader::column::NullableIterator;
 use crate::builder::BoxedArrayBuilder;
-use crate::error::{self, InvalidColumnSnafu, Result};
+use crate::error::{self, InvalidColumnSnafu, IoSnafu, Result};
 use crate::proto::stream::Kind;
 use crate::proto::StripeFooter;
 use crate::reader::decompress::{Compression, Decompressor};
@@ -901,9 +903,13 @@ impl Stripe {
         stripe: usize,
         info: &StripeMetadata,
     ) -> Result<Self> {
-        let footer = Arc::new(file_metadata.stripe_footers()[stripe].clone());
-
         let compression = file_metadata.compression();
+
+        let footer = reader
+            .get_bytes(info.footer_offset(), info.footer_length())
+            .context(IoSnafu)?;
+        let footer = Arc::new(deserialize_stripe_footer(&footer, compression)?);
+
         //TODO(weny): add tz
         let columns = projected_data_type
             .children()
@@ -966,4 +972,16 @@ impl StreamMap {
             .cloned()
             .map(|data| Decompressor::new(data, self.compression, vec![]))
     }
+}
+
+pub(crate) fn deserialize_stripe_footer(
+    bytes: &[u8],
+    compression: Option<Compression>,
+) -> Result<StripeFooter> {
+    let mut buffer = vec![];
+    // TODO: refactor to not need Bytes::copy_from_slice
+    Decompressor::new(Bytes::copy_from_slice(bytes), compression, vec![])
+        .read_to_end(&mut buffer)
+        .context(error::IoSnafu)?;
+    StripeFooter::decode(buffer.as_slice()).context(error::DecodeProtoSnafu)
 }
