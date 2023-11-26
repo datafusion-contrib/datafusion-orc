@@ -4,7 +4,6 @@ use arrow::record_batch::RecordBatch;
 use arrow::util::pretty;
 use datafusion_orc::arrow_reader::{ArrowReader, Cursor};
 use datafusion_orc::async_arrow_reader::ArrowStreamReader;
-use datafusion_orc::reader::Reader;
 use futures_util::TryStreamExt;
 
 use crate::misc::{LONG_BOOL_EXPECTED, LONG_STRING_DICT_EXPECTED, LONG_STRING_EXPECTED};
@@ -14,9 +13,7 @@ mod misc;
 fn new_arrow_reader(path: &str, fields: &[&str]) -> ArrowReader<File> {
     let f = File::open(path).expect("no file found");
 
-    let reader = Reader::new(f).unwrap();
-
-    let cursor = Cursor::new(reader, fields).unwrap();
+    let cursor = Cursor::new(f, fields).unwrap();
 
     ArrowReader::new(cursor, None)
 }
@@ -24,9 +21,7 @@ fn new_arrow_reader(path: &str, fields: &[&str]) -> ArrowReader<File> {
 async fn new_arrow_stream_reader_root(path: &str) -> ArrowStreamReader<tokio::fs::File> {
     let f = tokio::fs::File::open(path).await.unwrap();
 
-    let reader = Reader::new_async(f).await.unwrap();
-
-    let cursor = Cursor::root(reader).unwrap();
+    let cursor = Cursor::root_async(f).await.unwrap();
 
     ArrowStreamReader::new(cursor, None)
 }
@@ -34,9 +29,7 @@ async fn new_arrow_stream_reader_root(path: &str) -> ArrowStreamReader<tokio::fs
 fn new_arrow_reader_root(path: &str) -> ArrowReader<File> {
     let f = File::open(path).expect("no file found");
 
-    let reader = Reader::new(f).unwrap();
-
-    let cursor = Cursor::root(reader).unwrap();
+    let cursor = Cursor::root(f).unwrap();
 
     ArrowReader::new(cursor, None)
 }

@@ -1,7 +1,6 @@
 pub mod column;
 
 use std::collections::HashMap;
-use std::io::{Read, Seek};
 use std::sync::Arc;
 
 use arrow::array::{
@@ -40,11 +39,12 @@ use crate::error::{self, InvalidColumnSnafu, Result};
 use crate::proto::stream::Kind;
 use crate::proto::StripeFooter;
 use crate::reader::decompress::{Compression, Decompressor};
-use crate::reader::Reader;
+use crate::reader::metadata::{read_metadata, read_metadata_async, FileMetadata};
+use crate::reader::{AsyncChunkReader, ChunkReader};
 use crate::schema::{DataType, RootDataType};
 use crate::stripe::StripeMetadata;
 
-pub struct ArrowReader<R: Read> {
+pub struct ArrowReader<R: ChunkReader> {
     cursor: Cursor<R>,
     schema_ref: SchemaRef,
     current_stripe: Option<Box<dyn Iterator<Item = Result<RecordBatch>>>>,
@@ -53,7 +53,7 @@ pub struct ArrowReader<R: Read> {
 
 pub const DEFAULT_BATCH_SIZE: usize = 8192;
 
-impl<R: Read> ArrowReader<R> {
+impl<R: ChunkReader> ArrowReader<R> {
     pub fn new(cursor: Cursor<R>, batch_size: Option<usize>) -> Self {
         let batch_size = batch_size.unwrap_or(DEFAULT_BATCH_SIZE);
         let schema = Arc::new(create_arrow_schema(&cursor));
@@ -66,11 +66,11 @@ impl<R: Read> ArrowReader<R> {
     }
 
     pub fn total_row_count(&self) -> u64 {
-        self.cursor.reader.metadata().number_of_rows()
+        self.cursor.file_metadata.number_of_rows()
     }
 }
 
-impl<R: Read + Seek> ArrowReader<R> {
+impl<R: ChunkReader> ArrowReader<R> {
     fn try_advance_stripe(&mut self) -> Option<std::result::Result<RecordBatch, ArrowError>> {
         match self
             .cursor
@@ -96,22 +96,21 @@ impl<R: Read + Seek> ArrowReader<R> {
 
 pub fn create_arrow_schema<R>(cursor: &Cursor<R>) -> Schema {
     let metadata = cursor
-        .reader
-        .metadata()
+        .file_metadata
         .user_custom_metadata()
         .iter()
         .map(|(key, value)| (key.clone(), String::from_utf8_lossy(value).to_string()))
         .collect::<HashMap<_, _>>();
-    cursor.root_data_type.create_arrow_schema(&metadata)
+    cursor.projected_data_type.create_arrow_schema(&metadata)
 }
 
-impl<R: Read + Seek> RecordBatchReader for ArrowReader<R> {
+impl<R: ChunkReader> RecordBatchReader for ArrowReader<R> {
     fn schema(&self) -> SchemaRef {
         self.schema_ref.clone()
     }
 }
 
-impl<R: Read + Seek> Iterator for ArrowReader<R> {
+impl<R: ChunkReader> Iterator for ArrowReader<R> {
     type Item = std::result::Result<RecordBatch, ArrowError>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -806,45 +805,78 @@ impl NaiveStripeDecoder {
 }
 
 pub struct Cursor<R> {
-    pub(crate) reader: Reader<R>,
-    pub(crate) root_data_type: RootDataType,
+    pub(crate) reader: R,
+    pub(crate) file_metadata: Arc<FileMetadata>,
+    pub(crate) projected_data_type: RootDataType,
     pub(crate) stripe_offset: usize,
 }
 
-impl<R> Cursor<R> {
-    pub fn new<T: AsRef<str>>(r: Reader<R>, fields: &[T]) -> Result<Self> {
-        let projected_data_type = r.metadata().root_data_type().project(fields);
+impl<R: ChunkReader> Cursor<R> {
+    pub fn new<T: AsRef<str>>(mut reader: R, fields: &[T]) -> Result<Self> {
+        let file_metadata = Arc::new(read_metadata(&mut reader)?);
+        let projected_data_type = file_metadata.root_data_type().project(fields);
         Ok(Self {
-            reader: r,
-            root_data_type: projected_data_type,
+            reader,
+            file_metadata,
+            projected_data_type,
             stripe_offset: 0,
         })
     }
 
-    pub fn root(r: Reader<R>) -> Result<Self> {
-        let data_type = r.metadata().root_data_type().clone();
+    pub fn root(mut reader: R) -> Result<Self> {
+        let file_metadata = Arc::new(read_metadata(&mut reader)?);
+        let data_type = file_metadata.root_data_type().clone();
         Ok(Self {
-            reader: r,
-            root_data_type: data_type,
+            reader,
+            file_metadata,
+            projected_data_type: data_type,
             stripe_offset: 0,
         })
     }
 }
 
-impl<R: Read + Seek> Iterator for Cursor<R> {
+impl<R: AsyncChunkReader> Cursor<R> {
+    pub async fn new_async<T: AsRef<str>>(mut reader: R, fields: &[T]) -> Result<Self> {
+        let file_metadata = Arc::new(read_metadata_async(&mut reader).await?);
+        let projected_data_type = file_metadata.root_data_type().project(fields);
+        Ok(Self {
+            reader,
+            file_metadata,
+            projected_data_type,
+            stripe_offset: 0,
+        })
+    }
+
+    pub async fn root_async(mut reader: R) -> Result<Self> {
+        let file_metadata = Arc::new(read_metadata_async(&mut reader).await?);
+        let data_type = file_metadata.root_data_type().clone();
+        Ok(Self {
+            reader,
+            file_metadata,
+            projected_data_type: data_type,
+            stripe_offset: 0,
+        })
+    }
+}
+
+impl<R: ChunkReader> Iterator for Cursor<R> {
     type Item = Result<Stripe>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(info) = self.reader.stripe(self.stripe_offset).cloned() {
+        if let Some(info) = self
+            .file_metadata
+            .stripe_metadatas()
+            .get(self.stripe_offset)
+            .cloned()
+        {
             let stripe = Stripe::new(
                 &mut self.reader,
-                self.root_data_type.clone(),
+                &self.file_metadata,
+                &self.projected_data_type.clone(),
                 self.stripe_offset,
                 &info,
             );
-
             self.stripe_offset += 1;
-
             Some(stripe)
         } else {
             None
@@ -861,41 +893,19 @@ pub struct Stripe {
     pub(crate) stream_map: Arc<StreamMap>,
 }
 
-#[derive(Debug)]
-pub struct StreamMap {
-    pub inner: HashMap<(u32, Kind), Bytes>,
-    pub compression: Option<Compression>,
-}
-
-impl StreamMap {
-    pub fn get(&self, column: &Column, kind: Kind) -> Result<Decompressor> {
-        self.get_opt(column, kind).context(InvalidColumnSnafu {
-            name: column.name(),
-        })
-    }
-
-    pub fn get_opt(&self, column: &Column, kind: Kind) -> Option<Decompressor> {
-        let column_id = column.column_id();
-
-        self.inner
-            .get(&(column_id, kind))
-            .cloned()
-            .map(|data| Decompressor::new(data, self.compression, vec![]))
-    }
-}
-
 impl Stripe {
-    pub fn new<R: Read + Seek>(
-        r: &mut Reader<R>,
-        root_data_type: RootDataType,
+    pub fn new<R: ChunkReader>(
+        reader: &mut R,
+        file_metadata: &Arc<FileMetadata>,
+        projected_data_type: &RootDataType,
         stripe: usize,
         info: &StripeMetadata,
     ) -> Result<Self> {
-        let footer = Arc::new(r.stripe_footer(stripe).clone());
+        let footer = Arc::new(file_metadata.stripe_footers()[stripe].clone());
 
-        let compression = r.metadata().compression();
+        let compression = file_metadata.compression();
         //TODO(weny): add tz
-        let columns = root_data_type
+        let columns = projected_data_type
             .children()
             .iter()
             .map(|(name, data_type)| Column::new(name, data_type, &footer, info.number_of_rows()))
@@ -907,7 +917,7 @@ impl Stripe {
             let length = stream.length();
             let column_id = stream.column();
             let kind = stream.kind();
-            let data = Column::read_stream(r, stream_offset, length as usize)?;
+            let data = Column::read_stream(reader, stream_offset, length)?;
 
             // TODO(weny): filter out unused streams.
             stream_map.insert((column_id, kind), data);
@@ -932,5 +942,28 @@ impl Stripe {
 
     pub fn stripe_offset(&self) -> usize {
         self.stripe_offset
+    }
+}
+
+#[derive(Debug)]
+pub struct StreamMap {
+    pub inner: HashMap<(u32, Kind), Bytes>,
+    pub compression: Option<Compression>,
+}
+
+impl StreamMap {
+    pub fn get(&self, column: &Column, kind: Kind) -> Result<Decompressor> {
+        self.get_opt(column, kind).context(InvalidColumnSnafu {
+            name: column.name(),
+        })
+    }
+
+    pub fn get_opt(&self, column: &Column, kind: Kind) -> Option<Decompressor> {
+        let column_id = column.column_id();
+
+        self.inner
+            .get(&(column_id, kind))
+            .cloned()
+            .map(|data| Decompressor::new(data, self.compression, vec![]))
     }
 }

@@ -23,10 +23,13 @@ pub enum Error {
         location: Location,
     },
 
+    #[snafu(display("Empty file"))]
+    EmptyFile { location: Location },
+
     #[snafu(display("Invalid input, message: {}", msg))]
     InvalidInput { msg: String, location: Location },
 
-    #[snafu(display("Out of sepc, message: {}", msg))]
+    #[snafu(display("Out of spec, message: {}", msg))]
     OutOfSpec { msg: String, location: Location },
 
     #[snafu(display("Error from map builder: {}", source))]
