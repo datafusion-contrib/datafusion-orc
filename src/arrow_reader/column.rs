@@ -1,14 +1,12 @@
-use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
 
 use arrow::datatypes::Field;
 use bytes::Bytes;
 use snafu::ResultExt;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
-use crate::error::{self, Result};
+use crate::error::{IoSnafu, Result};
 use crate::proto::{ColumnEncoding, StripeFooter};
-use crate::reader::Reader;
+use crate::reader::{AsyncChunkReader, ChunkReader};
 use crate::schema::DataType;
 
 pub mod binary;
@@ -43,24 +41,6 @@ impl From<&Column> for Field {
         let dt = value.data_type.to_arrow_data_type();
         Field::new(value.name.clone(), dt, true)
     }
-}
-
-macro_rules! impl_read_stream {
-    ($reader:ident,$start:ident,$length:ident $($_await:tt)*) => {{
-        $reader
-            .inner
-            .seek(SeekFrom::Start($start))$($_await)*
-            .context(error::IoSnafu)?;
-
-        let mut scratch = vec![0; $length];
-
-        $reader
-            .inner
-            .read_exact(&mut scratch)$($_await)*
-            .context(error::IoSnafu)?;
-
-        Ok(Bytes::from(scratch))
-    }};
 }
 
 impl Column {
@@ -172,20 +152,16 @@ impl Column {
         }
     }
 
-    pub fn read_stream<R: Read + Seek>(
-        reader: &mut Reader<R>,
-        start: u64,
-        length: usize,
-    ) -> Result<Bytes> {
-        impl_read_stream!(reader, start, length)
+    pub fn read_stream<R: ChunkReader>(reader: &mut R, start: u64, length: u64) -> Result<Bytes> {
+        reader.get_bytes(start, length).context(IoSnafu)
     }
 
-    pub async fn read_stream_async<R: AsyncRead + AsyncSeek + Unpin + Send>(
-        reader: &mut Reader<R>,
+    pub async fn read_stream_async<R: AsyncChunkReader>(
+        reader: &mut R,
         start: u64,
-        length: usize,
+        length: u64,
     ) -> Result<Bytes> {
-        impl_read_stream!(reader, start, length.await)
+        reader.get_bytes(start, length).await.context(IoSnafu)
     }
 }
 

@@ -10,14 +10,16 @@ use arrow::record_batch::RecordBatch;
 use futures::future::BoxFuture;
 use futures::{ready, Stream};
 use futures_util::FutureExt;
-use tokio::io::{AsyncRead, AsyncSeek};
+use snafu::ResultExt;
 
 use crate::arrow_reader::column::Column;
 use crate::arrow_reader::{
-    create_arrow_schema, Cursor, NaiveStripeDecoder, StreamMap, Stripe, DEFAULT_BATCH_SIZE,
+    create_arrow_schema, deserialize_stripe_footer, Cursor, NaiveStripeDecoder, StreamMap, Stripe,
+    DEFAULT_BATCH_SIZE,
 };
-use crate::error::Result;
-use crate::reader::Reader;
+use crate::error::{IoSnafu, Result};
+use crate::reader::metadata::FileMetadata;
+use crate::reader::AsyncChunkReader;
 use crate::schema::RootDataType;
 use crate::stripe::StripeMetadata;
 
@@ -59,26 +61,37 @@ pub struct StripeFactory<R> {
     is_end: bool,
 }
 
-pub struct ArrowStreamReader<R: AsyncRead + AsyncSeek + Unpin + Send> {
-    factory: Option<StripeFactory<R>>,
+pub struct ArrowStreamReader<R: AsyncChunkReader> {
+    factory: Option<Box<StripeFactory<R>>>,
     batch_size: usize,
     schema_ref: SchemaRef,
     state: StreamState<R>,
 }
 
-impl<R: AsyncRead + AsyncSeek + Unpin + Send + 'static> StripeFactory<R> {
+impl<R: AsyncChunkReader + 'static> StripeFactory<R> {
     pub async fn read_next_stripe_inner(&mut self, info: &StripeMetadata) -> Result<Stripe> {
         let inner = &mut self.inner;
 
-        let root_data_type = inner.root_data_type.clone();
         let stripe_offset = inner.stripe_offset;
         inner.stripe_offset += 1;
 
-        Stripe::new_async(&mut inner.reader, root_data_type, stripe_offset, info).await
+        Stripe::new_async(
+            &mut inner.reader,
+            &inner.file_metadata,
+            &inner.projected_data_type,
+            stripe_offset,
+            info,
+        )
+        .await
     }
 
     pub async fn read_next_stripe(mut self) -> Result<(Self, Option<Stripe>)> {
-        let info = self.inner.reader.stripe(self.inner.stripe_offset).cloned();
+        let info = self
+            .inner
+            .file_metadata
+            .stripe_metadatas()
+            .get(self.inner.stripe_offset)
+            .cloned();
 
         if let Some(info) = info {
             match self.read_next_stripe_inner(&info).await {
@@ -96,12 +109,12 @@ impl<R: AsyncRead + AsyncSeek + Unpin + Send + 'static> StripeFactory<R> {
     }
 }
 
-impl<R: AsyncRead + AsyncSeek + Unpin + Send + 'static> ArrowStreamReader<R> {
+impl<R: AsyncChunkReader + 'static> ArrowStreamReader<R> {
     pub fn new(c: Cursor<R>, batch_size: Option<usize>) -> Self {
         let batch_size = batch_size.unwrap_or(DEFAULT_BATCH_SIZE);
         let schema = Arc::new(create_arrow_schema(&c));
         Self {
-            factory: Some(c.into()),
+            factory: Some(Box::new(c.into())),
             batch_size,
             schema_ref: schema,
             state: StreamState::Init,
@@ -140,7 +153,7 @@ impl<R: AsyncRead + AsyncSeek + Unpin + Send + 'static> ArrowStreamReader<R> {
                 }
                 StreamState::Reading(f) => match ready!(f.poll_unpin(cx)) {
                     Ok((factory, Some(stripe))) => {
-                        self.factory = Some(factory);
+                        self.factory = Some(Box::new(factory));
                         match NaiveStripeDecoder::new(
                             stripe,
                             self.schema_ref.clone(),
@@ -156,7 +169,7 @@ impl<R: AsyncRead + AsyncSeek + Unpin + Send + 'static> ArrowStreamReader<R> {
                         }
                     }
                     Ok((factory, None)) => {
-                        self.factory = Some(factory);
+                        self.factory = Some(Box::new(factory));
                         // All rows skipped, read next row group
                         self.state = StreamState::Init;
                     }
@@ -171,7 +184,7 @@ impl<R: AsyncRead + AsyncSeek + Unpin + Send + 'static> ArrowStreamReader<R> {
     }
 }
 
-impl<R: AsyncRead + AsyncSeek + Unpin + Send + 'static> Stream for ArrowStreamReader<R> {
+impl<R: AsyncChunkReader + 'static> Stream for ArrowStreamReader<R> {
     type Item = std::result::Result<RecordBatch, ArrowError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -182,17 +195,23 @@ impl<R: AsyncRead + AsyncSeek + Unpin + Send + 'static> Stream for ArrowStreamRe
 
 impl Stripe {
     // TODO: reduce duplication with sync version in arrow_reader.rs
-    pub async fn new_async<R: AsyncRead + AsyncSeek + Unpin + Send>(
-        r: &mut Reader<R>,
-        root_data_type: RootDataType,
+    pub async fn new_async<R: AsyncChunkReader>(
+        reader: &mut R,
+        file_metadata: &Arc<FileMetadata>,
+        projected_data_type: &RootDataType,
         stripe: usize,
         info: &StripeMetadata,
     ) -> Result<Self> {
-        let footer = Arc::new(r.stripe_footer(stripe).clone());
+        let compression = file_metadata.compression();
 
-        let compression = r.metadata().compression();
+        let footer = reader
+            .get_bytes(info.footer_offset(), info.footer_length())
+            .await
+            .context(IoSnafu)?;
+        let footer = Arc::new(deserialize_stripe_footer(&footer, compression)?);
+
         //TODO(weny): add tz
-        let columns = root_data_type
+        let columns = projected_data_type
             .children()
             .iter()
             .map(|(name, data_type)| Column::new(name, data_type, &footer, info.number_of_rows()))
@@ -204,7 +223,7 @@ impl Stripe {
             let length = stream.length();
             let column_id = stream.column();
             let kind = stream.kind();
-            let data = Column::read_stream_async(r, stream_offset, length as usize).await?;
+            let data = Column::read_stream_async(reader, stream_offset, length).await?;
 
             // TODO(weny): filter out unused streams.
             stream_map.insert((column_id, kind), data);

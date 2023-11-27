@@ -10,4 +10,3 @@ pub mod stripe;
 
 pub use arrow_reader::{ArrowReader, Cursor};
 pub use async_arrow_reader::ArrowStreamReader;
-pub use reader::Reader;
