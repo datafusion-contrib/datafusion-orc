@@ -18,7 +18,7 @@
 use std::fs::File;
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use datafusion_orc::{ArrowReader, ArrowStreamReader, Cursor, Reader};
+use datafusion_orc::{ArrowReader, ArrowStreamReader, Cursor};
 use futures_util::TryStreamExt;
 
 fn basic_path(path: &str) -> String {
@@ -44,8 +44,7 @@ async fn async_read_all() {
     let file_path = basic_path(file);
     let f = tokio::fs::File::open(file_path).await.unwrap();
 
-    let reader = Reader::new_async(f).await.unwrap();
-    let cursor = Cursor::root(reader).unwrap();
+    let cursor = Cursor::root_async(f).await.unwrap();
 
     ArrowStreamReader::new(cursor, None)
         .try_collect::<Vec<_>>()
@@ -58,8 +57,7 @@ fn sync_read_all() {
     let file_path = basic_path(file);
     let f = File::open(file_path).unwrap();
 
-    let reader = Reader::new(f).unwrap();
-    let cursor = Cursor::root(reader).unwrap();
+    let cursor = Cursor::root(f).unwrap();
 
     ArrowReader::new(cursor, None)
         .collect::<Result<Vec<_>, _>>()
