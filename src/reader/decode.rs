@@ -28,7 +28,7 @@ impl RleVersion {
     ) -> Box<dyn Iterator<Item = Result<u64>> + Send> {
         match self {
             RleVersion::V1 => Box::new(UnsignedRleReaderV1::new(reader)),
-            RleVersion::V2 => Box::new(UnsignedRleReaderV2::new(reader, true)),
+            RleVersion::V2 => Box::new(UnsignedRleReaderV2::new(reader)),
         }
     }
 }
@@ -51,7 +51,7 @@ pub fn get_direct_signed_rle_reader<R: Read + Send + 'static>(
     match column.encoding().kind() {
         crate::proto::column_encoding::Kind::Direct => Ok(Box::new(SignedRleReaderV1::new(reader))),
         crate::proto::column_encoding::Kind::DirectV2 => {
-            Ok(Box::new(RleReaderV2::new(reader, true, true)))
+            Ok(Box::new(RleReaderV2::new(reader, true)))
         }
         k => InvalidColumnEncodingSnafu {
             name: column.name(),
@@ -70,7 +70,7 @@ pub fn get_direct_unsigned_rle_reader<R: Read + Send + 'static>(
             Ok(Box::new(UnsignedRleReaderV1::new(reader)))
         }
         crate::proto::column_encoding::Kind::DirectV2 => {
-            Ok(Box::new(UnsignedRleReaderV2::new(reader, true)))
+            Ok(Box::new(UnsignedRleReaderV2::new(reader)))
         }
         k => InvalidColumnEncodingSnafu {
             name: column.name(),

@@ -17,22 +17,12 @@ impl<R: Read> RleReaderV2<R> {
         length += 1;
 
         // write the unpacked values and zigzag decode to result buffer
-        read_ints(
-            &mut self.literals,
-            self.num_literals,
-            length,
-            fb as usize,
-            &mut self.reader,
-        )?;
+        read_ints(&mut self.literals, length, fb as usize, &mut self.reader)?;
 
         if self.signed {
-            for _ in 0..length {
-                self.literals[self.num_literals] =
-                    zigzag_decode((self.literals[self.num_literals]) as u64);
-                self.num_literals += 1;
+            for lit in self.literals.iter_mut() {
+                *lit = zigzag_decode(*lit as u64);
             }
-        } else {
-            self.num_literals += length;
         }
 
         Ok(())
