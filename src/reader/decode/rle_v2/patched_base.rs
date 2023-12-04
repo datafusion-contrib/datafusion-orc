@@ -1,7 +1,8 @@
+use std::collections::VecDeque;
 use std::io::Read;
 
 use super::RleReaderV2;
-use crate::error::Result;
+use crate::error::{OutOfSpecSnafu, Result};
 use crate::reader::decode::util::{
     bytes_to_long_be, get_closest_fixed_bits, header_to_rle_v2_direct_bit_width, read_ints,
     read_u8, rle_v2_direct_bit_width,
@@ -47,23 +48,22 @@ impl<R: Read> RleReaderV2<R> {
             base = -base
         }
 
-        let mut unpacked = vec![0i64; length];
-
-        read_ints(&mut unpacked, 0, length, bit_width as usize, reader)?;
-
-        let mut unpacked_patch = vec![0i64; patch_list_length as usize];
+        let mut unpacked = VecDeque::with_capacity(length);
+        read_ints(&mut unpacked, length, bit_width as usize, reader)?;
 
         let width = patch_width as usize + patch_gap_width as usize;
-
-        if width > 64 && !self.skip_corrupt {
-            // TODO: throw error
+        if width > 64 {
+            return OutOfSpecSnafu {
+                msg: "combined patch width and patch gap width cannot be greater than 64 bits",
+            }
+            .fail();
         }
 
         let bit_size = get_closest_fixed_bits(width);
 
+        let mut unpacked_patch = VecDeque::with_capacity(patch_list_length as usize);
         read_ints(
             &mut unpacked_patch,
-            0,
             patch_list_length as usize,
             bit_size,
             reader,
@@ -87,8 +87,7 @@ impl<R: Read> RleReaderV2<R> {
             if i == actual_gap as usize {
                 let patched_value = item | (current_patch << bit_width);
 
-                self.literals[self.num_literals] = base + patched_value;
-                self.num_literals += 1;
+                self.literals.push_back(base + patched_value);
 
                 patch_index += 1;
 
@@ -108,8 +107,7 @@ impl<R: Read> RleReaderV2<R> {
                     actual_gap += i as i64;
                 }
             } else {
-                self.literals[self.num_literals] = base + item;
-                self.num_literals += 1;
+                self.literals.push_back(base + item);
             }
         }
 
