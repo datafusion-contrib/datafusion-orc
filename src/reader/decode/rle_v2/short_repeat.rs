@@ -1,23 +1,32 @@
 use std::io::Read;
 
-use snafu::ensure;
-
-use crate::error::{self, Result};
+use crate::error::Result;
 use crate::reader::decode::rle_v2::RleReaderV2;
 use crate::reader::decode::util::{bytes_to_long_be, zigzag_decode};
 
-// MIN_REPEAT_SIZE is the minimum number of repeated values required to use run length encoding.
+/// Minimum number of repeated values required to use run length encoding.
 const MIN_REPEAT_SIZE: usize = 3;
 
 impl<R: Read> RleReaderV2<R> {
     pub fn read_short_repeat_values(&mut self, header: u8) -> Result<()> {
-        let size = ((header as u64) >> 3) & 0x07;
-        let size = size + 1;
+        // Header byte:
+        //
+        // eeww_wccc
+        // 7       0 LSB
+        //
+        // ee  = Sub-encoding bits, always 00
+        // www = Value width bits
+        // ccc = Repeat count bits
 
-        let mut l = (header & 0x07) as usize;
-        l += MIN_REPEAT_SIZE;
+        let value_byte_width = (header >> 3) & 0x07; // Encoded as 0 to 7
+        let value_byte_width = value_byte_width as usize + 1; // Decode to 1 to 8 bytes
 
-        let val = bytes_to_long_be(&mut self.reader, size as usize)?;
+        let run_length = (header & 0x07) as usize;
+        let run_length = run_length + MIN_REPEAT_SIZE;
+
+        // Value that is being repeated is encoded as N bytes in big endian format
+        // Where N = value_byte_width
+        let val = bytes_to_long_be(&mut self.reader, value_byte_width)?;
 
         let val = if self.signed {
             zigzag_decode(val as u64)
@@ -25,17 +34,9 @@ impl<R: Read> RleReaderV2<R> {
             val
         };
 
-        ensure!(
-            self.num_literals == 0,
-            error::UnexpectedSnafu {
-                msg: "readValues called with existing values present"
-            }
-        );
-
-        for i in 0..l {
-            self.literals[i] = val;
+        for _ in 0..run_length {
+            self.literals.push_back(val);
         }
-        self.num_literals = l;
 
         Ok(())
     }
