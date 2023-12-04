@@ -21,7 +21,7 @@ impl<R: Read> RleReaderV2<R> {
         // Adjust to actual value [1, 512]
         // Run length includes base value and first delta
         let second_byte = read_u8(reader)? as u16;
-        let length = ((header as u16 & 0x01) << 8) | second_byte as u16;
+        let length = ((header as u16 & 0x01) << 8) | second_byte;
         let mut length = length as usize;
         length += 1;
 
@@ -48,7 +48,7 @@ impl<R: Read> RleReaderV2<R> {
             // add delta base and first value
             let second_value = base_value + delta_base;
             self.literals.push_back(second_value);
-            length -= 2; // base_value and first delta vaue
+            length -= 2; // base_value and first delta value
 
             // unpack the delta values
             read_ints(&mut self.literals, length, delta_bit_width as usize, reader)?;
