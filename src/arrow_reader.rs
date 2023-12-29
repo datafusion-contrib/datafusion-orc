@@ -38,6 +38,7 @@ use crate::arrow_reader::column::timestamp::new_timestamp_iter;
 use crate::arrow_reader::column::NullableIterator;
 use crate::builder::BoxedArrayBuilder;
 use crate::error::{self, InvalidColumnSnafu, IoSnafu, Result};
+use crate::projection::ProjectionMask;
 use crate::proto::stream::Kind;
 use crate::proto::StripeFooter;
 use crate::reader::decompress::{Compression, Decompressor};
@@ -816,7 +817,8 @@ pub struct Cursor<R> {
 impl<R: ChunkReader> Cursor<R> {
     pub fn new<T: AsRef<str>>(mut reader: R, fields: &[T]) -> Result<Self> {
         let file_metadata = Arc::new(read_metadata(&mut reader)?);
-        let projected_data_type = file_metadata.root_data_type().project(fields);
+        let mask = ProjectionMask::named_roots(file_metadata.root_data_type(), fields);
+        let projected_data_type = file_metadata.root_data_type().project(&mask);
         Ok(Self {
             reader,
             file_metadata,
@@ -840,7 +842,8 @@ impl<R: ChunkReader> Cursor<R> {
 impl<R: AsyncChunkReader> Cursor<R> {
     pub async fn new_async<T: AsRef<str>>(mut reader: R, fields: &[T]) -> Result<Self> {
         let file_metadata = Arc::new(read_metadata_async(&mut reader).await?);
-        let projected_data_type = file_metadata.root_data_type().project(fields);
+        let mask = ProjectionMask::named_roots(file_metadata.root_data_type(), fields);
+        let projected_data_type = file_metadata.root_data_type().project(&mask);
         Ok(Self {
             reader,
             file_metadata,
@@ -914,7 +917,7 @@ impl Stripe {
         let columns = projected_data_type
             .children()
             .iter()
-            .map(|(name, data_type)| Column::new(name, data_type, &footer, info.number_of_rows()))
+            .map(|col| Column::new(col.name(), col.data_type(), &footer, info.number_of_rows()))
             .collect();
 
         let mut stream_map = HashMap::new();

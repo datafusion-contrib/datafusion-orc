@@ -5,6 +5,7 @@ use std::sync::Arc;
 use snafu::{ensure, OptionExt};
 
 use crate::error::{NoTypesSnafu, Result, UnexpectedSnafu};
+use crate::projection::ProjectionMask;
 use crate::proto;
 
 use arrow::datatypes::{DataType as ArrowDataType, Field, Schema, TimeUnit, UnionMode};
@@ -22,7 +23,7 @@ use arrow::datatypes::{DataType as ArrowDataType, Field, Schema, TimeUnit, Union
 /// See: <https://orc.apache.org/docs/types.html>
 #[derive(Debug, Clone)]
 pub struct RootDataType {
-    children: Vec<(String, DataType)>,
+    children: Vec<NamedColumn>,
 }
 
 impl RootDataType {
@@ -32,7 +33,7 @@ impl RootDataType {
     }
 
     /// Base columns of the file.
-    pub fn children(&self) -> &[(String, DataType)] {
+    pub fn children(&self) -> &[NamedColumn] {
         &self.children
     }
 
@@ -41,24 +42,22 @@ impl RootDataType {
         let fields = self
             .children
             .iter()
-            .map(|(name, dt)| {
-                let dt = dt.to_arrow_data_type();
-                Field::new(name, dt, true)
+            .map(|col| {
+                let dt = col.data_type().to_arrow_data_type();
+                Field::new(col.name(), dt, true)
             })
             .collect::<Vec<_>>();
         Schema::new_with_metadata(fields, user_metadata.clone())
     }
 
-    /// Project only specific columns from the root type by column name.
-    pub fn project<T: AsRef<str>>(&self, fields: &[T]) -> Self {
-        // TODO: change project to accept project mask (vec of bools) instead of relying on col names?
-        // TODO: be able to nest project? (i.e. project child struct data type) unsure if actually desirable
-        let fields = fields.iter().map(AsRef::as_ref).collect::<Vec<_>>();
+    /// Create new root data type based on mask of columns to project.
+    pub fn project(&self, mask: &ProjectionMask) -> Self {
+        // TODO: fix logic here to account for nested projection
         let children = self
             .children
             .iter()
-            .filter(|c| fields.contains(&c.0.as_str()))
-            .map(|c| c.to_owned())
+            .filter(|col| mask.is_index_projected(col.data_type().column_index()))
+            .map(|col| col.to_owned())
             .collect::<Vec<_>>();
         Self { children }
     }
@@ -75,9 +74,31 @@ impl Display for RootDataType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "ROOT")?;
         for child in &self.children {
-            write!(f, "\n  {} {}", child.0, child.1)?;
+            write!(f, "\n  {child}")?;
         }
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct NamedColumn {
+    name: String,
+    data_type: DataType,
+}
+
+impl NamedColumn {
+    pub fn name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    pub fn data_type(&self) -> &DataType {
+        &self.data_type
+    }
+}
+
+impl Display for NamedColumn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.name(), self.data_type())
     }
 }
 
@@ -86,7 +107,7 @@ impl Display for RootDataType {
 fn parse_struct_children_from_proto(
     types: &[proto::Type],
     column_index: usize,
-) -> Result<Vec<(String, DataType)>> {
+) -> Result<Vec<NamedColumn>> {
     // These pre-conditions should always be upheld, especially as this is a private function
     assert!(column_index < types.len());
     let ty = &types[column_index];
@@ -107,8 +128,8 @@ fn parse_struct_children_from_proto(
         .map(|(&index, name)| {
             let index = index as usize;
             let name = name.to_owned();
-            let dt = DataType::from_proto(types, index)?;
-            Ok((name, dt))
+            let data_type = DataType::from_proto(types, index)?;
+            Ok(NamedColumn { name, data_type })
         })
         .collect::<Result<Vec<_>>>()?;
     Ok(children)
@@ -174,7 +195,7 @@ pub enum DataType {
     /// collection of children types.
     Struct {
         column_index: usize,
-        children: Vec<(String, DataType)>,
+        children: Vec<NamedColumn>,
     },
     /// Compound type where each value in the column is a list of values
     /// of another type, specified by the child type.
@@ -227,22 +248,66 @@ impl DataType {
         }
     }
 
+    /// All children column indices.
+    pub fn children_indices(&self) -> Vec<usize> {
+        match self {
+            DataType::Boolean { .. }
+            | DataType::Byte { .. }
+            | DataType::Short { .. }
+            | DataType::Int { .. }
+            | DataType::Long { .. }
+            | DataType::Float { .. }
+            | DataType::Double { .. }
+            | DataType::String { .. }
+            | DataType::Varchar { .. }
+            | DataType::Char { .. }
+            | DataType::Binary { .. }
+            | DataType::Decimal { .. }
+            | DataType::Timestamp { .. }
+            | DataType::TimestampWithLocalTimezone { .. }
+            | DataType::Date { .. } => vec![],
+            DataType::Struct { children, .. } => children
+                .iter()
+                .flat_map(|col| col.data_type().children_indices())
+                .collect(),
+            DataType::List { child, .. } => child.all_indices(),
+            DataType::Map { key, value, .. } => {
+                let mut indices = key.children_indices();
+                indices.extend(value.children_indices());
+                indices
+            }
+            DataType::Union { variants, .. } => variants
+                .iter()
+                .flat_map(|dt| dt.children_indices())
+                .collect(),
+        }
+    }
+
+    /// Includes self index and all children column indices.
+    pub fn all_indices(&self) -> Vec<usize> {
+        let mut indices = vec![self.column_index()];
+        indices.extend(self.children_indices());
+        indices
+    }
+
     fn from_proto(types: &[proto::Type], column_index: usize) -> Result<Self> {
+        use proto::r#type::Kind;
+
         let ty = types.get(column_index).context(UnexpectedSnafu {
             msg: format!("Column index out of bounds: {column_index}"),
         })?;
         let dt = match ty.kind() {
-            proto::r#type::Kind::Boolean => Self::Boolean { column_index },
-            proto::r#type::Kind::Byte => Self::Byte { column_index },
-            proto::r#type::Kind::Short => Self::Short { column_index },
-            proto::r#type::Kind::Int => Self::Int { column_index },
-            proto::r#type::Kind::Long => Self::Long { column_index },
-            proto::r#type::Kind::Float => Self::Float { column_index },
-            proto::r#type::Kind::Double => Self::Double { column_index },
-            proto::r#type::Kind::String => Self::String { column_index },
-            proto::r#type::Kind::Binary => Self::Binary { column_index },
-            proto::r#type::Kind::Timestamp => Self::Timestamp { column_index },
-            proto::r#type::Kind::List => {
+            Kind::Boolean => Self::Boolean { column_index },
+            Kind::Byte => Self::Byte { column_index },
+            Kind::Short => Self::Short { column_index },
+            Kind::Int => Self::Int { column_index },
+            Kind::Long => Self::Long { column_index },
+            Kind::Float => Self::Float { column_index },
+            Kind::Double => Self::Double { column_index },
+            Kind::String => Self::String { column_index },
+            Kind::Binary => Self::Binary { column_index },
+            Kind::Timestamp => Self::Timestamp { column_index },
+            Kind::List => {
                 ensure!(
                     ty.subtypes.len() == 1,
                     UnexpectedSnafu {
@@ -260,7 +325,7 @@ impl DataType {
                     child,
                 }
             }
-            proto::r#type::Kind::Map => {
+            Kind::Map => {
                 ensure!(
                     ty.subtypes.len() == 2,
                     UnexpectedSnafu {
@@ -281,14 +346,14 @@ impl DataType {
                     value,
                 }
             }
-            proto::r#type::Kind::Struct => {
+            Kind::Struct => {
                 let children = parse_struct_children_from_proto(types, column_index)?;
                 Self::Struct {
                     column_index,
                     children,
                 }
             }
-            proto::r#type::Kind::Union => {
+            Kind::Union => {
                 ensure!(
                     ty.subtypes.len() <= 256,
                     UnexpectedSnafu {
@@ -312,23 +377,21 @@ impl DataType {
                     variants,
                 }
             }
-            proto::r#type::Kind::Decimal => Self::Decimal {
+            Kind::Decimal => Self::Decimal {
                 column_index,
                 precision: ty.precision(),
                 scale: ty.scale(),
             },
-            proto::r#type::Kind::Date => Self::Date { column_index },
-            proto::r#type::Kind::Varchar => Self::Varchar {
+            Kind::Date => Self::Date { column_index },
+            Kind::Varchar => Self::Varchar {
                 column_index,
                 max_length: ty.maximum_length(),
             },
-            proto::r#type::Kind::Char => Self::Char {
+            Kind::Char => Self::Char {
                 column_index,
                 max_length: ty.maximum_length(),
             },
-            proto::r#type::Kind::TimestampInstant => {
-                Self::TimestampWithLocalTimezone { column_index }
-            }
+            Kind::TimestampInstant => Self::TimestampWithLocalTimezone { column_index },
         };
         Ok(dt)
     }
@@ -358,9 +421,9 @@ impl DataType {
             DataType::Struct { children, .. } => {
                 let children = children
                     .iter()
-                    .map(|(name, dt)| {
-                        let dt = dt.to_arrow_data_type();
-                        Field::new(name, dt, true)
+                    .map(|col| {
+                        let dt = col.data_type().to_arrow_data_type();
+                        Field::new(col.name(), dt, true)
                     })
                     .collect();
                 ArrowDataType::Struct(children)
@@ -434,7 +497,7 @@ impl Display for DataType {
             } => {
                 write!(f, "STRUCT")?;
                 for child in children {
-                    write!(f, "\n  {} {}", child.0, child.1)?;
+                    write!(f, "\n  {child}")?;
                 }
                 Ok(())
             }

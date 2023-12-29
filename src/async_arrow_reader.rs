@@ -214,7 +214,7 @@ impl Stripe {
         let columns = projected_data_type
             .children()
             .iter()
-            .map(|(name, data_type)| Column::new(name, data_type, &footer, info.number_of_rows()))
+            .map(|col| Column::new(col.name(), col.data_type(), &footer, info.number_of_rows()))
             .collect();
 
         let mut stream_map = HashMap::new();
