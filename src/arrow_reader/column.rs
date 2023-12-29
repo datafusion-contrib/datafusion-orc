@@ -105,11 +105,11 @@ impl Column {
             | DataType::Date { .. } => vec![],
             DataType::Struct { children, .. } => children
                 .iter()
-                .map(|(name, data_type)| Column {
+                .map(|col| Column {
                     number_of_rows: self.number_of_rows,
                     footer: self.footer.clone(),
-                    name: name.clone(),
-                    data_type: data_type.clone(),
+                    name: col.name().to_string(),
+                    data_type: col.data_type().clone(),
                 })
                 .collect(),
             DataType::List { child, .. } => {
