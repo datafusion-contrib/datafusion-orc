@@ -18,7 +18,7 @@
 use std::fs::File;
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use datafusion_orc::{ArrowReader, ArrowStreamReader, Cursor};
+use datafusion_orc::arrow_reader::ArrowReaderBuilder;
 use futures_util::TryStreamExt;
 
 fn basic_path(path: &str) -> String {
@@ -43,25 +43,19 @@ async fn async_read_all() {
     let file = "demo-12-zlib.orc";
     let file_path = basic_path(file);
     let f = tokio::fs::File::open(file_path).await.unwrap();
-
-    let cursor = Cursor::root_async(f).await.unwrap();
-
-    ArrowStreamReader::new(cursor, None)
-        .try_collect::<Vec<_>>()
+    let reader = ArrowReaderBuilder::try_new_async(f)
         .await
-        .unwrap();
+        .unwrap()
+        .build_async();
+    let _ = reader.try_collect::<Vec<_>>().await.unwrap();
 }
 
 fn sync_read_all() {
     let file = "demo-12-zlib.orc";
     let file_path = basic_path(file);
     let f = File::open(file_path).unwrap();
-
-    let cursor = Cursor::root(f).unwrap();
-
-    ArrowReader::new(cursor, None)
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
+    let reader = ArrowReaderBuilder::try_new(f).unwrap().build();
+    let _ = reader.collect::<Result<Vec<_>, _>>().unwrap();
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
