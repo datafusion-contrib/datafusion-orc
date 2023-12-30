@@ -14,8 +14,7 @@ use snafu::ResultExt;
 
 use crate::arrow_reader::column::Column;
 use crate::arrow_reader::{
-    create_arrow_schema, deserialize_stripe_footer, Cursor, NaiveStripeDecoder, StreamMap, Stripe,
-    DEFAULT_BATCH_SIZE,
+    deserialize_stripe_footer, Cursor, NaiveStripeDecoder, StreamMap, Stripe,
 };
 use crate::error::{IoSnafu, Result};
 use crate::reader::metadata::FileMetadata;
@@ -110,13 +109,11 @@ impl<R: AsyncChunkReader + 'static> StripeFactory<R> {
 }
 
 impl<R: AsyncChunkReader + 'static> ArrowStreamReader<R> {
-    pub fn new(c: Cursor<R>, batch_size: Option<usize>) -> Self {
-        let batch_size = batch_size.unwrap_or(DEFAULT_BATCH_SIZE);
-        let schema = Arc::new(create_arrow_schema(&c));
+    pub fn new(cursor: Cursor<R>, batch_size: usize, schema_ref: SchemaRef) -> Self {
         Self {
-            factory: Some(Box::new(c.into())),
+            factory: Some(Box::new(cursor.into())),
             batch_size,
-            schema_ref: schema,
+            schema_ref,
             state: StreamState::Init,
         }
     }

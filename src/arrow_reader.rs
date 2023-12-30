@@ -46,28 +46,99 @@ use crate::reader::metadata::{read_metadata, read_metadata_async, FileMetadata};
 use crate::reader::{AsyncChunkReader, ChunkReader};
 use crate::schema::{DataType, RootDataType};
 use crate::stripe::StripeMetadata;
+use crate::ArrowStreamReader;
 
-pub struct ArrowReader<R: ChunkReader> {
+pub const DEFAULT_BATCH_SIZE: usize = 8192;
+
+pub struct ArrowReaderBuilder<R> {
+    reader: R,
+    file_metadata: Arc<FileMetadata>,
+    batch_size: usize,
+    projection: ProjectionMask,
+}
+
+impl<R> ArrowReaderBuilder<R> {
+    fn new(reader: R, file_metadata: Arc<FileMetadata>) -> Self {
+        Self {
+            reader,
+            file_metadata,
+            batch_size: DEFAULT_BATCH_SIZE,
+            projection: ProjectionMask::all(),
+        }
+    }
+
+    pub fn file_metadata(&self) -> &FileMetadata {
+        &self.file_metadata
+    }
+
+    pub fn with_batch_size(mut self, batch_size: usize) -> Self {
+        self.batch_size = batch_size;
+        self
+    }
+
+    pub fn with_projection(mut self, projection: ProjectionMask) -> Self {
+        self.projection = projection;
+        self
+    }
+}
+
+impl<R: ChunkReader> ArrowReaderBuilder<R> {
+    pub fn try_new(mut reader: R) -> Result<Self> {
+        let file_metadata = Arc::new(read_metadata(&mut reader)?);
+        Ok(Self::new(reader, file_metadata))
+    }
+
+    pub fn build(self) -> ArrowReader<R> {
+        let projected_data_type = self
+            .file_metadata
+            .root_data_type()
+            .project(&self.projection);
+        let cursor = Cursor {
+            reader: self.reader,
+            file_metadata: self.file_metadata,
+            projected_data_type,
+            stripe_offset: 0,
+        };
+        let schema_ref = Arc::new(create_arrow_schema(&cursor));
+        ArrowReader {
+            cursor,
+            schema_ref,
+            current_stripe: None,
+            batch_size: self.batch_size,
+        }
+    }
+}
+
+impl<R: AsyncChunkReader + 'static> ArrowReaderBuilder<R> {
+    pub async fn try_new_async(mut reader: R) -> Result<Self> {
+        let file_metadata = Arc::new(read_metadata_async(&mut reader).await?);
+        Ok(Self::new(reader, file_metadata))
+    }
+
+    pub fn build_async(self) -> ArrowStreamReader<R> {
+        let projected_data_type = self
+            .file_metadata
+            .root_data_type()
+            .project(&self.projection);
+        let cursor = Cursor {
+            reader: self.reader,
+            file_metadata: self.file_metadata,
+            projected_data_type,
+            stripe_offset: 0,
+        };
+        let schema_ref = Arc::new(create_arrow_schema(&cursor));
+        ArrowStreamReader::new(cursor, self.batch_size, schema_ref)
+    }
+}
+
+pub struct ArrowReader<R> {
     cursor: Cursor<R>,
     schema_ref: SchemaRef,
     current_stripe: Option<Box<dyn Iterator<Item = Result<RecordBatch>>>>,
     batch_size: usize,
 }
 
-pub const DEFAULT_BATCH_SIZE: usize = 8192;
-
-impl<R: ChunkReader> ArrowReader<R> {
-    pub fn new(cursor: Cursor<R>, batch_size: Option<usize>) -> Self {
-        let batch_size = batch_size.unwrap_or(DEFAULT_BATCH_SIZE);
-        let schema = Arc::new(create_arrow_schema(&cursor));
-        Self {
-            cursor,
-            schema_ref: schema,
-            current_stripe: None,
-            batch_size,
-        }
-    }
-
+impl<R> ArrowReader<R> {
     pub fn total_row_count(&self) -> u64 {
         self.cursor.file_metadata.number_of_rows()
     }
@@ -812,56 +883,6 @@ pub struct Cursor<R> {
     pub(crate) file_metadata: Arc<FileMetadata>,
     pub(crate) projected_data_type: RootDataType,
     pub(crate) stripe_offset: usize,
-}
-
-impl<R: ChunkReader> Cursor<R> {
-    pub fn new<T: AsRef<str>>(mut reader: R, fields: &[T]) -> Result<Self> {
-        let file_metadata = Arc::new(read_metadata(&mut reader)?);
-        let mask = ProjectionMask::named_roots(file_metadata.root_data_type(), fields);
-        let projected_data_type = file_metadata.root_data_type().project(&mask);
-        Ok(Self {
-            reader,
-            file_metadata,
-            projected_data_type,
-            stripe_offset: 0,
-        })
-    }
-
-    pub fn root(mut reader: R) -> Result<Self> {
-        let file_metadata = Arc::new(read_metadata(&mut reader)?);
-        let data_type = file_metadata.root_data_type().clone();
-        Ok(Self {
-            reader,
-            file_metadata,
-            projected_data_type: data_type,
-            stripe_offset: 0,
-        })
-    }
-}
-
-impl<R: AsyncChunkReader> Cursor<R> {
-    pub async fn new_async<T: AsRef<str>>(mut reader: R, fields: &[T]) -> Result<Self> {
-        let file_metadata = Arc::new(read_metadata_async(&mut reader).await?);
-        let mask = ProjectionMask::named_roots(file_metadata.root_data_type(), fields);
-        let projected_data_type = file_metadata.root_data_type().project(&mask);
-        Ok(Self {
-            reader,
-            file_metadata,
-            projected_data_type,
-            stripe_offset: 0,
-        })
-    }
-
-    pub async fn root_async(mut reader: R) -> Result<Self> {
-        let file_metadata = Arc::new(read_metadata_async(&mut reader).await?);
-        let data_type = file_metadata.root_data_type().clone();
-        Ok(Self {
-            reader,
-            file_metadata,
-            projected_data_type: data_type,
-            stripe_offset: 0,
-        })
-    }
 }
 
 impl<R: ChunkReader> Iterator for Cursor<R> {
