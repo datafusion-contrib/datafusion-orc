@@ -2,8 +2,9 @@ use std::fs::File;
 
 use arrow::record_batch::RecordBatch;
 use arrow::util::pretty;
-use datafusion_orc::arrow_reader::{ArrowReader, Cursor};
+use datafusion_orc::arrow_reader::{ArrowReader, ArrowReaderBuilder};
 use datafusion_orc::async_arrow_reader::ArrowStreamReader;
+use datafusion_orc::projection::ProjectionMask;
 use futures_util::TryStreamExt;
 
 use crate::misc::{LONG_BOOL_EXPECTED, LONG_STRING_DICT_EXPECTED, LONG_STRING_EXPECTED};
@@ -12,26 +13,22 @@ mod misc;
 
 fn new_arrow_reader(path: &str, fields: &[&str]) -> ArrowReader<File> {
     let f = File::open(path).expect("no file found");
-
-    let cursor = Cursor::new(f, fields).unwrap();
-
-    ArrowReader::new(cursor, None)
+    let builder = ArrowReaderBuilder::try_new(f).unwrap();
+    let projection = ProjectionMask::named_roots(builder.file_metadata().root_data_type(), fields);
+    builder.with_projection(projection).build()
 }
 
 async fn new_arrow_stream_reader_root(path: &str) -> ArrowStreamReader<tokio::fs::File> {
     let f = tokio::fs::File::open(path).await.unwrap();
-
-    let cursor = Cursor::root_async(f).await.unwrap();
-
-    ArrowStreamReader::new(cursor, None)
+    ArrowReaderBuilder::try_new_async(f)
+        .await
+        .unwrap()
+        .build_async()
 }
 
 fn new_arrow_reader_root(path: &str) -> ArrowReader<File> {
     let f = File::open(path).expect("no file found");
-
-    let cursor = Cursor::root(f).unwrap();
-
-    ArrowReader::new(cursor, None)
+    ArrowReaderBuilder::try_new(f).unwrap().build()
 }
 
 fn basic_path(path: &str) -> String {
