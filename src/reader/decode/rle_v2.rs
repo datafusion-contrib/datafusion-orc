@@ -2,11 +2,70 @@ pub mod delta;
 pub mod direct;
 pub mod patched_base;
 pub mod short_repeat;
-use std::{collections::VecDeque, io::Read};
+use std::io::Read;
 
 use crate::error::Result;
 
-use super::util::try_read_u8;
+use super::{util::try_read_u8, NInt};
+
+const MAX_RUN_LENGTH: usize = 512;
+
+pub struct RleReaderV2<N: NInt, R: Read> {
+    reader: R,
+    decoded_ints: Vec<N>,
+    current_head: usize,
+}
+
+impl<N: NInt, R: Read> RleReaderV2<N, R> {
+    pub fn new(reader: R) -> Self {
+        Self {
+            reader,
+            decoded_ints: Vec::with_capacity(MAX_RUN_LENGTH),
+            current_head: 0,
+        }
+    }
+
+    // Returns false if no more bytes
+    fn decode_batch(&mut self) -> Result<bool> {
+        let header = match try_read_u8(&mut self.reader)? {
+            Some(byte) => byte,
+            None => return Ok(false),
+        };
+
+        match EncodingType::from_header(header) {
+            EncodingType::ShortRepeat => self.read_short_repeat_values(header)?,
+            EncodingType::Direct => self.read_direct_values(header)?,
+            EncodingType::PatchedBase => self.read_patched_base(header)?,
+            EncodingType::Delta => self.read_delta_values(header)?,
+        }
+
+        Ok(true)
+    }
+}
+
+impl<N: NInt, R: Read> Iterator for RleReaderV2<N, R> {
+    type Item = Result<N>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_head >= self.decoded_ints.len() {
+            self.current_head = 0;
+            self.decoded_ints.clear();
+            match self.decode_batch() {
+                Ok(more) => {
+                    if !more {
+                        return None;
+                    }
+                }
+                Err(err) => {
+                    return Some(Err(err));
+                }
+            }
+        }
+        let result = self.decoded_ints[self.current_head];
+        self.current_head += 1;
+        Some(Ok(result))
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum EncodingType {
@@ -20,94 +79,18 @@ impl EncodingType {
     /// Checking highest two bits for encoding type.
     #[inline]
     fn from_header(header: u8) -> Self {
-        match (header & 128 == 128, header & 64 == 64) {
-            // 11... = 3
-            (true, true) => Self::Delta,
-            // 10... = 2
-            (true, false) => Self::PatchedBase,
-            // 01... = 1
-            (false, true) => Self::Direct,
-            // 00... = 0
-            (false, false) => Self::ShortRepeat,
+        match header & 0b_1100_0000 {
+            0b_1100_0000 => Self::Delta,
+            0b_1000_0000 => Self::PatchedBase,
+            0b_0100_0000 => Self::Direct,
+            0b_0000_0000 => Self::ShortRepeat,
+            _ => unreachable!(),
         }
-    }
-}
-
-pub struct RleReaderV2<R> {
-    reader: R,
-    signed: bool,
-    literals: VecDeque<i64>,
-}
-
-const MAX_RUN_LENGTH: usize = 512;
-
-impl<R: Read> RleReaderV2<R> {
-    pub fn new(reader: R, signed: bool) -> Self {
-        Self {
-            reader,
-            signed,
-            literals: VecDeque::with_capacity(MAX_RUN_LENGTH),
-        }
-    }
-
-    // returns false if no more bytes
-    pub fn read_values(&mut self) -> Result<bool> {
-        let header = match try_read_u8(&mut self.reader)? {
-            Some(byte) => byte,
-            None => return Ok(false),
-        };
-
-        let encoding = EncodingType::from_header(header);
-        match encoding {
-            EncodingType::ShortRepeat => self.read_short_repeat_values(header)?,
-            EncodingType::Direct => self.read_direct_values(header)?,
-            EncodingType::PatchedBase => self.read_patched_base(header)?,
-            EncodingType::Delta => self.read_delta_values(header)?,
-        }
-
-        Ok(true)
-    }
-}
-
-impl<R: Read> Iterator for RleReaderV2<R> {
-    type Item = Result<i64>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.literals.is_empty() {
-            match self.read_values() {
-                Ok(more) => {
-                    if !more {
-                        return None;
-                    }
-                }
-                Err(err) => {
-                    return Some(Err(err));
-                }
-            }
-        }
-        let result = self.literals.pop_front().unwrap();
-        Some(Ok(result))
-    }
-}
-
-pub struct UnsignedRleReaderV2<R>(RleReaderV2<R>);
-
-impl<R: Read> UnsignedRleReaderV2<R> {
-    pub fn new(reader: R) -> Self {
-        Self(RleReaderV2::new(reader, false))
-    }
-}
-
-impl<R: Read> Iterator for UnsignedRleReaderV2<R> {
-    type Item = Result<u64>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|v| v.map(|v| v as u64))
     }
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
 
     use std::io::Cursor;
 
@@ -119,7 +102,7 @@ mod test {
         let expected = [1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1, 1];
 
         let cursor = Cursor::new(data);
-        let reader = UnsignedRleReaderV2::new(cursor);
+        let reader = RleReaderV2::<u64, _>::new(cursor);
         let a = reader.collect::<Result<Vec<_>>>().unwrap();
         assert_eq!(a, expected);
 
@@ -128,7 +111,7 @@ mod test {
         let expected = [23713, 43806, 57005, 48879];
 
         let cursor = Cursor::new(data);
-        let reader = UnsignedRleReaderV2::new(cursor);
+        let reader = RleReaderV2::<u64, _>::new(cursor);
         let a = reader.collect::<Result<Vec<_>>>().unwrap();
         assert_eq!(a, expected);
 
@@ -143,7 +126,7 @@ mod test {
         ];
 
         let cursor = Cursor::new(data);
-        let reader = UnsignedRleReaderV2::new(cursor);
+        let reader = RleReaderV2::<u64, _>::new(cursor);
         let a = reader.collect::<Result<Vec<_>>>().unwrap();
         assert_eq!(a, expected);
 
@@ -151,7 +134,7 @@ mod test {
         let expected = [2u64, 3, 5, 7, 11, 13, 17, 19, 23, 29];
 
         let cursor = Cursor::new(data);
-        let reader = UnsignedRleReaderV2::new(cursor);
+        let reader = RleReaderV2::<u64, _>::new(cursor);
         let a = reader.collect::<Result<Vec<_>>>().unwrap();
         assert_eq!(a, expected);
 
@@ -159,7 +142,7 @@ mod test {
         let expected = [2u64, 3, 5, 7, 11, 13, 17, 19, 23, 29];
 
         let cursor = Cursor::new(data);
-        let reader = UnsignedRleReaderV2::new(cursor);
+        let reader = RleReaderV2::<u64, _>::new(cursor);
         let a = reader.collect::<Result<Vec<_>>>().unwrap();
         assert_eq!(a, expected);
 
@@ -167,7 +150,7 @@ mod test {
         let expected = [1u64, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 
         let cursor = Cursor::new(data);
-        let reader = UnsignedRleReaderV2::new(cursor);
+        let reader = RleReaderV2::<u64, _>::new(cursor);
         let a = reader.collect::<Result<Vec<_>>>().unwrap();
         assert_eq!(a, expected);
     }
@@ -178,7 +161,7 @@ mod test {
         let data: [u8; 3] = [0x0a, 0x27, 0x10];
 
         let cursor = Cursor::new(data);
-        let reader = UnsignedRleReaderV2::new(cursor);
+        let reader = RleReaderV2::<u64, _>::new(cursor);
         let a = reader.collect::<Result<Vec<_>>>().unwrap();
 
         assert_eq!(a, vec![10000, 10000, 10000, 10000, 10000]);
@@ -190,7 +173,7 @@ mod test {
         let data: [u8; 10] = [0x5e, 0x03, 0x5c, 0xa1, 0xab, 0x1e, 0xde, 0xad, 0xbe, 0xef];
 
         let cursor = Cursor::new(data);
-        let reader = UnsignedRleReaderV2::new(cursor);
+        let reader = RleReaderV2::<u64, _>::new(cursor);
         let a = reader.collect::<Result<Vec<_>>>().unwrap();
 
         assert_eq!(a, vec![23713, 43806, 57005, 48879]);
@@ -202,7 +185,7 @@ mod test {
         let data = [110u8, 3, 0, 185, 66, 1, 86, 60, 1, 189, 90, 1, 125, 222];
 
         let cursor = Cursor::new(data);
-        let reader = RleReaderV2::new(cursor, true);
+        let reader = RleReaderV2::<i64, _>::new(cursor);
         let a = reader.collect::<Result<Vec<_>>>().unwrap();
 
         assert_eq!(a, vec![23713, 43806, 57005, 48879]);
@@ -217,7 +200,7 @@ mod test {
         let data: [u8; 8] = [0xc6, 0x09, 0x02, 0x02, 0x22, 0x42, 0x42, 0x46];
 
         let cursor = Cursor::new(data);
-        let reader = UnsignedRleReaderV2::new(cursor);
+        let reader = RleReaderV2::<u64, _>::new(cursor);
         let a = reader.collect::<Result<Vec<_>>>().unwrap();
 
         assert_eq!(a, vec![2, 3, 5, 7, 11, 13, 17, 19, 23, 29]);
@@ -235,12 +218,11 @@ mod test {
         ];
 
         let cursor = Cursor::new(data);
-        let reader = RleReaderV2::new(cursor, false);
+        let reader = RleReaderV2::<u64, _>::new(cursor);
         let a = reader
             .collect::<Result<Vec<_>>>()
             .unwrap()
             .into_iter()
-            .map(|v| v as u64)
             .collect::<Vec<_>>();
 
         assert_eq!(a, expected);
@@ -264,23 +246,23 @@ mod test {
             2, 12, 16, 32, 32, 71, 128, 19, 76,
         ];
 
+        // expected data generated from Orc Java implementation
         let expected = vec![
-            20i64, 2, 3, 2, 1, 3, 17, 71, 35, 2, 1, 139, 2, 2, 3, 1783, 475, 2, 1, 1, 3, 1, 3, 2,
-            32, 1, 2, 3, 1, 8, 30, 1, 3, 414, 1, 1, 135, 3, 3, 1, 414, 2, 1, 2, 2, 594, 2, 5, 6, 4,
-            11, 1, 2, 2, 1, 1, 52, 4, 1, 2, 7, 1, 17, 334, 1, 2, 1, 2, 2, 6, 1, 266, 1, 2, 217, 2,
-            6, 2, 13, 2, 2, 1, 2, 3, 5, 1, 2, 1, 7244, 11813, 1, 33, 2, -13, 1, 2, 3, 13, 1, 92, 3,
-            13, 5, 14, 9, 141, 12, 6, 15, 25, 1, 1, 1, 46, 2, 1, 1, 141, 3, 1, 1, 1, 1, 2, 1, 4,
-            34, 5, 78, 8, 1, 2, 2, 1, 9, 10, 2, 1, 4, 13, 1, 5, 4, 4, 19, 5, 1, 1, 1, 68, 33, 399,
-            1, 1885, 25, 5, 2, 4, 1, 1, 2, 16, 1, 2966, 3, 1, 1, 25501, 1, 1, 1, 66, 1, 3, 8, 131,
-            14, 5, 1, 2, 2, 1, 1, 8, 1, 1, 2, 1, 5, 9, 2, 3, 112, 13, 2, 2, 1, 5, 10, 3, 1, 1, 13,
-            2, 3, 4, 1, 3, 1, 1, 2, 1, 1, 2, 4, 2, 207, 1, 1, 2, 4, 3, 3, 2, 2, 16,
+            20, 2, 3, 2, 1, 3, 17, 71, 35, 2, 1, 139, 2, 2, 3, 1783, 475, 2, 1, 1, 3, 1, 3, 2, 32,
+            1, 2, 3, 1, 8, 30, 1, 3, 414, 1, 1, 135, 3, 3, 1, 414, 2, 1, 2, 2, 594, 2, 5, 6, 4, 11,
+            1, 2, 2, 1, 1, 52, 4, 1, 2, 7, 1, 17, 334, 1, 2, 1, 2, 2, 6, 1, 266, 1, 2, 217, 2, 6,
+            2, 13, 2, 2, 1, 2, 3, 5, 1, 2, 1, 7244, 11813, 1, 33, 2, -13, 1, 2, 3, 13, 1, 92, 3,
+            13, 5, 14, 9, 141, 12, 6, 15, 25, -1, -1, -1, 23, 1, -1, -1, -71, -2, -1, -1, -1, -1,
+            2, 1, 4, 34, 5, 78, 8, 1, 2, 2, 1, 9, 10, 2, 1, 4, 13, 1, 5, 4, 4, 19, 5, -1, -1, -1,
+            34, -17, -200, -1, -943, -13, -3, 1, 2, -1, -1, 1, 8, -1, 1483, -2, -1, -1, -12751, -1,
+            -1, -1, 66, 1, 3, 8, 131, 14, 5, 1, 2, 2, 1, 1, 8, 1, 1, 2, 1, 5, 9, 2, 3, 112, 13, 2,
+            2, 1, 5, 10, 3, 1, 1, 13, 2, 3, 4, 1, 3, 1, 1, 2, 1, 1, 2, 4, 2, 207, 1, 1, 2, 4, 3, 3,
+            2, 2, 16,
         ];
 
         let cursor = Cursor::new(data);
-        let reader = RleReaderV2::new(cursor, false);
+        let reader = RleReaderV2::<i64, _>::new(cursor);
         let a = reader.collect::<Result<Vec<_>>>().unwrap();
-
-        assert_eq!(a.len(), expected.len());
 
         assert_eq!(a, expected);
     }

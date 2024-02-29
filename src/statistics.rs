@@ -81,7 +81,7 @@ pub enum TypeStatistics {
 }
 
 impl TryFrom<&proto::ColumnStatistics> for ColumnStatistics {
-    type Error = error::Error;
+    type Error = error::OrcError;
 
     fn try_from(value: &proto::ColumnStatistics) -> Result<Self, Self::Error> {
         let type_statistics = if let Some(stats) = &value.int_statistics {
