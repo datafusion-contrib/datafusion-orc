@@ -116,7 +116,7 @@ impl_append_struct_null!(Date32);
 impl_append_struct_null!(Binary);
 impl_append_struct_null!(TimestampNanosecond);
 
-pub fn append_struct_value(
+fn append_struct_value(
     idx: usize,
     column: &ArrayRef,
     builder: &mut StructBuilder,
@@ -169,7 +169,7 @@ pub fn append_struct_value(
     Ok(())
 }
 
-pub fn append_struct_null(
+fn append_struct_null(
     idx: usize,
     field: &Field,
     builder: &mut StructBuilder,
@@ -262,19 +262,16 @@ impl Decoder {
         }
     }
 
-    // returns true if has more.
     pub fn append_value(
         &mut self,
         builder: &mut Box<dyn ArrayBuilder>,
         chunk: usize,
-    ) -> Result<bool> {
-        let mut has_more = false;
+    ) -> Result<()> {
         match self {
             Decoder::Int64(iter) => {
                 let values = iter.collect_chunk(chunk).transpose()?;
 
                 if let Some(values) = values {
-                    has_more = true;
                     let builder = builder.as_any_mut().downcast_mut::<Int64Builder>().unwrap();
 
                     for value in values {
@@ -286,7 +283,6 @@ impl Decoder {
                 let values = iter.collect_chunk(chunk).transpose()?;
 
                 if let Some(values) = values {
-                    has_more = true;
                     let builder = builder.as_any_mut().downcast_mut::<Int32Builder>().unwrap();
 
                     for value in values {
@@ -298,7 +294,6 @@ impl Decoder {
                 let values = iter.collect_chunk(chunk).transpose()?;
 
                 if let Some(values) = values {
-                    has_more = true;
                     let builder = builder.as_any_mut().downcast_mut::<Int16Builder>().unwrap();
 
                     for value in values {
@@ -309,7 +304,6 @@ impl Decoder {
             Decoder::Int8(iter) => {
                 let values = iter.collect_chunk(chunk).transpose()?;
                 if let Some(values) = values {
-                    has_more = true;
                     let builder = builder.as_any_mut().downcast_mut::<Int8Builder>().unwrap();
 
                     for value in values {
@@ -320,7 +314,6 @@ impl Decoder {
             Decoder::Boolean(iter) => {
                 let values = iter.collect_chunk(chunk).transpose()?;
                 if let Some(values) = values {
-                    has_more = true;
                     let builder = builder
                         .as_any_mut()
                         .downcast_mut::<BooleanBuilder>()
@@ -333,7 +326,6 @@ impl Decoder {
             Decoder::Float32(iter) => {
                 let values = iter.collect_chunk(chunk).transpose()?;
                 if let Some(values) = values {
-                    has_more = true;
                     let builder = builder
                         .as_any_mut()
                         .downcast_mut::<Float32Builder>()
@@ -347,7 +339,6 @@ impl Decoder {
             Decoder::Float64(iter) => {
                 let values = iter.collect_chunk(chunk).transpose()?;
                 if let Some(values) = values {
-                    has_more = true;
                     let builder = builder
                         .as_any_mut()
                         .downcast_mut::<Float64Builder>()
@@ -360,7 +351,6 @@ impl Decoder {
             Decoder::Timestamp(iter) => {
                 let values = iter.collect_chunk(chunk).transpose()?;
                 if let Some(values) = values {
-                    has_more = true;
                     let builder = builder
                         .as_any_mut()
                         .downcast_mut::<TimestampNanosecondBuilder>()
@@ -373,7 +363,6 @@ impl Decoder {
             Decoder::Date(iter) => {
                 let values = iter.collect_chunk(chunk).transpose()?;
                 if let Some(values) = values {
-                    has_more = true;
                     let builder = builder
                         .as_any_mut()
                         .downcast_mut::<Date32Builder>()
@@ -390,7 +379,6 @@ impl Decoder {
                 StringDecoder::Direct(iter) => {
                     let values = iter.collect_chunk(chunk).transpose()?;
                     if let Some(values) = values {
-                        has_more = true;
                         let builder = builder
                             .as_any_mut()
                             .downcast_mut::<StringBuilder>()
@@ -403,8 +391,6 @@ impl Decoder {
                 StringDecoder::Dictionary((indexes, dictionary)) => {
                     let values = indexes.collect_chunk(chunk).transpose()?;
                     if let Some(indexes) = values {
-                        has_more = true;
-
                         let builder = builder
                             .as_any_mut()
                             .downcast_mut::<StringDictionaryBuilder<UInt64Type>>()
@@ -418,7 +404,6 @@ impl Decoder {
             Decoder::Binary(iter) => {
                 let values = iter.collect_chunk(chunk).transpose()?;
                 if let Some(values) = values {
-                    has_more = true;
                     let builder = builder
                         .as_any_mut()
                         .downcast_mut::<BinaryBuilder>()
@@ -438,8 +423,6 @@ impl Decoder {
                 let values = iter.collect_chunk(builder, chunk).transpose()?;
 
                 if let Some(values) = values {
-                    has_more = true;
-
                     for (idx, column) in values.iter().enumerate() {
                         append_struct_value(idx, column, builder, &iter.decoders[idx])?;
                     }
@@ -451,7 +434,7 @@ impl Decoder {
                     .downcast_mut::<ListBuilder<BoxedArrayBuilder>>()
                     .unwrap();
 
-                has_more = iter.collect_chunk(builder, chunk).transpose()?.is_some();
+                iter.collect_chunk(builder, chunk).transpose()?;
             }
             Decoder::Map(iter) => {
                 let builder = builder
@@ -459,11 +442,11 @@ impl Decoder {
                     .downcast_mut::<MapBuilder<BoxedArrayBuilder, BoxedArrayBuilder>>()
                     .unwrap();
 
-                has_more = iter.collect_chunk(builder, chunk).transpose()?.is_some();
+                iter.collect_chunk(builder, chunk).transpose()?;
             }
         }
 
-        Ok(has_more)
+        Ok(())
     }
 
     pub fn append_null(&self, builder: &mut Box<dyn ArrayBuilder>) -> Result<()> {
@@ -581,7 +564,7 @@ impl BatchDecoder for Decoder {
     fn next_batch(&mut self, chunk: usize) -> Result<Option<ArrayRef>> {
         let mut builder = self.new_array_builder(chunk);
 
-        let _ = !self.append_value(&mut builder, chunk)?;
+        self.append_value(&mut builder, chunk)?;
 
         let output = builder.finish();
 

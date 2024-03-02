@@ -22,12 +22,10 @@ impl MapDecoder {
         root_builder: &mut MapBuilder<BoxedArrayBuilder, BoxedArrayBuilder>,
     ) -> Result<()> {
         let len = self.lengths.next().unwrap()?;
-        let _ = self
-            .key
-            .append_value(&mut root_builder.keys().builder, len as usize);
-        let _ = self
-            .value
-            .append_value(&mut root_builder.values().builder, len as usize);
+        self.key
+            .append_value(&mut root_builder.keys().builder, len as usize)?;
+        self.value
+            .append_value(&mut root_builder.values().builder, len as usize)?;
         Ok(())
     }
 
