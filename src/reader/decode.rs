@@ -48,28 +48,13 @@ impl From<ProtoColumnKind> for RleVersion {
     }
 }
 
-pub fn get_direct_signed_rle_reader<N: NInt + 'static, R: Read + Send + 'static>(
+pub fn get_rle_reader<N: NInt + 'static, R: Read + Send + 'static>(
     column: &Column,
     reader: R,
 ) -> Result<Box<dyn Iterator<Item = Result<N>> + Send>> {
     match column.encoding().kind() {
         ProtoColumnKind::Direct => Ok(Box::new(RleReaderV1::<N, _>::new(reader))),
         ProtoColumnKind::DirectV2 => Ok(Box::new(RleReaderV2::<N, _>::new(reader))),
-        k => InvalidColumnEncodingSnafu {
-            name: column.name(),
-            encoding: k,
-        }
-        .fail(),
-    }
-}
-
-pub fn get_direct_unsigned_rle_reader<R: Read + Send + 'static>(
-    column: &Column,
-    reader: R,
-) -> Result<Box<dyn Iterator<Item = Result<u64>> + Send>> {
-    match column.encoding().kind() {
-        ProtoColumnKind::Direct => Ok(Box::new(RleReaderV1::new(reader))),
-        ProtoColumnKind::DirectV2 => Ok(Box::new(RleReaderV2::new(reader))),
         k => InvalidColumnEncodingSnafu {
             name: column.name(),
             encoding: k,

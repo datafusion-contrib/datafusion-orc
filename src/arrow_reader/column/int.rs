@@ -3,7 +3,7 @@ use crate::arrow_reader::column::{Column, NullableIterator};
 use crate::arrow_reader::Stripe;
 use crate::error::Result;
 use crate::proto::stream::Kind;
-use crate::reader::decode::{get_direct_signed_rle_reader, NInt};
+use crate::reader::decode::{get_rle_reader, NInt};
 
 pub fn new_int_iter<N: NInt + 'static>(
     column: &Column,
@@ -12,7 +12,7 @@ pub fn new_int_iter<N: NInt + 'static>(
     let present = new_present_iter(column, stripe)?.collect::<Result<Vec<_>>>()?;
 
     let reader = stripe.stream_map.get(column, Kind::Data)?;
-    let iter = get_direct_signed_rle_reader::<N, _>(column, reader)?;
+    let iter = get_rle_reader::<N, _>(column, reader)?;
 
     Ok(NullableIterator {
         present: Box::new(present.into_iter()),

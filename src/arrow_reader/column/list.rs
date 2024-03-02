@@ -1,7 +1,8 @@
 use arrow::array::ListBuilder;
 
 use crate::arrow_reader::{reader_factory, BoxedArrayBuilder, Decoder, Stripe};
-use crate::{proto::stream::Kind, reader::decode::RleVersion};
+use crate::proto::stream::Kind;
+use crate::reader::decode::get_rle_reader;
 
 use super::{present::new_present_iter, Column};
 use crate::error::Result;
@@ -59,9 +60,8 @@ impl ListDecoder {
 
 pub fn new_list_iter(column: &Column, stripe: &Stripe) -> Result<ListDecoder> {
     let present = new_present_iter(column, stripe)?.collect::<Result<Vec<_>>>()?;
-    let version: RleVersion = column.encoding().kind().into();
     let reader = stripe.stream_map.get(column, Kind::Length)?;
-    let lengths = version.get_unsigned_rle_reader(reader);
+    let lengths = get_rle_reader(column, reader)?;
 
     let children = column.children();
     let child = &children[0];
