@@ -269,149 +269,125 @@ impl Decoder {
     ) -> Result<()> {
         match self {
             Decoder::Int64(iter) => {
-                let values = iter.collect_chunk(chunk).transpose()?;
+                let values = iter.collect_chunk(chunk)?;
 
-                if let Some(values) = values {
-                    let builder = builder.as_any_mut().downcast_mut::<Int64Builder>().unwrap();
+                let builder = builder.as_any_mut().downcast_mut::<Int64Builder>().unwrap();
 
-                    for value in values {
-                        builder.append_option(value);
-                    }
+                for value in values {
+                    builder.append_option(value);
                 }
             }
             Decoder::Int32(iter) => {
-                let values = iter.collect_chunk(chunk).transpose()?;
+                let values = iter.collect_chunk(chunk)?;
 
-                if let Some(values) = values {
-                    let builder = builder.as_any_mut().downcast_mut::<Int32Builder>().unwrap();
+                let builder = builder.as_any_mut().downcast_mut::<Int32Builder>().unwrap();
 
-                    for value in values {
-                        builder.append_option(value);
-                    }
+                for value in values {
+                    builder.append_option(value);
                 }
             }
             Decoder::Int16(iter) => {
-                let values = iter.collect_chunk(chunk).transpose()?;
+                let values = iter.collect_chunk(chunk)?;
 
-                if let Some(values) = values {
-                    let builder = builder.as_any_mut().downcast_mut::<Int16Builder>().unwrap();
+                let builder = builder.as_any_mut().downcast_mut::<Int16Builder>().unwrap();
 
-                    for value in values {
-                        builder.append_option(value);
-                    }
+                for value in values {
+                    builder.append_option(value);
                 }
             }
             Decoder::Int8(iter) => {
-                let values = iter.collect_chunk(chunk).transpose()?;
-                if let Some(values) = values {
-                    let builder = builder.as_any_mut().downcast_mut::<Int8Builder>().unwrap();
+                let values = iter.collect_chunk(chunk)?;
+                let builder = builder.as_any_mut().downcast_mut::<Int8Builder>().unwrap();
 
-                    for value in values {
-                        builder.append_option(value);
-                    }
+                for value in values {
+                    builder.append_option(value);
                 }
             }
             Decoder::Boolean(iter) => {
-                let values = iter.collect_chunk(chunk).transpose()?;
-                if let Some(values) = values {
-                    let builder = builder
-                        .as_any_mut()
-                        .downcast_mut::<BooleanBuilder>()
-                        .unwrap();
-                    for value in values {
-                        builder.append_option(value);
-                    }
+                let values = iter.collect_chunk(chunk)?;
+                let builder = builder
+                    .as_any_mut()
+                    .downcast_mut::<BooleanBuilder>()
+                    .unwrap();
+                for value in values {
+                    builder.append_option(value);
                 }
             }
             Decoder::Float32(iter) => {
-                let values = iter.collect_chunk(chunk).transpose()?;
-                if let Some(values) = values {
-                    let builder = builder
-                        .as_any_mut()
-                        .downcast_mut::<Float32Builder>()
-                        .unwrap();
+                let values = iter.collect_chunk(chunk)?;
+                let builder = builder
+                    .as_any_mut()
+                    .downcast_mut::<Float32Builder>()
+                    .unwrap();
 
-                    for value in values {
-                        builder.append_option(value);
-                    }
+                for value in values {
+                    builder.append_option(value);
                 }
             }
             Decoder::Float64(iter) => {
-                let values = iter.collect_chunk(chunk).transpose()?;
-                if let Some(values) = values {
-                    let builder = builder
-                        .as_any_mut()
-                        .downcast_mut::<Float64Builder>()
-                        .unwrap();
-                    for value in values {
-                        builder.append_option(value);
-                    }
+                let values = iter.collect_chunk(chunk)?;
+                let builder = builder
+                    .as_any_mut()
+                    .downcast_mut::<Float64Builder>()
+                    .unwrap();
+                for value in values {
+                    builder.append_option(value);
                 }
             }
             Decoder::Timestamp(iter) => {
-                let values = iter.collect_chunk(chunk).transpose()?;
-                if let Some(values) = values {
-                    let builder = builder
-                        .as_any_mut()
-                        .downcast_mut::<TimestampNanosecondBuilder>()
-                        .unwrap();
-                    for value in values {
-                        builder.append_option(value);
-                    }
+                let values = iter.collect_chunk(chunk)?;
+                let builder = builder
+                    .as_any_mut()
+                    .downcast_mut::<TimestampNanosecondBuilder>()
+                    .unwrap();
+                for value in values {
+                    builder.append_option(value);
                 }
             }
             Decoder::Date(iter) => {
-                let values = iter.collect_chunk(chunk).transpose()?;
-                if let Some(values) = values {
-                    let builder = builder
-                        .as_any_mut()
-                        .downcast_mut::<Date32Builder>()
-                        .unwrap();
+                let values = iter.collect_chunk(chunk)?;
+                let builder = builder
+                    .as_any_mut()
+                    .downcast_mut::<Date32Builder>()
+                    .unwrap();
 
-                    // Dates are just signed integers indicating no. of days since epoch
-                    // Same as for Arrow, so no conversion needed
-                    for value in values {
-                        builder.append_option(value.map(|v| v as i32));
-                    }
+                // Dates are just signed integers indicating no. of days since epoch
+                // Same as for Arrow, so no conversion needed
+                for value in values {
+                    builder.append_option(value.map(|v| v as i32));
                 }
             }
             Decoder::String(decoder) => match decoder {
                 StringDecoder::Direct(iter) => {
-                    let values = iter.collect_chunk(chunk).transpose()?;
-                    if let Some(values) = values {
-                        let builder = builder
-                            .as_any_mut()
-                            .downcast_mut::<StringBuilder>()
-                            .unwrap();
-                        for value in values {
-                            builder.append_option(value);
-                        }
+                    let values = iter.collect_chunk(chunk)?;
+                    let builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<StringBuilder>()
+                        .unwrap();
+                    for value in values {
+                        builder.append_option(value);
                     }
                 }
                 StringDecoder::Dictionary((indexes, dictionary)) => {
-                    let values = indexes.collect_chunk(chunk).transpose()?;
-                    if let Some(indexes) = values {
-                        let builder = builder
-                            .as_any_mut()
-                            .downcast_mut::<StringDictionaryBuilder<UInt64Type>>()
-                            .unwrap();
-                        for index in indexes {
-                            builder.append_option(index.map(|idx| dictionary.value(idx as usize)));
-                        }
+                    let indexes = indexes.collect_chunk(chunk)?;
+                    let builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<StringDictionaryBuilder<UInt64Type>>()
+                        .unwrap();
+                    for index in indexes {
+                        builder.append_option(index.map(|idx| dictionary.value(idx as usize)));
                     }
                 }
             },
             Decoder::Binary(iter) => {
-                let values = iter.collect_chunk(chunk).transpose()?;
-                if let Some(values) = values {
-                    let builder = builder
-                        .as_any_mut()
-                        .downcast_mut::<BinaryBuilder>()
-                        .unwrap();
+                let values = iter.collect_chunk(chunk)?;
+                let builder = builder
+                    .as_any_mut()
+                    .downcast_mut::<BinaryBuilder>()
+                    .unwrap();
 
-                    for value in values {
-                        builder.append_option(value);
-                    }
+                for value in values {
+                    builder.append_option(value);
                 }
             }
             Decoder::Struct(iter) => {

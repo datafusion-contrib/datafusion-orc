@@ -188,22 +188,18 @@ impl<T> Iterator for NullableIterator<T> {
 }
 
 impl<T> NullableIterator<T> {
-    pub fn collect_chunk(&mut self, chunk: usize) -> Option<Result<Vec<Option<T>>>> {
+    pub fn collect_chunk(&mut self, chunk: usize) -> Result<Vec<Option<T>>> {
         let mut buf = Vec::with_capacity(chunk);
         for _ in 0..chunk {
             match self.next() {
                 Some(Ok(value)) => {
                     buf.push(value);
                 }
-                Some(Err(err)) => return Some(Err(err)),
+                Some(Err(err)) => return Err(err),
                 None => break,
             }
         }
 
-        if buf.is_empty() {
-            return None;
-        }
-
-        Some(Ok(buf))
+        Ok(buf)
     }
 }
