@@ -50,7 +50,7 @@ impl StripeMetadata {
 }
 
 impl TryFrom<(&proto::StripeInformation, &proto::StripeStatistics)> for StripeMetadata {
-    type Error = error::Error;
+    type Error = error::OrcError;
 
     fn try_from(
         value: (&proto::StripeInformation, &proto::StripeStatistics),

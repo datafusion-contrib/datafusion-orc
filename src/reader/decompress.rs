@@ -7,7 +7,7 @@ use bytes::{Bytes, BytesMut};
 use fallible_streaming_iterator::FallibleStreamingIterator;
 use snafu::ResultExt;
 
-use crate::error::{self, Error};
+use crate::error::{self, OrcError};
 use crate::proto::{self, CompressionKind};
 
 // Spec states default is 256K
@@ -90,7 +90,7 @@ fn decompress_block(
     compression: Compression,
     compressed_bytes: &[u8],
     scratch: &mut Vec<u8>,
-) -> Result<(), Error> {
+) -> Result<(), OrcError> {
     match compression.compression_type {
         CompressionType::Zlib => {
             let mut gz = flate2::read::DeflateDecoder::new(compressed_bytes);
@@ -166,7 +166,7 @@ impl DecompressorIter {
 impl FallibleStreamingIterator for DecompressorIter {
     type Item = [u8];
 
-    type Error = Error;
+    type Error = OrcError;
 
     #[inline]
     fn advance(&mut self) -> Result<(), Self::Error> {

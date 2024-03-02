@@ -1,8 +1,11 @@
-use std::{collections::VecDeque, io::Read};
+use std::io::Read;
 
+use num::Signed;
 use snafu::{OptionExt, ResultExt};
 
 use crate::error::{self, IoSnafu, Result, VarintTooLargeSnafu};
+
+use super::NInt;
 
 /// Read single byte
 #[inline]
@@ -24,106 +27,67 @@ pub fn try_read_u8(reader: &mut impl Read) -> Result<Option<u8>> {
     }
 }
 
-#[inline]
-pub fn bytes_to_long_be<R: Read>(r: &mut R, byte_width: usize) -> Result<i64> {
-    let mut buffer = [0; 8];
-    // read into back part of buffer since is big endian
-    // so if smaller than 8 bytes, most significant bytes will be 0
-    r.read_exact(&mut buffer[8 - byte_width..])
-        .context(IoSnafu)?;
-    Ok(i64::from_be_bytes(buffer))
+/// Extracting run length from first two header bytes.
+///
+/// Run length encoded as range [0, 511], so adjust to actual
+/// value in range [1, 512].
+///
+/// Used for patched base, delta, and direct sub-encodings.
+pub fn extract_run_length_from_header(first_byte: u8, second_byte: u8) -> usize {
+    let length = ((first_byte as u16 & 0x01) << 8) | (second_byte as u16);
+    (length + 1) as usize
 }
 
-pub fn get_closest_fixed_bits(width: usize) -> usize {
-    match width {
-        0 => 1,
-        1..=24 => width,
-        25..=26 => 26,
-        27..=28 => 28,
-        29..=30 => 30,
-        31..=32 => 32,
-        33..=40 => 40,
-        41..=48 => 48,
-        49..=56 => 56,
-        _ => 64,
-    }
-}
-
-pub fn read_ints(
-    queue: &mut VecDeque<i64>,
+/// Read bitpacked integers into provided buffer. `bit_size` can be any value from 1 to 64,
+/// inclusive.
+pub fn read_ints<N: NInt>(
+    buffer: &mut Vec<N>,
     expected_no_of_ints: usize,
     bit_size: usize,
     r: &mut impl Read,
 ) -> Result<()> {
+    debug_assert!(
+        (1..=64).contains(&bit_size),
+        "bit_size must be in range [1, 64]"
+    );
     match bit_size {
-        1 => unrolled_unpack_1(queue, expected_no_of_ints, r),
-        2 => unrolled_unpack_2(queue, expected_no_of_ints, r),
-        4 => unrolled_unpack_4(queue, expected_no_of_ints, r),
-        8 => unrolled_unpack_8(queue, expected_no_of_ints, r),
-        16 => unrolled_unpack_16(queue, expected_no_of_ints, r),
-        24 => unrolled_unpack_24(queue, expected_no_of_ints, r),
-        32 => unrolled_unpack_32(queue, expected_no_of_ints, r),
-        40 => unrolled_unpack_40(queue, expected_no_of_ints, r),
-        48 => unrolled_unpack_48(queue, expected_no_of_ints, r),
-        56 => unrolled_unpack_56(queue, expected_no_of_ints, r),
-        64 => unrolled_unpack_64(queue, expected_no_of_ints, r),
-        _ => {
-            let mut bits_left = 0;
-            let mut current = 0;
-            for _ in 0..expected_no_of_ints {
-                let mut result: i64 = 0;
-                let mut bits_left_to_read = bit_size;
-
-                while bits_left_to_read > bits_left {
-                    result <<= bits_left;
-                    result |= (current & ((1 << bits_left) - 1)) as i64;
-                    bits_left_to_read -= bits_left;
-
-                    current = read_u8(r)? as i32;
-
-                    bits_left = 8;
-                }
-
-                if bits_left_to_read > 0 {
-                    result <<= bits_left_to_read;
-                    bits_left -= bits_left_to_read;
-                    result |= ((current >> bits_left) & ((1 << bits_left_to_read) - 1)) as i64;
-                }
-
-                queue.push_back(result);
-            }
-
-            Ok(())
-        }
+        1 => unrolled_unpack_1(buffer, expected_no_of_ints, r),
+        2 => unrolled_unpack_2(buffer, expected_no_of_ints, r),
+        4 => unrolled_unpack_4(buffer, expected_no_of_ints, r),
+        n if n % 8 == 0 => unrolled_unpack_byte_aligned(buffer, expected_no_of_ints, r, n / 8),
+        n => unrolled_unpack_unaligned(buffer, expected_no_of_ints, r, n),
     }
 }
 
 /// Decode numbers with bit width of 1 from read stream
-fn unrolled_unpack_1(
-    buffer: &mut VecDeque<i64>,
+fn unrolled_unpack_1<N: NInt>(
+    buffer: &mut Vec<N>,
     expected_num_of_ints: usize,
     reader: &mut impl Read,
 ) -> Result<()> {
     for _ in 0..(expected_num_of_ints / 8) {
-        let byte = read_u8(reader)? as i64;
-        buffer.push_back((byte >> 7) & 1);
-        buffer.push_back((byte >> 6) & 1);
-        buffer.push_back((byte >> 5) & 1);
-        buffer.push_back((byte >> 4) & 1);
-        buffer.push_back((byte >> 3) & 1);
-        buffer.push_back((byte >> 2) & 1);
-        buffer.push_back((byte >> 1) & 1);
-        buffer.push_back(byte & 1);
+        let byte = read_u8(reader)?;
+        let nums = [
+            (byte >> 7) & 1,
+            (byte >> 6) & 1,
+            (byte >> 5) & 1,
+            (byte >> 4) & 1,
+            (byte >> 3) & 1,
+            (byte >> 2) & 1,
+            (byte >> 1) & 1,
+            byte & 1,
+        ];
+        buffer.extend(nums.map(N::from_u8));
     }
 
-    // less than full byte at end, extract these trailing numbers
+    // Less than full byte at end, extract these trailing numbers
     let remainder = expected_num_of_ints % 8;
     if remainder > 0 {
-        let mut start_shift = 7;
-        let byte = read_u8(reader)? as i64;
-        for _ in 0..remainder {
-            buffer.push_back((byte >> start_shift) & 1);
-            start_shift -= 1;
+        let byte = read_u8(reader)?;
+        for i in 0..remainder {
+            let shift = 7 - i;
+            let n = N::from_u8((byte >> shift) & 1);
+            buffer.push(n);
         }
     }
 
@@ -131,27 +95,25 @@ fn unrolled_unpack_1(
 }
 
 /// Decode numbers with bit width of 2 from read stream
-fn unrolled_unpack_2(
-    buffer: &mut VecDeque<i64>,
+fn unrolled_unpack_2<N: NInt>(
+    buffer: &mut Vec<N>,
     expected_num_of_ints: usize,
     reader: &mut impl Read,
 ) -> Result<()> {
     for _ in 0..(expected_num_of_ints / 4) {
-        let byte = read_u8(reader)? as i64;
-        buffer.push_back((byte >> 6) & 3);
-        buffer.push_back((byte >> 4) & 3);
-        buffer.push_back((byte >> 2) & 3);
-        buffer.push_back(byte & 3);
+        let byte = read_u8(reader)?;
+        let nums = [(byte >> 6) & 3, (byte >> 4) & 3, (byte >> 2) & 3, byte & 3];
+        buffer.extend(nums.map(N::from_u8));
     }
 
-    // less than full byte at end, extract these trailing numbers
+    // Less than full byte at end, extract these trailing numbers
     let remainder = expected_num_of_ints % 4;
     if remainder > 0 {
-        let mut start_shift = 6;
-        let byte = read_u8(reader)? as i64;
-        for _ in 0..remainder {
-            buffer.push_back((byte >> start_shift) & 3);
-            start_shift -= 2;
+        let byte = read_u8(reader)?;
+        for i in 0..remainder {
+            let shift = 6 - (i * 2);
+            let n = N::from_u8((byte >> shift) & 3);
+            buffer.push(n);
         }
     }
 
@@ -159,165 +121,225 @@ fn unrolled_unpack_2(
 }
 
 /// Decode numbers with bit width of 4 from read stream
-fn unrolled_unpack_4(
-    buffer: &mut VecDeque<i64>,
+fn unrolled_unpack_4<N: NInt>(
+    buffer: &mut Vec<N>,
     expected_num_of_ints: usize,
     reader: &mut impl Read,
 ) -> Result<()> {
     for _ in 0..(expected_num_of_ints / 2) {
-        let byte = read_u8(reader)? as i64;
-        buffer.push_back((byte >> 4) & 15);
-        buffer.push_back(byte & 15);
+        let byte = read_u8(reader)?;
+        let nums = [(byte >> 4) & 15, byte & 15];
+        buffer.extend(nums.map(N::from_u8));
     }
 
-    // at worst have 1 trailing 4-bit number
+    // At worst have 1 trailing 4-bit number
     let remainder = expected_num_of_ints % 2;
     if remainder > 0 {
-        let byte = read_u8(reader)? as i64;
-        buffer.push_back((byte >> 4) & 15);
+        let byte = read_u8(reader)?;
+        let n = N::from_u8((byte >> 4) & 15);
+        buffer.push(n);
     }
 
     Ok(())
 }
 
-fn unrolled_unpack_8(
-    buffer: &mut VecDeque<i64>,
+/// When the bitpacked integers have a width that isn't byte aligned
+fn unrolled_unpack_unaligned<N: NInt>(
+    buffer: &mut Vec<N>,
     expected_num_of_ints: usize,
-    r: &mut impl Read,
+    reader: &mut impl Read,
+    bit_size: usize,
 ) -> Result<()> {
-    unrolled_unpack_bytes(buffer, expected_num_of_ints, r, 1)
+    debug_assert!(
+        bit_size <= (N::BYTE_SIZE * 8),
+        "bit_size cannot exceed size of N"
+    );
+
+    let mut bits_left = 0;
+    let mut current_bits = N::zero();
+    for _ in 0..expected_num_of_ints {
+        let mut result = N::zero();
+        let mut bits_left_to_read = bit_size;
+
+        // No bounds check as we rely on caller doing this check
+        // (since we know bit_size in advance)
+
+        // bits_left_to_read and bits_left can never exceed 8
+        // So safe to convert either to N
+        while bits_left_to_read > bits_left {
+            // TODO: explain this logic a bit
+            result <<= bits_left;
+            let mask = ((1_u16 << bits_left) - 1) as u8;
+            let mask = N::from_u8(mask);
+            result |= current_bits & mask;
+            bits_left_to_read -= bits_left;
+
+            let byte = read_u8(reader)?;
+            current_bits = N::from_u8(byte);
+
+            bits_left = 8;
+        }
+
+        if bits_left_to_read > 0 {
+            result <<= bits_left_to_read;
+            bits_left -= bits_left_to_read;
+            let bits = current_bits >> bits_left;
+            let mask = ((1_u16 << bits_left_to_read) - 1) as u8;
+            let mask = N::from_u8(mask);
+            result |= bits & mask;
+        }
+
+        buffer.push(result);
+    }
+
+    Ok(())
 }
 
-fn unrolled_unpack_16(
-    buffer: &mut VecDeque<i64>,
-    expected_num_of_ints: usize,
-    r: &mut impl Read,
-) -> Result<()> {
-    unrolled_unpack_bytes(buffer, expected_num_of_ints, r, 2)
-}
-
-fn unrolled_unpack_24(
-    buffer: &mut VecDeque<i64>,
-    expected_num_of_ints: usize,
-    r: &mut impl Read,
-) -> Result<()> {
-    unrolled_unpack_bytes(buffer, expected_num_of_ints, r, 3)
-}
-
-fn unrolled_unpack_32(
-    buffer: &mut VecDeque<i64>,
-    expected_num_of_ints: usize,
-    r: &mut impl Read,
-) -> Result<()> {
-    unrolled_unpack_bytes(buffer, expected_num_of_ints, r, 4)
-}
-
-fn unrolled_unpack_40(
-    buffer: &mut VecDeque<i64>,
-    expected_num_of_ints: usize,
-    r: &mut impl Read,
-) -> Result<()> {
-    unrolled_unpack_bytes(buffer, expected_num_of_ints, r, 5)
-}
-
-fn unrolled_unpack_48(
-    buffer: &mut VecDeque<i64>,
-    expected_num_of_ints: usize,
-    r: &mut impl Read,
-) -> Result<()> {
-    unrolled_unpack_bytes(buffer, expected_num_of_ints, r, 6)
-}
-
-fn unrolled_unpack_56(
-    buffer: &mut VecDeque<i64>,
-    expected_num_of_ints: usize,
-    r: &mut impl Read,
-) -> Result<()> {
-    unrolled_unpack_bytes(buffer, expected_num_of_ints, r, 7)
-}
-
-fn unrolled_unpack_64(
-    buffer: &mut VecDeque<i64>,
-    expected_num_of_ints: usize,
-    r: &mut impl Read,
-) -> Result<()> {
-    unrolled_unpack_bytes(buffer, expected_num_of_ints, r, 8)
-}
-
+/// Decode bitpacked integers which are byte aligned
 #[inline]
-fn unrolled_unpack_bytes(
-    buffer: &mut VecDeque<i64>,
+fn unrolled_unpack_byte_aligned<N: NInt>(
+    buffer: &mut Vec<N>,
     expected_num_of_ints: usize,
     r: &mut impl Read,
     num_bytes: usize,
 ) -> Result<()> {
+    debug_assert!(
+        num_bytes <= N::BYTE_SIZE,
+        "num_bytes cannot exceed size of integer being decoded into"
+    );
+    // TODO: we probably don't need this intermediary buffer, just copy bytes directly into Vec
+    let mut num_buffer = [0; 8];
     for _ in 0..expected_num_of_ints {
-        let num = bytes_to_long_be(r, num_bytes)?;
-        buffer.push_back(num);
+        // Read into back part of buffer since is big endian.
+        // So if smaller than 8, most significant bytes will be 0.
+        r.read_exact(&mut num_buffer[8 - num_bytes..])
+            .context(IoSnafu)?;
+        let num = N::from_be_bytes(&num_buffer[8 - N::BYTE_SIZE..]);
+        buffer.push(num);
     }
     Ok(())
 }
 
-pub fn rle_v2_direct_bit_width(value: u8) -> u8 {
-    match value {
-        0..=23 => value + 1,
+/// Encoding table for RLEv2 sub-encodings bit width.
+///
+/// Used by Direct, Patched Base and Delta. By default this assumes non-delta
+/// (0 maps to 1), so Delta handles this discrepancy at the caller side.
+///
+/// Input must be a 5-bit integer (max value is 31).
+pub fn rle_v2_decode_bit_width(encoded: u8) -> usize {
+    debug_assert!(encoded < 32, "encoded bit width cannot exceed 5 bits");
+    match encoded {
+        0..=23 => encoded as usize + 1,
         27 => 32,
         28 => 40,
         29 => 48,
         30 => 56,
         31 => 64,
-        other => todo!("{other}"),
+        _ => unreachable!(),
     }
 }
 
-pub fn header_to_rle_v2_direct_bit_width(header: u8) -> u8 {
-    let bit_width = (header & 0b00111110) >> 1;
-    rle_v2_direct_bit_width(bit_width)
-}
-
 /// Decode Base 128 Unsigned Varint
-pub fn read_vulong(r: &mut impl Read) -> Result<u64> {
+fn read_varint_n<N: NInt, R: Read>(r: &mut R) -> Result<N> {
     // Varints are encoded as sequence of bytes.
     // Where the high bit of a byte is set to 1 if the varint
     // continues into the next byte. Eventually it should terminate
     // with a byte with high bit of 0.
-    let mut num: u64 = 0;
+    let mut num = N::zero();
     let mut offset = 0;
     loop {
-        let b = read_u8(r)?;
-        let is_end = b & 0x80 == 0;
-        // Clear continuation bit
-        let b = b & 0x7F;
-        // TODO: have check for if larger than u64?
-        num |= u64::from(b)
+        let byte = read_u8(r)?;
+        let is_last_byte = byte & 0x80 == 0;
+        let without_continuation_bit = byte & 0x7F;
+        num |= N::from_u8(without_continuation_bit)
             // Ensure we don't overflow
             .checked_shl(offset)
             .context(VarintTooLargeSnafu)?;
-        // Since high bit doesn't contribute to final number
-        // We need to shift in multiples of 7 to account for this
+        // Since high bit doesn't contribute to final number,
+        // we need to shift in multiples of 7 to account for this.
         offset += 7;
-        // If we've finally reached last byte
-        if is_end {
+        if is_last_byte {
             break;
         }
     }
     Ok(num)
 }
 
-pub fn read_vslong<R: Read>(r: &mut R) -> Result<i64> {
-    read_vulong(r).map(zigzag_decode)
+pub fn read_varint_zigzagged<N: NInt, R: Read>(r: &mut R) -> Result<N> {
+    Ok(read_varint_n::<N, _>(r)?.zigzag_decode())
 }
 
-pub fn zigzag_decode(unsigned: u64) -> i64 {
-    // Zigzag encoding stores the sign bit in the least significant bit
-    let without_sign_bit = (unsigned >> 1) as i64;
-    let sign_bit = unsigned & 1;
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum AbsVarint<N: NInt> {
+    Negative(N),
+    Positive(N),
+}
+
+/// This trait (and its implementations) is intended to make generic the
+/// behaviour of addition/subtraction over NInt.
+// TODO: probably can be done in a cleaner/better way
+pub trait AccumulateOp {
+    fn acc<N: NInt>(a: N, b: N) -> Option<N>;
+}
+
+pub struct AddOp;
+
+impl AccumulateOp for AddOp {
+    fn acc<N: NInt>(a: N, b: N) -> Option<N> {
+        a.checked_add(&b)
+    }
+}
+
+pub struct SubOp;
+
+impl AccumulateOp for SubOp {
+    fn acc<N: NInt>(a: N, b: N) -> Option<N> {
+        a.checked_sub(&b)
+    }
+}
+
+/// Special case for delta where we need to parse as NInt, but it's signed.
+/// So we calculate the absolute value and return the sign via enum variants.
+pub fn read_abs_varint<N: NInt, R: Read>(r: &mut R) -> Result<AbsVarint<N>> {
+    let num = read_varint_n::<N, _>(r)?;
+    let is_negative = (num & N::one()) == N::one();
+    // Unsigned >> to ensure new MSB is always 0 and not 1
+    let num = num.unsigned_shr(1);
+    if is_negative {
+        // Because of two's complement
+        let num = num + N::one();
+        Ok(AbsVarint::Negative(num))
+    } else {
+        Ok(AbsVarint::Positive(num))
+    }
+}
+
+/// Zigzag encoding stores the sign bit in the least significant bit.
+pub fn signed_zigzag_decode<N: NInt + Signed>(encoded: N) -> N {
+    let without_sign_bit = encoded.unsigned_shr(1);
+    let sign_bit = encoded & N::one();
     // If positive, sign_bit is 0
     //   Negating 0 and doing bitwise XOR will just return without_sign_bit
     //   Since A ^ 0 = A
     // If negative, sign_bit is 1
-    //   Converting to i64, and negating ...
-    without_sign_bit ^ -(sign_bit as i64)
+    //   Negating turns to 11111...11
+    //   Then A ^ 1 = ~A (negating every bit in A)
+    without_sign_bit ^ -sign_bit
+}
+
+/// MSB indicates if value is negated (1 if negative, else positive). Note we
+/// take the MSB of the encoded number which might be smaller than N, hence
+/// we need the encoded number byte size to find this MSB.
+pub fn signed_msb_decode<N: NInt + Signed>(encoded: N, encoded_byte_size: usize) -> N {
+    let msb_mask = N::one() << (encoded_byte_size * 8 - 1);
+    let is_positive = msb_mask & encoded == N::zero();
+    let clean_sign_bit_mask = !msb_mask;
+    let encoded = encoded & clean_sign_bit_mask;
+    if is_positive {
+        encoded
+    } else {
+        -encoded
+    }
 }
 
 #[cfg(test)]
@@ -325,27 +347,30 @@ mod tests {
     use std::io::Cursor;
 
     use crate::error::Result;
-    use crate::reader::decode::util::{read_vulong, zigzag_decode};
+    use crate::reader::decode::util::{read_varint_zigzagged, signed_zigzag_decode};
 
     #[test]
     fn test_zigzag_decode() {
-        assert_eq!(0, zigzag_decode(0));
-        assert_eq!(-1, zigzag_decode(1));
-        assert_eq!(1, zigzag_decode(2));
-        assert_eq!(-2, zigzag_decode(3));
-        assert_eq!(2, zigzag_decode(4));
-        assert_eq!(-3, zigzag_decode(5));
-        assert_eq!(3, zigzag_decode(6));
-        assert_eq!(-4, zigzag_decode(7));
-        assert_eq!(4, zigzag_decode(8));
-        assert_eq!(-5, zigzag_decode(9));
+        assert_eq!(0, signed_zigzag_decode(0));
+        assert_eq!(-1, signed_zigzag_decode(1));
+        assert_eq!(1, signed_zigzag_decode(2));
+        assert_eq!(-2, signed_zigzag_decode(3));
+        assert_eq!(2, signed_zigzag_decode(4));
+        assert_eq!(-3, signed_zigzag_decode(5));
+        assert_eq!(3, signed_zigzag_decode(6));
+        assert_eq!(-4, signed_zigzag_decode(7));
+        assert_eq!(4, signed_zigzag_decode(8));
+        assert_eq!(-5, signed_zigzag_decode(9));
+
+        assert_eq!(9_223_372_036_854_775_807, signed_zigzag_decode(-2_i64));
+        assert_eq!(-9_223_372_036_854_775_808, signed_zigzag_decode(-1_i64));
     }
 
     #[test]
     fn test_read_vulong() -> Result<()> {
         fn test_assert(serialized: &[u8], expected: u64) -> Result<()> {
             let mut reader = Cursor::new(serialized);
-            assert_eq!(expected, read_vulong(&mut reader)?);
+            assert_eq!(expected, read_varint_zigzagged::<u64, _>(&mut reader)?);
             Ok(())
         }
 
@@ -363,7 +388,7 @@ mod tests {
         )?;
 
         // when too large
-        let err = read_vulong(&mut Cursor::new(&[
+        let err = read_varint_zigzagged::<u64, _>(&mut Cursor::new(&[
             0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01,
         ]));
         assert!(err.is_err());
@@ -373,7 +398,7 @@ mod tests {
         );
 
         // when unexpected end to stream
-        let err = read_vulong(&mut Cursor::new(&[0x80, 0x80]));
+        let err = read_varint_zigzagged::<u64, _>(&mut Cursor::new(&[0x80, 0x80]));
         assert!(err.is_err());
         assert_eq!(
             "Failed to read, source: failed to fill whole buffer",
