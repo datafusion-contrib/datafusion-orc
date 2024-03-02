@@ -208,13 +208,13 @@ fn unrolled_unpack_byte_aligned<N: NInt>(
         "num_bytes cannot exceed size of integer being decoded into"
     );
     // TODO: we probably don't need this intermediary buffer, just copy bytes directly into Vec
-    let mut num_buffer = [0; 8];
+    let mut num_buffer = N::empty_byte_array();
     for _ in 0..expected_num_of_ints {
         // Read into back part of buffer since is big endian.
-        // So if smaller than 8, most significant bytes will be 0.
-        r.read_exact(&mut num_buffer[8 - num_bytes..])
+        // So if smaller than N::BYTE_SIZE bytes, most significant bytes will be 0.
+        r.read_exact(&mut num_buffer.as_mut()[N::BYTE_SIZE - num_bytes..])
             .context(IoSnafu)?;
-        let num = N::from_be_bytes(&num_buffer[8 - N::BYTE_SIZE..]);
+        let num = N::from_be_bytes(num_buffer);
         buffer.push(num);
     }
     Ok(())
@@ -315,6 +315,7 @@ pub fn read_abs_varint<N: NInt, R: Read>(r: &mut R) -> Result<AbsVarint<N>> {
 }
 
 /// Zigzag encoding stores the sign bit in the least significant bit.
+#[inline]
 pub fn signed_zigzag_decode<N: NInt + Signed>(encoded: N) -> N {
     let without_sign_bit = encoded.unsigned_shr(1);
     let sign_bit = encoded & N::one();
@@ -330,6 +331,7 @@ pub fn signed_zigzag_decode<N: NInt + Signed>(encoded: N) -> N {
 /// MSB indicates if value is negated (1 if negative, else positive). Note we
 /// take the MSB of the encoded number which might be smaller than N, hence
 /// we need the encoded number byte size to find this MSB.
+#[inline]
 pub fn signed_msb_decode<N: NInt + Signed>(encoded: N, encoded_byte_size: usize) -> N {
     let msb_mask = N::one() << (encoded_byte_size * 8 - 1);
     let is_positive = msb_mask & encoded == N::zero();

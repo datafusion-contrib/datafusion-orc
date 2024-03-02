@@ -61,14 +61,13 @@ impl<N: NInt, R: Read> RleReaderV2<N, R> {
 
         let patch_list_length = (fourth_byte & 0x1f) as usize;
 
-        let mut buffer = [0; 8];
+        let mut buffer = N::empty_byte_array();
         // Read into back part of buffer since is big endian.
-        // So if smaller than 8 bytes, most significant bytes will be 0.
+        // So if smaller than N::BYTE_SIZE bytes, most significant bytes will be 0.
         self.reader
-            .read_exact(&mut buffer[8 - base_byte_width..])
+            .read_exact(&mut buffer.as_mut()[N::BYTE_SIZE - base_byte_width..])
             .context(IoSnafu)?;
-        let base =
-            N::from_be_bytes(&buffer[8 - N::BYTE_SIZE..]).decode_signed_from_msb(base_byte_width);
+        let base = N::from_be_bytes(buffer).decode_signed_from_msb(base_byte_width);
 
         // Get data values
         read_ints(

@@ -48,7 +48,7 @@ impl From<ProtoColumnKind> for RleVersion {
     }
 }
 
-pub fn get_rle_reader<N: NInt + 'static, R: Read + Send + 'static>(
+pub fn get_rle_reader<N: NInt, R: Read + Send + 'static>(
     column: &Column,
     reader: R,
 ) -> Result<Box<dyn Iterator<Item = Result<N>> + Send>> {
@@ -75,16 +75,22 @@ pub trait NInt:
     + fmt::Binary
     + Send
     + Sync
+    + 'static
 {
+    type Bytes: AsRef<[u8]> + AsMut<[u8]> + Default + Clone + Copy;
     const BYTE_SIZE: usize;
+
+    #[inline]
+    fn empty_byte_array() -> Self::Bytes {
+        Self::Bytes::default()
+    }
 
     /// Should truncate any extra bits.
     fn from_u64(u: u64) -> Self;
 
     fn from_u8(u: u8) -> Self;
 
-    /// Assumes size of `b` matches `BYTE_SIZE`, can panic if it doesn't.
-    fn from_be_bytes(b: &[u8]) -> Self;
+    fn from_be_bytes(b: Self::Bytes) -> Self;
 
     #[inline]
     fn zigzag_decode(self) -> Self {
@@ -108,89 +114,111 @@ pub trait NInt:
 // (to encode length, etc.).
 
 impl NInt for i16 {
+    type Bytes = [u8; 2];
     const BYTE_SIZE: usize = 2;
 
+    #[inline]
     fn from_u64(u: u64) -> Self {
         u as Self
     }
 
+    #[inline]
     fn from_u8(u: u8) -> Self {
         u as Self
     }
 
-    fn from_be_bytes(b: &[u8]) -> Self {
-        Self::from_be_bytes(b.try_into().unwrap())
+    #[inline]
+    fn from_be_bytes(b: Self::Bytes) -> Self {
+        Self::from_be_bytes(b)
     }
 
+    #[inline]
     fn zigzag_decode(self) -> Self {
         signed_zigzag_decode(self)
     }
 
+    #[inline]
     fn decode_signed_from_msb(self, encoded_byte_size: usize) -> Self {
         signed_msb_decode(self, encoded_byte_size)
     }
 }
 
 impl NInt for i32 {
+    type Bytes = [u8; 4];
     const BYTE_SIZE: usize = 4;
 
+    #[inline]
     fn from_u64(u: u64) -> Self {
         u as Self
     }
 
+    #[inline]
     fn from_u8(u: u8) -> Self {
         u as Self
     }
 
-    fn from_be_bytes(b: &[u8]) -> Self {
-        Self::from_be_bytes(b.try_into().unwrap())
+    #[inline]
+    fn from_be_bytes(b: Self::Bytes) -> Self {
+        Self::from_be_bytes(b)
     }
 
+    #[inline]
     fn zigzag_decode(self) -> Self {
         signed_zigzag_decode(self)
     }
 
+    #[inline]
     fn decode_signed_from_msb(self, encoded_byte_size: usize) -> Self {
         signed_msb_decode(self, encoded_byte_size)
     }
 }
 
 impl NInt for i64 {
+    type Bytes = [u8; 8];
     const BYTE_SIZE: usize = 8;
 
+    #[inline]
     fn from_u64(u: u64) -> Self {
         u as Self
     }
 
+    #[inline]
     fn from_u8(u: u8) -> Self {
         u as Self
     }
 
-    fn from_be_bytes(b: &[u8]) -> Self {
-        Self::from_be_bytes(b.try_into().unwrap())
+    #[inline]
+    fn from_be_bytes(b: Self::Bytes) -> Self {
+        Self::from_be_bytes(b)
     }
 
+    #[inline]
     fn zigzag_decode(self) -> Self {
         signed_zigzag_decode(self)
     }
 
+    #[inline]
     fn decode_signed_from_msb(self, encoded_byte_size: usize) -> Self {
         signed_msb_decode(self, encoded_byte_size)
     }
 }
 
 impl NInt for u64 {
+    type Bytes = [u8; 8];
     const BYTE_SIZE: usize = 8;
 
+    #[inline]
     fn from_u64(u: u64) -> Self {
         u as Self
     }
 
+    #[inline]
     fn from_u8(u: u8) -> Self {
         u as Self
     }
 
-    fn from_be_bytes(b: &[u8]) -> Self {
-        Self::from_be_bytes(b.try_into().unwrap())
+    #[inline]
+    fn from_be_bytes(b: Self::Bytes) -> Self {
+        Self::from_be_bytes(b)
     }
 }
