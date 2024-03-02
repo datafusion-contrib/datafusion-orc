@@ -234,6 +234,7 @@ impl Stripe {
                 inner: stream_map,
                 compression,
             }),
+            number_of_rows: info.number_of_rows() as usize,
         })
     }
 }

@@ -70,10 +70,6 @@ impl Column {
         self.footer.columns[column].clone()
     }
 
-    pub fn number_of_rows(&self) -> usize {
-        self.number_of_rows as usize
-    }
-
     pub fn data_type(&self) -> &DataType {
         &self.data_type
     }
