@@ -48,13 +48,13 @@ impl From<ProtoColumnKind> for RleVersion {
     }
 }
 
-pub fn get_direct_signed_rle_reader<R: Read + Send + 'static>(
+pub fn get_direct_signed_rle_reader<N: NInt + 'static, R: Read + Send + 'static>(
     column: &Column,
     reader: R,
-) -> Result<Box<dyn Iterator<Item = Result<i64>> + Send>> {
+) -> Result<Box<dyn Iterator<Item = Result<N>> + Send>> {
     match column.encoding().kind() {
-        ProtoColumnKind::Direct => Ok(Box::new(RleReaderV1::new(reader))),
-        ProtoColumnKind::DirectV2 => Ok(Box::new(RleReaderV2::new(reader))),
+        ProtoColumnKind::Direct => Ok(Box::new(RleReaderV1::<N, _>::new(reader))),
+        ProtoColumnKind::DirectV2 => Ok(Box::new(RleReaderV2::<N, _>::new(reader))),
         k => InvalidColumnEncodingSnafu {
             name: column.name(),
             encoding: k,
@@ -81,7 +81,15 @@ pub fn get_direct_unsigned_rle_reader<R: Read + Send + 'static>(
 /// Helps generalise the decoder efforts to be specific to supported integers.
 /// (Instead of decoding to u64 for all then downcasting).
 pub trait NInt:
-    PrimInt + CheckedShl + BitOrAssign + ShlAssign<usize> + fmt::Debug + fmt::Display + fmt::Binary
+    PrimInt
+    + CheckedShl
+    + BitOrAssign
+    + ShlAssign<usize>
+    + fmt::Debug
+    + fmt::Display
+    + fmt::Binary
+    + Send
+    + Sync
 {
     const BYTE_SIZE: usize;
 
