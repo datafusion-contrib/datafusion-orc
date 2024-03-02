@@ -561,10 +561,10 @@ impl Decoder {
 }
 
 impl BatchDecoder for Decoder {
-    fn next_batch(&mut self, chunk: usize) -> Result<Option<ArrayRef>> {
-        let mut builder = self.new_array_builder(chunk);
+    fn next_batch(&mut self, batch_size: usize) -> Result<Option<ArrayRef>> {
+        let mut builder = self.new_array_builder(batch_size);
 
-        self.append_value(&mut builder, chunk)?;
+        self.append_value(&mut builder, batch_size)?;
 
         let output = builder.finish();
 
@@ -602,7 +602,7 @@ impl Iterator for NaiveStripeDecoder {
 }
 
 pub trait BatchDecoder: Send {
-    fn next_batch(&mut self, chunk: usize) -> Result<Option<ArrayRef>>;
+    fn next_batch(&mut self, batch_size: usize) -> Result<Option<ArrayRef>>;
 }
 
 pub fn reader_factory(col: &Column, stripe: &Stripe) -> Result<Decoder> {
@@ -670,11 +670,7 @@ impl NaiveStripeDecoder {
 
     pub fn new(stripe: Stripe, schema_ref: SchemaRef, batch_size: usize) -> Result<Self> {
         let mut decoders = Vec::with_capacity(stripe.columns.len());
-        let number_of_rows = stripe
-            .columns
-            .first()
-            .map(|c| c.number_of_rows())
-            .unwrap_or_default();
+        let number_of_rows = stripe.number_of_rows;
 
         for col in &stripe.columns {
             let decoder = reader_factory(col, &stripe)?;

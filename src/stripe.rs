@@ -95,6 +95,7 @@ pub struct Stripe {
     pub(crate) stripe_offset: usize,
     /// <(ColumnId, Kind), Bytes>
     pub(crate) stream_map: Arc<StreamMap>,
+    pub(crate) number_of_rows: usize,
 }
 
 impl Stripe {
@@ -141,6 +142,7 @@ impl Stripe {
                 inner: stream_map,
                 compression,
             }),
+            number_of_rows: info.number_of_rows() as usize,
         })
     }
 
