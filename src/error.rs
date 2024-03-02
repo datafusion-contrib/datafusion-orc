@@ -10,7 +10,7 @@ use crate::proto::r#type::Kind;
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
-pub enum Error {
+pub enum OrcError {
     #[snafu(display("Failed to seek, source: {}", source))]
     SeekError {
         source: std::io::Error,
@@ -124,10 +124,10 @@ pub enum Error {
     },
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, OrcError>;
 
-impl From<Error> for ArrowError {
-    fn from(value: Error) -> Self {
+impl From<OrcError> for ArrowError {
+    fn from(value: OrcError) -> Self {
         ArrowError::ExternalError(Box::new(value))
     }
 }

@@ -1,71 +1,117 @@
 use std::io::Read;
 
-use crate::error::Result;
-use crate::reader::decode::rle_v2::RleReaderV2;
+use snafu::OptionExt;
+
+use crate::error::{OrcError, OutOfSpecSnafu, Result};
 use crate::reader::decode::util::{
-    read_ints, read_u8, read_vslong, read_vulong, rle_v2_direct_bit_width,
+    extract_run_length_from_header, read_abs_varint, read_ints, read_u8, read_varint_zigzagged,
+    rle_v2_decode_bit_width, AbsVarint, AccumulateOp, AddOp, SubOp,
 };
 
-impl<R: Read> RleReaderV2<R> {
+use super::{NInt, RleReaderV2};
+
+impl<N: NInt, R: Read> RleReaderV2<N, R> {
+    fn fixed_delta<A: AccumulateOp>(
+        &mut self,
+        length: usize,
+        base_value: N,
+        delta: N,
+    ) -> Result<()> {
+        // Skip first value since that's base_value
+        (1..length).try_fold(base_value, |acc, _| {
+            let acc = A::acc(acc, delta).context(OutOfSpecSnafu {
+                msg: "over/underflow when decoding delta integer",
+            })?;
+            self.decoded_ints.push(acc);
+            Ok::<_, OrcError>(acc)
+        })?;
+        Ok(())
+    }
+
+    fn varied_deltas<A: AccumulateOp>(
+        &mut self,
+        length: usize,
+        base_value: N,
+        delta: N,
+        delta_bit_width: usize,
+    ) -> Result<()> {
+        // Add delta base and first value
+        let second_value = A::acc(base_value, delta).context(OutOfSpecSnafu {
+            msg: "over/underflow when decoding delta integer",
+        })?;
+        self.decoded_ints.push(second_value);
+        // Run length includes base value and first delta, so skip them
+        let length = length - 2;
+
+        // Unpack the delta values
+        read_ints(
+            &mut self.decoded_ints,
+            length,
+            delta_bit_width,
+            &mut self.reader,
+        )?;
+        self.decoded_ints
+            .iter_mut()
+            // Ignore base_value and second_value
+            .skip(2)
+            // Each element is the delta, so find actual value using running accumulator
+            .try_fold(second_value, |acc, delta| {
+                let acc = A::acc(acc, *delta).context(OutOfSpecSnafu {
+                    msg: "over/underflow when decoding delta integer",
+                })?;
+                *delta = acc;
+                Ok::<_, OrcError>(acc)
+            })?;
+        Ok(())
+    }
+
     pub fn read_delta_values(&mut self, header: u8) -> Result<()> {
-        let fb = (header >> 1) & 0x1f;
-        let delta_bit_width = if fb != 0 {
-            rle_v2_direct_bit_width(fb)
+        // Encoding format:
+        // 2 bytes header
+        //   - 2 bits for encoding type (constant 3)
+        //   - 5 bits for encoded delta bitwidth (0 to 64)
+        //   - 9 bits for run length (1 to 512)
+        // Base value (signed or unsigned) varint
+        // Delta value signed varint
+        // Sequence of delta values
+
+        let encoded_delta_bit_width = (header >> 1) & 0x1f;
+        // Uses same encoding table as for direct & patched base,
+        // but special case where 0 indicates 0 width (for fixed delta)
+        let delta_bit_width = if encoded_delta_bit_width == 0 {
+            encoded_delta_bit_width as usize
         } else {
-            fb
+            rle_v2_decode_bit_width(encoded_delta_bit_width)
         };
-        let reader = &mut self.reader;
 
-        // 9 bits for length (L) (1 to 512 values)
-        // Run length encoded as [0, 511]
-        // Adjust to actual value [1, 512]
-        // Run length includes base value and first delta
-        let second_byte = read_u8(reader)? as u16;
-        let length = ((header as u16 & 0x01) << 8) | second_byte;
-        let mut length = length as usize;
-        length += 1;
+        let second_byte = read_u8(&mut self.reader)?;
+        let length = extract_run_length_from_header(header, second_byte);
 
-        // read the first value stored as vint
-        let base_value = if self.signed {
-            read_vslong(reader)?
-        } else {
-            read_vulong(reader)? as i64
-        };
-        self.literals.push_back(base_value);
+        let base_value = read_varint_zigzagged::<N, _>(&mut self.reader)?;
+        self.decoded_ints.push(base_value);
 
-        // always signed since can be decreasing sequence
-        let delta_base = read_vslong(reader)?;
+        // Always signed since can be decreasing sequence
+        let delta_base = read_abs_varint::<N, _>(&mut self.reader)?;
 
-        // if width is 0 then all values have fixed delta of delta_base
+        // If width is 0 then all values have fixed delta of delta_base
         if delta_bit_width == 0 {
-            // skip first value since that's base_value
-            (1..length).fold(base_value, |acc, _| {
-                let acc = acc + delta_base;
-                self.literals.push_back(acc);
-                acc
-            });
+            match delta_base {
+                AbsVarint::Negative(delta) => {
+                    self.fixed_delta::<SubOp>(length, base_value, delta)?;
+                }
+                AbsVarint::Positive(delta) => {
+                    self.fixed_delta::<AddOp>(length, base_value, delta)?;
+                }
+            };
         } else {
-            // add delta base and first value
-            let second_value = base_value + delta_base;
-            self.literals.push_back(second_value);
-            length -= 2; // base_value and first delta value
-
-            // unpack the delta values
-            read_ints(&mut self.literals, length, delta_bit_width as usize, reader)?;
-            self.literals
-                .iter_mut()
-                // ignore base_value and first delta
-                .skip(2)
-                // each element is the delta, so find actual value using running accumulator
-                .fold(second_value, |acc, delta| {
-                    let acc = if delta_base < 0 {
-                        acc.saturating_sub(*delta)
-                    } else {
-                        acc.saturating_add(*delta)
-                    };
-                    *delta = acc;
-                    acc
-                });
+            match delta_base {
+                AbsVarint::Negative(delta) => {
+                    self.varied_deltas::<SubOp>(length, base_value, delta, delta_bit_width)?;
+                }
+                AbsVarint::Positive(delta) => {
+                    self.varied_deltas::<AddOp>(length, base_value, delta, delta_bit_width)?;
+                }
+            };
         }
         Ok(())
     }
