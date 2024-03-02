@@ -6,7 +6,7 @@ use super::Column;
 use crate::arrow_reader::{reader_factory, BoxedArrayBuilder, Decoder, Stripe};
 use crate::error::{self, Result};
 use crate::proto::stream::Kind;
-use crate::reader::decode::RleVersion;
+use crate::reader::decode::get_rle_reader;
 
 pub struct MapDecoder {
     pub(crate) key: Box<Decoder>,
@@ -72,9 +72,8 @@ impl MapDecoder {
 
 pub fn new_map_iter(column: &Column, stripe: &Stripe) -> Result<MapDecoder> {
     let present = new_present_iter(column, stripe)?.collect::<Result<Vec<_>>>()?;
-    let version: RleVersion = column.encoding().kind().into();
     let reader = stripe.stream_map.get(column, Kind::Length)?;
-    let lengths = version.get_unsigned_rle_reader(reader);
+    let lengths = get_rle_reader(column, reader)?;
 
     let children = column.children();
     let key = &children[0];

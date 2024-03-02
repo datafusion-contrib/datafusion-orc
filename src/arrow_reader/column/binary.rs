@@ -17,7 +17,7 @@ use crate::arrow_reader::column::{Column, NullableIterator};
 use crate::arrow_reader::Stripe;
 use crate::error::Result;
 use crate::proto::stream::Kind;
-use crate::reader::decode::get_direct_unsigned_rle_reader;
+use crate::reader::decode::get_rle_reader;
 use crate::reader::decode::variable_length::Values;
 use crate::reader::decompress::Decompressor;
 
@@ -30,7 +30,7 @@ pub fn new_binary_iterator(column: &Column, stripe: &Stripe) -> Result<NullableI
         .map(|reader| Box::new(Values::new(reader, vec![])))?;
 
     let lengths = stripe.stream_map.get(column, Kind::Length)?;
-    let lengths = get_direct_unsigned_rle_reader(column, lengths)?;
+    let lengths = get_rle_reader(column, lengths)?;
 
     Ok(NullableIterator {
         present: Box::new(null_mask.into_iter()),
