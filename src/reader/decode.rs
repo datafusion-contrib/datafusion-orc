@@ -79,7 +79,7 @@ pub fn get_direct_unsigned_rle_reader<R: Read + Send + 'static>(
 }
 
 /// Helps generalise the decoder efforts to be specific to supported integers.
-/// (Instead of decoding to u64 for all then downcasting).
+/// (Instead of decoding to u64/i64 for all then downcasting).
 pub trait NInt:
     PrimInt
     + CheckedShl
@@ -117,31 +117,10 @@ pub trait NInt:
     }
 }
 
-// TODO: do below impl's as two macros (one for signed, one for unsigned)
-
-impl NInt for i8 {
-    const BYTE_SIZE: usize = 1;
-
-    fn from_u64(u: u64) -> Self {
-        u as Self
-    }
-
-    fn from_u8(u: u8) -> Self {
-        u as Self
-    }
-
-    fn from_be_bytes(b: &[u8]) -> Self {
-        Self::from_be_bytes(b.try_into().unwrap())
-    }
-
-    fn zigzag_decode(self) -> Self {
-        signed_zigzag_decode(self)
-    }
-
-    fn decode_signed_from_msb(self, encoded_byte_size: usize) -> Self {
-        signed_msb_decode(self, encoded_byte_size)
-    }
-}
+// We only implement for i16, i32, i64 and u64.
+// ORC supports only signed Short, Integer and Long types for its integer types,
+// and i8 is encoded as bytes. u64 is used for other encodings such as Strings
+// (to encode length, etc.).
 
 impl NInt for i16 {
     const BYTE_SIZE: usize = 2;
@@ -212,54 +191,6 @@ impl NInt for i64 {
 
     fn decode_signed_from_msb(self, encoded_byte_size: usize) -> Self {
         signed_msb_decode(self, encoded_byte_size)
-    }
-}
-
-impl NInt for u8 {
-    const BYTE_SIZE: usize = 1;
-
-    fn from_u64(u: u64) -> Self {
-        u as Self
-    }
-
-    fn from_u8(u: u8) -> Self {
-        u as Self
-    }
-
-    fn from_be_bytes(b: &[u8]) -> Self {
-        Self::from_be_bytes(b.try_into().unwrap())
-    }
-}
-
-impl NInt for u16 {
-    const BYTE_SIZE: usize = 2;
-
-    fn from_u64(u: u64) -> Self {
-        u as Self
-    }
-
-    fn from_u8(u: u8) -> Self {
-        u as Self
-    }
-
-    fn from_be_bytes(b: &[u8]) -> Self {
-        Self::from_be_bytes(b.try_into().unwrap())
-    }
-}
-
-impl NInt for u32 {
-    const BYTE_SIZE: usize = 4;
-
-    fn from_u64(u: u64) -> Self {
-        u as Self
-    }
-
-    fn from_u8(u: u8) -> Self {
-        u as Self
-    }
-
-    fn from_be_bytes(b: &[u8]) -> Self {
-        Self::from_be_bytes(b.try_into().unwrap())
     }
 }
 
