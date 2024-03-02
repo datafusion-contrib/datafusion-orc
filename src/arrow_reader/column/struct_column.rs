@@ -1,5 +1,8 @@
 use crate::{
-    arrow_reader::{reader_factory, Decoder, Stripe},
+    arrow_reader::{
+        decoder::{reader_factory, Decoder},
+        Stripe,
+    },
     error::Result,
 };
 use std::sync::Arc;

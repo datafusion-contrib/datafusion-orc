@@ -1,9 +1,3 @@
-pub mod column;
-
-use std::collections::HashMap;
-use std::io::Read;
-use std::sync::Arc;
-
 use arrow::array::{
     Array, ArrayBuilder, ArrayRef, BinaryArray, BinaryBuilder, BooleanArray, BooleanBuilder,
     Date32Array, Date32Builder, Float32Array, Float32Builder, Float64Builder, Int16Array,
@@ -12,22 +6,15 @@ use arrow::array::{
     StructBuilder, TimestampNanosecondBuilder,
 };
 use arrow::array::{Float64Array, TimestampNanosecondArray};
+use arrow::datatypes::DataType as ArrowDataType;
 use arrow::datatypes::{
-    Date32Type, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, Schema,
-    SchemaRef, TimestampNanosecondType, UInt64Type,
+    Date32Type, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, SchemaRef,
+    TimestampNanosecondType, UInt64Type,
 };
 use arrow::datatypes::{Field, TimeUnit};
-use arrow::error::ArrowError;
-use arrow::record_batch::{RecordBatch, RecordBatchReader};
-use bytes::Bytes;
-use prost::Message;
-use snafu::{OptionExt, ResultExt};
+use arrow::record_batch::RecordBatch;
+use snafu::ResultExt;
 
-use self::column::list::{new_list_iter, ListDecoder};
-use self::column::map::{new_map_iter, MapDecoder};
-use self::column::struct_column::new_struct_iter;
-use self::column::tinyint::new_i8_iter;
-use self::column::Column;
 use crate::arrow_reader::column::binary::new_binary_iterator;
 use crate::arrow_reader::column::boolean::new_boolean_iter;
 use crate::arrow_reader::column::float::{new_f32_iter, new_f64_iter};
@@ -37,171 +24,15 @@ use crate::arrow_reader::column::struct_column::StructDecoder;
 use crate::arrow_reader::column::timestamp::new_timestamp_iter;
 use crate::arrow_reader::column::NullableIterator;
 use crate::builder::BoxedArrayBuilder;
-use crate::error::{self, InvalidColumnSnafu, IoSnafu, Result};
-use crate::projection::ProjectionMask;
-use crate::proto::stream::Kind;
-use crate::proto::StripeFooter;
-use crate::reader::decompress::{Compression, Decompressor};
-use crate::reader::metadata::{read_metadata, read_metadata_async, FileMetadata};
-use crate::reader::{AsyncChunkReader, ChunkReader};
-use crate::schema::{DataType, RootDataType};
-use crate::stripe::StripeMetadata;
-use crate::ArrowStreamReader;
+use crate::error::{self, Result};
+use crate::schema::DataType;
+use crate::stripe::Stripe;
 
-pub const DEFAULT_BATCH_SIZE: usize = 8192;
-
-pub struct ArrowReaderBuilder<R> {
-    reader: R,
-    file_metadata: Arc<FileMetadata>,
-    batch_size: usize,
-    projection: ProjectionMask,
-}
-
-impl<R> ArrowReaderBuilder<R> {
-    fn new(reader: R, file_metadata: Arc<FileMetadata>) -> Self {
-        Self {
-            reader,
-            file_metadata,
-            batch_size: DEFAULT_BATCH_SIZE,
-            projection: ProjectionMask::all(),
-        }
-    }
-
-    pub fn file_metadata(&self) -> &FileMetadata {
-        &self.file_metadata
-    }
-
-    pub fn with_batch_size(mut self, batch_size: usize) -> Self {
-        self.batch_size = batch_size;
-        self
-    }
-
-    pub fn with_projection(mut self, projection: ProjectionMask) -> Self {
-        self.projection = projection;
-        self
-    }
-}
-
-impl<R: ChunkReader> ArrowReaderBuilder<R> {
-    pub fn try_new(mut reader: R) -> Result<Self> {
-        let file_metadata = Arc::new(read_metadata(&mut reader)?);
-        Ok(Self::new(reader, file_metadata))
-    }
-
-    pub fn build(self) -> ArrowReader<R> {
-        let projected_data_type = self
-            .file_metadata
-            .root_data_type()
-            .project(&self.projection);
-        let cursor = Cursor {
-            reader: self.reader,
-            file_metadata: self.file_metadata,
-            projected_data_type,
-            stripe_offset: 0,
-        };
-        let schema_ref = Arc::new(create_arrow_schema(&cursor));
-        ArrowReader {
-            cursor,
-            schema_ref,
-            current_stripe: None,
-            batch_size: self.batch_size,
-        }
-    }
-}
-
-impl<R: AsyncChunkReader + 'static> ArrowReaderBuilder<R> {
-    pub async fn try_new_async(mut reader: R) -> Result<Self> {
-        let file_metadata = Arc::new(read_metadata_async(&mut reader).await?);
-        Ok(Self::new(reader, file_metadata))
-    }
-
-    pub fn build_async(self) -> ArrowStreamReader<R> {
-        let projected_data_type = self
-            .file_metadata
-            .root_data_type()
-            .project(&self.projection);
-        let cursor = Cursor {
-            reader: self.reader,
-            file_metadata: self.file_metadata,
-            projected_data_type,
-            stripe_offset: 0,
-        };
-        let schema_ref = Arc::new(create_arrow_schema(&cursor));
-        ArrowStreamReader::new(cursor, self.batch_size, schema_ref)
-    }
-}
-
-pub struct ArrowReader<R> {
-    cursor: Cursor<R>,
-    schema_ref: SchemaRef,
-    current_stripe: Option<Box<dyn Iterator<Item = Result<RecordBatch>>>>,
-    batch_size: usize,
-}
-
-impl<R> ArrowReader<R> {
-    pub fn total_row_count(&self) -> u64 {
-        self.cursor.file_metadata.number_of_rows()
-    }
-}
-
-impl<R: ChunkReader> ArrowReader<R> {
-    fn try_advance_stripe(&mut self) -> Option<std::result::Result<RecordBatch, ArrowError>> {
-        match self
-            .cursor
-            .next()
-            .map(|r| r.map_err(|err| ArrowError::ExternalError(Box::new(err))))
-        {
-            Some(Ok(stripe)) => {
-                match NaiveStripeDecoder::new(stripe, self.schema_ref.clone(), self.batch_size)
-                    .map_err(|err| ArrowError::ExternalError(Box::new(err)))
-                {
-                    Ok(decoder) => {
-                        self.current_stripe = Some(Box::new(decoder));
-                        self.next()
-                    }
-                    Err(err) => Some(Err(err)),
-                }
-            }
-            Some(Err(err)) => Some(Err(err)),
-            None => None,
-        }
-    }
-}
-
-pub fn create_arrow_schema<R>(cursor: &Cursor<R>) -> Schema {
-    let metadata = cursor
-        .file_metadata
-        .user_custom_metadata()
-        .iter()
-        .map(|(key, value)| (key.clone(), String::from_utf8_lossy(value).to_string()))
-        .collect::<HashMap<_, _>>();
-    cursor.projected_data_type.create_arrow_schema(&metadata)
-}
-
-impl<R: ChunkReader> RecordBatchReader for ArrowReader<R> {
-    fn schema(&self) -> SchemaRef {
-        self.schema_ref.clone()
-    }
-}
-
-impl<R: ChunkReader> Iterator for ArrowReader<R> {
-    type Item = std::result::Result<RecordBatch, ArrowError>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.current_stripe.as_mut() {
-            Some(stripe) => {
-                match stripe
-                    .next()
-                    .map(|batch| batch.map_err(|err| ArrowError::ExternalError(Box::new(err))))
-                {
-                    Some(rb) => Some(rb),
-                    None => self.try_advance_stripe(),
-                }
-            }
-            None => self.try_advance_stripe(),
-        }
-    }
-}
+use super::column::list::{new_list_iter, ListDecoder};
+use super::column::map::{new_map_iter, MapDecoder};
+use super::column::struct_column::new_struct_iter;
+use super::column::tinyint::new_i8_iter;
+use super::column::Column;
 
 pub enum Decoder {
     Int64(NullableIterator<i64>),
@@ -292,20 +123,20 @@ pub fn append_struct_value(
     decoder: &Decoder,
 ) -> Result<()> {
     match column.data_type() {
-        arrow::datatypes::DataType::Boolean => {
+        ArrowDataType::Boolean => {
             append_struct_boolean_value(idx, column, builder);
         }
-        arrow::datatypes::DataType::Int8 => append_struct_int8_value(idx, column, builder),
-        arrow::datatypes::DataType::Int16 => append_struct_int16_value(idx, column, builder),
-        arrow::datatypes::DataType::Int32 => append_struct_int32_value(idx, column, builder),
-        arrow::datatypes::DataType::Int64 => append_struct_int64_value(idx, column, builder),
-        arrow::datatypes::DataType::Float32 => append_struct_float32_value(idx, column, builder),
-        arrow::datatypes::DataType::Float64 => append_struct_float64_value(idx, column, builder),
-        arrow::datatypes::DataType::Timestamp(TimeUnit::Nanosecond, _) => {
+        ArrowDataType::Int8 => append_struct_int8_value(idx, column, builder),
+        ArrowDataType::Int16 => append_struct_int16_value(idx, column, builder),
+        ArrowDataType::Int32 => append_struct_int32_value(idx, column, builder),
+        ArrowDataType::Int64 => append_struct_int64_value(idx, column, builder),
+        ArrowDataType::Float32 => append_struct_float32_value(idx, column, builder),
+        ArrowDataType::Float64 => append_struct_float64_value(idx, column, builder),
+        ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => {
             append_struct_timestampnanosecond_value(idx, column, builder)
         }
-        &arrow::datatypes::DataType::Binary => append_struct_binary_value(idx, column, builder),
-        arrow::datatypes::DataType::Utf8 => {
+        ArrowDataType::Binary => append_struct_binary_value(idx, column, builder),
+        ArrowDataType::Utf8 => {
             let values = column.as_any().downcast_ref::<StringArray>().unwrap();
 
             match decoder {
@@ -330,7 +161,7 @@ pub fn append_struct_value(
                 _ => unreachable!(),
             }
         }
-        arrow::datatypes::DataType::Date32 => append_struct_date32_value(idx, column, builder),
+        ArrowDataType::Date32 => append_struct_date32_value(idx, column, builder),
 
         _ => unreachable!(),
     }
@@ -345,20 +176,20 @@ pub fn append_struct_null(
     decoder: &Decoder,
 ) -> Result<()> {
     match field.data_type() {
-        arrow::datatypes::DataType::Boolean => {
+        ArrowDataType::Boolean => {
             append_struct_boolean_null(idx, builder);
         }
-        arrow::datatypes::DataType::Int8 => append_struct_int8_null(idx, builder),
-        arrow::datatypes::DataType::Int16 => append_struct_int16_null(idx, builder),
-        arrow::datatypes::DataType::Int32 => append_struct_int32_null(idx, builder),
-        arrow::datatypes::DataType::Int64 => append_struct_int64_null(idx, builder),
-        arrow::datatypes::DataType::Float32 => append_struct_float32_null(idx, builder),
-        arrow::datatypes::DataType::Float64 => append_struct_float64_null(idx, builder),
-        arrow::datatypes::DataType::Timestamp(TimeUnit::Nanosecond, _) => {
+        ArrowDataType::Int8 => append_struct_int8_null(idx, builder),
+        ArrowDataType::Int16 => append_struct_int16_null(idx, builder),
+        ArrowDataType::Int32 => append_struct_int32_null(idx, builder),
+        ArrowDataType::Int64 => append_struct_int64_null(idx, builder),
+        ArrowDataType::Float32 => append_struct_float32_null(idx, builder),
+        ArrowDataType::Float64 => append_struct_float64_null(idx, builder),
+        ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => {
             append_struct_timestampnanosecond_null(idx, builder)
         }
-        &arrow::datatypes::DataType::Binary => append_struct_binary_null(idx, builder),
-        arrow::datatypes::DataType::Utf8 => match decoder {
+        ArrowDataType::Binary => append_struct_binary_null(idx, builder),
+        ArrowDataType::Utf8 => match decoder {
             Decoder::String(decoder) => match decoder {
                 StringDecoder::Direct(_) => {
                     builder
@@ -375,7 +206,7 @@ pub fn append_struct_null(
             },
             _ => unreachable!(),
         },
-        arrow::datatypes::DataType::Date32 => append_struct_date32_null(idx, builder),
+        ArrowDataType::Date32 => append_struct_date32_null(idx, builder),
 
         _ => unreachable!(),
     }
@@ -876,136 +707,4 @@ impl NaiveStripeDecoder {
             number_of_rows,
         })
     }
-}
-
-pub struct Cursor<R> {
-    pub(crate) reader: R,
-    pub(crate) file_metadata: Arc<FileMetadata>,
-    pub(crate) projected_data_type: RootDataType,
-    pub(crate) stripe_offset: usize,
-}
-
-impl<R: ChunkReader> Iterator for Cursor<R> {
-    type Item = Result<Stripe>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(info) = self
-            .file_metadata
-            .stripe_metadatas()
-            .get(self.stripe_offset)
-            .cloned()
-        {
-            let stripe = Stripe::new(
-                &mut self.reader,
-                &self.file_metadata,
-                &self.projected_data_type.clone(),
-                self.stripe_offset,
-                &info,
-            );
-            self.stripe_offset += 1;
-            Some(stripe)
-        } else {
-            None
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Stripe {
-    pub(crate) footer: Arc<StripeFooter>,
-    pub(crate) columns: Vec<Column>,
-    pub(crate) stripe_offset: usize,
-    /// <(ColumnId, Kind), Bytes>
-    pub(crate) stream_map: Arc<StreamMap>,
-}
-
-impl Stripe {
-    pub fn new<R: ChunkReader>(
-        reader: &mut R,
-        file_metadata: &Arc<FileMetadata>,
-        projected_data_type: &RootDataType,
-        stripe: usize,
-        info: &StripeMetadata,
-    ) -> Result<Self> {
-        let compression = file_metadata.compression();
-
-        let footer = reader
-            .get_bytes(info.footer_offset(), info.footer_length())
-            .context(IoSnafu)?;
-        let footer = Arc::new(deserialize_stripe_footer(&footer, compression)?);
-
-        //TODO(weny): add tz
-        let columns = projected_data_type
-            .children()
-            .iter()
-            .map(|col| Column::new(col.name(), col.data_type(), &footer, info.number_of_rows()))
-            .collect();
-
-        let mut stream_map = HashMap::new();
-        let mut stream_offset = info.offset();
-        for stream in &footer.streams {
-            let length = stream.length();
-            let column_id = stream.column();
-            let kind = stream.kind();
-            let data = Column::read_stream(reader, stream_offset, length)?;
-
-            // TODO(weny): filter out unused streams.
-            stream_map.insert((column_id, kind), data);
-
-            stream_offset += length;
-        }
-
-        Ok(Self {
-            footer,
-            columns,
-            stripe_offset: stripe,
-            stream_map: Arc::new(StreamMap {
-                inner: stream_map,
-                compression,
-            }),
-        })
-    }
-
-    pub fn footer(&self) -> &Arc<StripeFooter> {
-        &self.footer
-    }
-
-    pub fn stripe_offset(&self) -> usize {
-        self.stripe_offset
-    }
-}
-
-#[derive(Debug)]
-pub struct StreamMap {
-    pub inner: HashMap<(u32, Kind), Bytes>,
-    pub compression: Option<Compression>,
-}
-
-impl StreamMap {
-    pub fn get(&self, column: &Column, kind: Kind) -> Result<Decompressor> {
-        self.get_opt(column, kind).context(InvalidColumnSnafu {
-            name: column.name(),
-        })
-    }
-
-    pub fn get_opt(&self, column: &Column, kind: Kind) -> Option<Decompressor> {
-        let column_id = column.column_id();
-
-        self.inner
-            .get(&(column_id, kind))
-            .cloned()
-            .map(|data| Decompressor::new(data, self.compression, vec![]))
-    }
-}
-
-pub(crate) fn deserialize_stripe_footer(
-    bytes: &[u8],
-    compression: Option<Compression>,
-) -> Result<StripeFooter> {
-    let mut buffer = vec![];
-    // TODO: refactor to not need Bytes::copy_from_slice
-    Decompressor::new(Bytes::copy_from_slice(bytes), compression, vec![])
-        .read_to_end(&mut buffer)
-        .context(error::IoSnafu)?;
-    StripeFooter::decode(buffer.as_slice()).context(error::DecodeProtoSnafu)
 }

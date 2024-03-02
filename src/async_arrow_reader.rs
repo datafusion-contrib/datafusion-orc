@@ -13,14 +13,12 @@ use futures_util::FutureExt;
 use snafu::ResultExt;
 
 use crate::arrow_reader::column::Column;
-use crate::arrow_reader::{
-    deserialize_stripe_footer, Cursor, NaiveStripeDecoder, StreamMap, Stripe,
-};
+use crate::arrow_reader::{Cursor, NaiveStripeDecoder};
 use crate::error::{IoSnafu, Result};
 use crate::reader::metadata::FileMetadata;
 use crate::reader::AsyncChunkReader;
 use crate::schema::RootDataType;
-use crate::stripe::StripeMetadata;
+use crate::stripe::{deserialize_stripe_footer, StreamMap, Stripe, StripeMetadata};
 
 pub type BoxedDecoder = Box<dyn Iterator<Item = Result<RecordBatch>> + Send>;
 
