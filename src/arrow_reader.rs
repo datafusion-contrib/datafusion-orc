@@ -31,7 +31,7 @@ use self::column::Column;
 use crate::arrow_reader::column::binary::new_binary_iterator;
 use crate::arrow_reader::column::boolean::new_boolean_iter;
 use crate::arrow_reader::column::float::{new_f32_iter, new_f64_iter};
-use crate::arrow_reader::column::int::new_i64_iter;
+use crate::arrow_reader::column::int::new_int_iter;
 use crate::arrow_reader::column::string::StringDecoder;
 use crate::arrow_reader::column::struct_column::StructDecoder;
 use crate::arrow_reader::column::timestamp::new_timestamp_iter;
@@ -205,8 +205,8 @@ impl<R: ChunkReader> Iterator for ArrowReader<R> {
 
 pub enum Decoder {
     Int64(NullableIterator<i64>),
-    Int32(NullableIterator<i64>),
-    Int16(NullableIterator<i64>),
+    Int32(NullableIterator<i32>),
+    Int16(NullableIterator<i16>),
     Int8(NullableIterator<i8>),
     Boolean(NullableIterator<bool>),
     Float32(NullableIterator<f32>),
@@ -459,7 +459,7 @@ impl Decoder {
                     let builder = builder.as_any_mut().downcast_mut::<Int32Builder>().unwrap();
 
                     for value in values {
-                        builder.append_option(value.map(|v| v as i32));
+                        builder.append_option(value);
                     }
                 }
             }
@@ -471,7 +471,7 @@ impl Decoder {
                     let builder = builder.as_any_mut().downcast_mut::<Int16Builder>().unwrap();
 
                     for value in values {
-                        builder.append_option(value.map(|v| v as i16));
+                        builder.append_option(value);
                     }
                 }
             }
@@ -795,9 +795,9 @@ pub fn reader_factory(col: &Column, stripe: &Stripe) -> Result<Decoder> {
     let reader = match col.data_type() {
         DataType::Boolean { .. } => Decoder::Boolean(new_boolean_iter(col, stripe)?),
         DataType::Byte { .. } => Decoder::Int8(new_i8_iter(col, stripe)?),
-        DataType::Short { .. } => Decoder::Int16(new_i64_iter(col, stripe)?),
-        DataType::Int { .. } => Decoder::Int32(new_i64_iter(col, stripe)?),
-        DataType::Long { .. } => Decoder::Int64(new_i64_iter(col, stripe)?),
+        DataType::Short { .. } => Decoder::Int16(new_int_iter::<i16>(col, stripe)?),
+        DataType::Int { .. } => Decoder::Int32(new_int_iter::<i32>(col, stripe)?),
+        DataType::Long { .. } => Decoder::Int64(new_int_iter::<i64>(col, stripe)?),
         DataType::Float { .. } => Decoder::Float32(new_f32_iter(col, stripe)?),
         DataType::Double { .. } => Decoder::Float64(new_f64_iter(col, stripe)?),
         DataType::String { .. } => Decoder::String(StringDecoder::new(col, stripe)?),
@@ -808,7 +808,7 @@ pub fn reader_factory(col: &Column, stripe: &Stripe) -> Result<Decoder> {
         DataType::Struct { .. } => Decoder::Struct(new_struct_iter(col, stripe)?),
         DataType::Union { .. } => todo!(),
         DataType::Decimal { .. } => todo!(),
-        DataType::Date { .. } => Decoder::Date(new_i64_iter(col, stripe)?),
+        DataType::Date { .. } => Decoder::Date(new_int_iter::<i64>(col, stripe)?),
         DataType::Varchar { .. } => Decoder::String(StringDecoder::new(col, stripe)?),
         DataType::Char { .. } => Decoder::String(StringDecoder::new(col, stripe)?),
         DataType::TimestampWithLocalTimezone { .. } => todo!(),
