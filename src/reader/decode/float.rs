@@ -3,7 +3,7 @@ use snafu::ResultExt;
 use crate::error::{self, Result};
 
 /// Sealead trait to generically represent f32 and f64.
-pub trait Float: Default + Copy + private::Sealed {
+pub trait Float: Default + Copy + private::Sealed + Send + Sync + 'static {
     type Bytes: AsRef<[u8]> + AsMut<[u8]> + Default;
     fn from_le_bytes(bytes: Self::Bytes) -> Self;
 }

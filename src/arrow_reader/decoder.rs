@@ -17,7 +17,7 @@ use snafu::ResultExt;
 
 use crate::arrow_reader::column::binary::new_binary_iterator;
 use crate::arrow_reader::column::boolean::new_boolean_iter;
-use crate::arrow_reader::column::float::{new_f32_iter, new_f64_iter};
+use crate::arrow_reader::column::float::new_float_iter;
 use crate::arrow_reader::column::int::new_int_iter;
 use crate::arrow_reader::column::string::StringDecoder;
 use crate::arrow_reader::column::struct_column::StructDecoder;
@@ -612,8 +612,8 @@ pub fn reader_factory(col: &Column, stripe: &Stripe) -> Result<Decoder> {
         DataType::Short { .. } => Decoder::Int16(new_int_iter::<i16>(col, stripe)?),
         DataType::Int { .. } => Decoder::Int32(new_int_iter::<i32>(col, stripe)?),
         DataType::Long { .. } => Decoder::Int64(new_int_iter::<i64>(col, stripe)?),
-        DataType::Float { .. } => Decoder::Float32(new_f32_iter(col, stripe)?),
-        DataType::Double { .. } => Decoder::Float64(new_f64_iter(col, stripe)?),
+        DataType::Float { .. } => Decoder::Float32(new_float_iter::<f32>(col, stripe)?),
+        DataType::Double { .. } => Decoder::Float64(new_float_iter::<f64>(col, stripe)?),
         DataType::String { .. } => Decoder::String(StringDecoder::new(col, stripe)?),
         DataType::Binary { .. } => Decoder::Binary(new_binary_iterator(col, stripe)?),
         DataType::Timestamp { .. } => Decoder::Timestamp(new_timestamp_iter(col, stripe)?),
