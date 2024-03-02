@@ -33,13 +33,13 @@ impl<N: NInt, R: Read> RleReaderV2<N, R> {
         let run_length = (header & 0x07) as usize + MIN_REPEAT_SIZE;
 
         // Value that is being repeated is encoded as value_byte_width bytes in big endian format
-        let mut buffer = [0; 8];
+        let mut buffer = N::empty_byte_array();
         // Read into back part of buffer since is big endian.
-        // So if smaller than 8 bytes, most significant bytes will be 0.
+        // So if smaller than N::BYTE_SIZE bytes, most significant bytes will be 0.
         self.reader
-            .read_exact(&mut buffer[8 - byte_width..])
+            .read_exact(&mut buffer.as_mut()[N::BYTE_SIZE - byte_width..])
             .context(IoSnafu)?;
-        let val = N::from_be_bytes(&buffer[8 - N::BYTE_SIZE..]).zigzag_decode();
+        let val = N::from_be_bytes(buffer).zigzag_decode();
 
         self.decoded_ints
             .extend(std::iter::repeat(val).take(run_length));

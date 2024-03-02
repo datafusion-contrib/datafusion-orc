@@ -5,10 +5,7 @@ use crate::error::Result;
 use crate::proto::stream::Kind;
 use crate::reader::decode::{get_rle_reader, NInt};
 
-pub fn new_int_iter<N: NInt + 'static>(
-    column: &Column,
-    stripe: &Stripe,
-) -> Result<NullableIterator<N>> {
+pub fn new_int_iter<N: NInt>(column: &Column, stripe: &Stripe) -> Result<NullableIterator<N>> {
     let present = new_present_iter(column, stripe)?.collect::<Result<Vec<_>>>()?;
 
     let reader = stripe.stream_map.get(column, Kind::Data)?;
