@@ -3,7 +3,8 @@ use snafu::ResultExt;
 
 use super::present::new_present_iter;
 use super::Column;
-use crate::arrow_reader::{reader_factory, BoxedArrayBuilder, Decoder, Stripe};
+use crate::arrow_reader::decoder::{reader_factory, Decoder};
+use crate::arrow_reader::{BoxedArrayBuilder, Stripe};
 use crate::error::{self, Result};
 use crate::proto::stream::Kind;
 use crate::reader::decode::get_rle_reader;

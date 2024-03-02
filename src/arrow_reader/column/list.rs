@@ -1,6 +1,7 @@
 use arrow::array::ListBuilder;
 
-use crate::arrow_reader::{reader_factory, BoxedArrayBuilder, Decoder, Stripe};
+use crate::arrow_reader::decoder::{reader_factory, Decoder};
+use crate::arrow_reader::{BoxedArrayBuilder, Stripe};
 use crate::proto::stream::Kind;
 use crate::reader::decode::get_rle_reader;
 
