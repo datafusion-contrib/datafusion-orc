@@ -17,9 +17,8 @@ pub struct ListDecoder {
 impl ListDecoder {
     fn append_value(&mut self, root_builder: &mut ListBuilder<BoxedArrayBuilder>) -> Result<()> {
         let len = self.lengths.next().unwrap()?;
-        let _ = self
-            .inner
-            .append_value(&mut root_builder.values().builder, len as usize);
+        self.inner
+            .append_value(&mut root_builder.values().builder, len as usize)?;
 
         Ok(())
     }
