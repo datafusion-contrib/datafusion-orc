@@ -170,19 +170,14 @@ impl<T> Iterator for NullableIterator<T> {
     type Item = Result<Option<T>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.present.next() {
-            Some(present) => {
-                if present {
-                    match self.iter.next() {
-                        Some(Ok(value)) => Some(Ok(Some(value))),
-                        Some(Err(err)) => Some(Err(err)),
-                        None => None,
-                    }
-                } else {
-                    Some(Ok(None))
-                }
+        let present = self.present.next()?;
+        if present {
+            match self.iter.next()? {
+                Ok(value) => Some(Ok(Some(value))),
+                Err(err) => Some(Err(err)),
             }
-            None => None,
+        } else {
+            Some(Ok(None))
         }
     }
 }
