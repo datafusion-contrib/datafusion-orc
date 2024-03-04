@@ -122,6 +122,12 @@ pub enum OrcError {
         location: Location,
         source: lz4_flex::block::DecompressError,
     },
+
+    #[snafu(display("Arrow error: {}", source))]
+    Arrow {
+        source: arrow::error::ArrowError,
+        location: Location,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, OrcError>;

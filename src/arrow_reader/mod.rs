@@ -6,7 +6,6 @@ use arrow::error::ArrowError;
 use arrow::record_batch::{RecordBatch, RecordBatchReader};
 
 pub use self::decoder::NaiveStripeDecoder;
-use crate::builder::BoxedArrayBuilder;
 use crate::error::Result;
 use crate::projection::ProjectionMask;
 use crate::reader::metadata::{read_metadata, read_metadata_async, FileMetadata};
