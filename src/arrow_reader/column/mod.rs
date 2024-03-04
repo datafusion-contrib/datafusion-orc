@@ -14,7 +14,6 @@ pub mod boolean;
 pub mod float;
 pub mod int;
 pub mod present;
-pub mod string;
 pub mod timestamp;
 pub mod tinyint;
 
@@ -159,8 +158,8 @@ impl Column {
 }
 
 pub struct NullableIterator<T> {
-    present: Box<dyn Iterator<Item = bool> + Send>,
-    iter: Box<dyn Iterator<Item = Result<T>> + Send>,
+    pub(crate) present: Box<dyn Iterator<Item = bool> + Send>,
+    pub(crate) iter: Box<dyn Iterator<Item = Result<T>> + Send>,
 }
 
 impl<T> Iterator for NullableIterator<T> {
