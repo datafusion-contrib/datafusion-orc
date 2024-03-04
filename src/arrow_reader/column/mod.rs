@@ -13,11 +13,8 @@ pub mod binary;
 pub mod boolean;
 pub mod float;
 pub mod int;
-pub mod list;
-pub mod map;
 pub mod present;
 pub mod string;
-pub mod struct_column;
 pub mod timestamp;
 pub mod tinyint;
 
