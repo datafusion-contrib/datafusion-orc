@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use arrow::array::{
-    Array, ArrayRef, BinaryBuilder, BooleanBuilder, PrimitiveArray, PrimitiveBuilder,
-};
+use arrow::array::{ArrayRef, BooleanBuilder, PrimitiveArray, PrimitiveBuilder};
 use arrow::datatypes::{ArrowPrimitiveType, UInt64Type};
 use arrow::datatypes::{
     Date32Type, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, SchemaRef,
@@ -11,7 +9,6 @@ use arrow::datatypes::{
 use arrow::record_batch::RecordBatch;
 use snafu::ResultExt;
 
-use crate::arrow_reader::column::binary::new_binary_iterator;
 use crate::arrow_reader::column::boolean::new_boolean_iter;
 use crate::arrow_reader::column::float::new_float_iter;
 use crate::arrow_reader::column::int::new_int_iter;
@@ -23,7 +20,7 @@ use crate::stripe::Stripe;
 
 use self::list::ListArrayDecoder;
 use self::map::MapArrayDecoder;
-use self::string::new_string_decoder;
+use self::string::{new_binary_decoder, new_string_decoder};
 use self::struct_decoder::StructArrayDecoder;
 
 use super::column::tinyint::new_i8_iter;
@@ -162,60 +159,6 @@ impl ArrayBatchDecoder for BooleanArrayDecoder {
     }
 }
 
-struct BinaryArrayDecoder {
-    inner: NullableIterator<Vec<u8>>,
-}
-
-impl BinaryArrayDecoder {
-    pub fn new(inner: NullableIterator<Vec<u8>>) -> Self {
-        Self { inner }
-    }
-}
-
-impl ArrayBatchDecoder for BinaryArrayDecoder {
-    fn next_batch(
-        &mut self,
-        batch_size: usize,
-        parent_present: Option<&[bool]>,
-    ) -> Result<Option<ArrayRef>> {
-        let mut builder = BinaryBuilder::new();
-
-        let mut iter = self.inner.by_ref().take(batch_size);
-        if let Some(parent_present) = parent_present {
-            debug_assert_eq!(
-                parent_present.len(),
-                batch_size,
-                "when provided, parent_present length must equal batch_size"
-            );
-
-            for &is_present in parent_present {
-                if is_present {
-                    // TODO: return as error instead
-                    let opt = iter
-                        .next()
-                        .transpose()?
-                        .expect("array less than expected length");
-                    builder.append_option(opt);
-                } else {
-                    builder.append_null();
-                }
-            }
-        } else {
-            for opt in iter {
-                let opt = opt?;
-                builder.append_option(opt);
-            }
-        };
-
-        let array = Arc::new(builder.finish());
-        if array.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(array))
-        }
-    }
-}
-
 fn merge_parent_present(
     parent_present: &[bool],
     present: impl IntoIterator<Item = bool> + Send,
@@ -314,10 +257,7 @@ pub fn array_decoder_factory(
         DataType::String { .. } | DataType::Varchar { .. } | DataType::Char { .. } => {
             new_string_decoder(column, stripe)?
         }
-        DataType::Binary { .. } => {
-            let inner = new_binary_iterator(column, stripe)?;
-            Box::new(BinaryArrayDecoder::new(inner))
-        }
+        DataType::Binary { .. } => new_binary_decoder(column, stripe)?,
         DataType::Decimal { .. } => todo!(),
         DataType::Timestamp { .. } => {
             let inner = new_timestamp_iter(column, stripe)?;

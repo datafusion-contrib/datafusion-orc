@@ -9,7 +9,6 @@ use crate::proto::{ColumnEncoding, StripeFooter};
 use crate::reader::{AsyncChunkReader, ChunkReader};
 use crate::schema::DataType;
 
-pub mod binary;
 pub mod boolean;
 pub mod float;
 pub mod int;

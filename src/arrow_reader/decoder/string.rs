@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use arrow::array::{Array, ArrayRef, DictionaryArray, GenericByteArray, StringArray};
 use arrow::buffer::{Buffer, NullBuffer, OffsetBuffer};
-use arrow::datatypes::{ByteArrayType, GenericStringType};
+use arrow::datatypes::{ByteArrayType, GenericBinaryType, GenericStringType};
 use snafu::ResultExt;
 
 use crate::arrow_reader::column::present::new_present_iter;
@@ -13,11 +13,28 @@ use crate::arrow_reader::decoder::{merge_parent_present, UInt64ArrayDecoder};
 use crate::error::{ArrowSnafu, IoSnafu, Result};
 use crate::proto::column_encoding::Kind as ColumnEncodingKind;
 use crate::proto::stream::Kind;
-use crate::reader::decode::RleVersion;
+use crate::reader::decode::{get_rle_reader, RleVersion};
 use crate::reader::decompress::Decompressor;
 use crate::stripe::Stripe;
 
 use super::ArrayBatchDecoder;
+
+// TODO: reduce duplication with string below
+pub fn new_binary_decoder(column: &Column, stripe: &Stripe) -> Result<Box<dyn ArrayBatchDecoder>> {
+    let present = new_present_iter(column, stripe)?.collect::<Result<Vec<_>>>()?;
+    // TODO: this is to make it Send, fix this?
+    let present = Box::new(present.into_iter());
+
+    let lengths = stripe.stream_map.get(column, Kind::Length)?;
+    let lengths = get_rle_reader::<u64, _>(column, lengths)?;
+
+    let bytes = Box::new(stripe.stream_map.get(column, Kind::Data)?);
+    Ok(Box::new(BinaryArrayDecoder::new(
+        bytes,
+        lengths,
+        Some(present),
+    )))
+}
 
 pub fn new_string_decoder(column: &Column, stripe: &Stripe) -> Result<Box<dyn ArrayBatchDecoder>> {
     let kind = column.encoding().kind();
@@ -36,7 +53,7 @@ pub fn new_string_decoder(column: &Column, stripe: &Stripe) -> Result<Box<dyn Ar
                 bytes,
                 lengths,
                 Some(present),
-            )?))
+            )))
         }
         ColumnEncodingKind::Dictionary | ColumnEncodingKind::DictionaryV2 => {
             let bytes = Box::new(stripe.stream_map.get(column, Kind::DictionaryData)?);
@@ -44,7 +61,7 @@ pub fn new_string_decoder(column: &Column, stripe: &Stripe) -> Result<Box<dyn Ar
             let dictionary_size = column.dictionary_size();
             debug_assert!(dictionary_size > 0, "dictionary cannot be empty");
             // We assume here we have fetched all the dictionary strings (according to size above)
-            let dictionary_strings = DirectStringArrayDecoder::new(bytes, lengths, None)?
+            let dictionary_strings = DirectStringArrayDecoder::new(bytes, lengths, None)
                 .next_byte_batch(dictionary_size, None)?
                 .unwrap();
             let dictionary_strings = Arc::new(dictionary_strings);
@@ -67,7 +84,7 @@ pub fn new_string_decoder(column: &Column, stripe: &Stripe) -> Result<Box<dyn Ar
 
 // TODO: check this offset size type
 pub type DirectStringArrayDecoder = GenericByteArrayDecoder<GenericStringType<i32>>;
-// TODO: apply to binary
+pub type BinaryArrayDecoder = GenericByteArrayDecoder<GenericBinaryType<i32>>;
 
 pub struct GenericByteArrayDecoder<T: ByteArrayType> {
     bytes: Box<Decompressor>,
@@ -81,13 +98,13 @@ impl<T: ByteArrayType> GenericByteArrayDecoder<T> {
         bytes: Box<Decompressor>,
         lengths: Box<dyn Iterator<Item = Result<u64>> + Send>,
         present: Option<Box<dyn Iterator<Item = bool> + Send>>,
-    ) -> Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             bytes,
             lengths,
             present,
             phantom: Default::default(),
-        })
+        }
     }
 
     fn next_byte_batch(
