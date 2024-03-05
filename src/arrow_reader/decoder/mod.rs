@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use arrow::array::{ArrayRef, BooleanBuilder, PrimitiveArray, PrimitiveBuilder};
+use arrow::buffer::NullBuffer;
 use arrow::datatypes::{ArrowPrimitiveType, UInt64Type};
 use arrow::datatypes::{
     Date32Type, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, SchemaRef,
@@ -167,6 +168,54 @@ fn merge_parent_present(
         }
     }
     merged_present
+}
+
+fn derive_present_vec(
+    present: &mut Option<Box<dyn Iterator<Item = bool> + Send>>,
+    parent_present: Option<&[bool]>,
+    batch_size: usize,
+) -> Option<Vec<bool>> {
+    match (present, parent_present) {
+        (Some(present), Some(parent_present)) => {
+            let present = present.by_ref().take(batch_size);
+            Some(merge_parent_present(parent_present, present))
+        }
+        (Some(present), None) => Some(present.by_ref().take(batch_size).collect::<Vec<_>>()),
+        (None, Some(parent_present)) => Some(parent_present.to_vec()),
+        (None, None) => None,
+    }
+}
+
+/// Fix the lengths to account for nulls (represented as 0 length)
+fn populate_lengths_with_nulls(
+    lengths: Vec<u64>,
+    batch_size: usize,
+    present: &Option<Vec<bool>>,
+) -> Vec<usize> {
+    if let Some(present) = present {
+        let mut lengths_with_nulls = Vec::with_capacity(batch_size);
+        let mut lengths = lengths.iter();
+        for &is_present in present {
+            if is_present {
+                let length = *lengths.next().unwrap();
+                lengths_with_nulls.push(length as usize);
+            } else {
+                lengths_with_nulls.push(0);
+            }
+        }
+        lengths_with_nulls
+    } else {
+        lengths.into_iter().map(|l| l as usize).collect()
+    }
+}
+
+fn create_null_buffer(present: Option<Vec<bool>>) -> Option<NullBuffer> {
+    match present {
+        // Edge case where keys of map cannot have a null buffer
+        Some(present) if present.iter().all(|&p| p) => None,
+        Some(present) => Some(NullBuffer::from(present)),
+        None => None,
+    }
 }
 
 pub struct NaiveStripeDecoder {
