@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::array::{Array, ArrayRef, ListArray};
+use arrow::array::{ArrayRef, ListArray};
 use arrow::buffer::{NullBuffer, OffsetBuffer};
 use arrow::datatypes::{Field, FieldRef};
 use snafu::ResultExt;
@@ -51,7 +51,7 @@ impl ArrayBatchDecoder for ListArrayDecoder {
         &mut self,
         batch_size: usize,
         parent_present: Option<&[bool]>,
-    ) -> Result<Option<ArrayRef>> {
+    ) -> Result<ArrayRef> {
         let present = self.present.by_ref().take(batch_size);
         let present = if let Some(parent_present) = parent_present {
             debug_assert_eq!(
@@ -77,7 +77,7 @@ impl ArrayBatchDecoder for ListArrayDecoder {
         );
         let total_length: u64 = lengths.iter().sum();
         // Fetch child array as one Array with total_length elements
-        let child_array = self.inner.next_batch(total_length as usize, None)?.unwrap();
+        let child_array = self.inner.next_batch(total_length as usize, None)?;
         // Fix the lengths to account for nulls (represented as 0 length)
         let mut lengths_with_nulls = Vec::with_capacity(batch_size);
         let mut lengths = lengths.iter();
@@ -95,10 +95,6 @@ impl ArrayBatchDecoder for ListArrayDecoder {
         let array = ListArray::try_new(self.field.clone(), offsets, child_array, Some(null_buffer))
             .context(ArrowSnafu)?;
         let array = Arc::new(array);
-        if array.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(array))
-        }
+        Ok(array)
     }
 }

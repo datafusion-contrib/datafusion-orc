@@ -54,7 +54,7 @@ impl ArrayBatchDecoder for StructArrayDecoder {
         &mut self,
         batch_size: usize,
         parent_present: Option<&[bool]>,
-    ) -> Result<Option<ArrayRef>> {
+    ) -> Result<ArrayRef> {
         let present = self.present.by_ref().take(batch_size);
         let present = if let Some(parent_present) = parent_present {
             debug_assert_eq!(
@@ -73,20 +73,10 @@ impl ArrayBatchDecoder for StructArrayDecoder {
             .map(|child| child.next_batch(batch_size, Some(&present)))
             .collect::<Result<Vec<_>>>()?;
 
-        // TODO: more strict, this should either be all Some or all None, not in-between
-        //       throw error if in-between case
-        if child_arrays.contains(&None) {
-            Ok(None)
-        } else {
-            let child_arrays = child_arrays
-                .into_iter()
-                .map(|opt| opt.unwrap())
-                .collect::<Vec<_>>();
-            let null_buffer = NullBuffer::from(present);
-            let array = StructArray::try_new(self.fields.clone(), child_arrays, Some(null_buffer))
-                .context(ArrowSnafu)?;
-            let array = Arc::new(array);
-            Ok(Some(array))
-        }
+        let null_buffer = NullBuffer::from(present);
+        let array = StructArray::try_new(self.fields.clone(), child_arrays, Some(null_buffer))
+            .context(ArrowSnafu)?;
+        let array = Arc::new(array);
+        Ok(array)
     }
 }

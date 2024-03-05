@@ -2,7 +2,7 @@ use std::io::Read;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use arrow::array::{Array, ArrayRef, DictionaryArray, GenericByteArray, StringArray};
+use arrow::array::{ArrayRef, DictionaryArray, GenericByteArray, StringArray};
 use arrow::buffer::{Buffer, NullBuffer, OffsetBuffer};
 use arrow::datatypes::{ByteArrayType, GenericBinaryType, GenericStringType};
 use snafu::ResultExt;
@@ -62,8 +62,7 @@ pub fn new_string_decoder(column: &Column, stripe: &Stripe) -> Result<Box<dyn Ar
             debug_assert!(dictionary_size > 0, "dictionary cannot be empty");
             // We assume here we have fetched all the dictionary strings (according to size above)
             let dictionary_strings = DirectStringArrayDecoder::new(bytes, lengths, None)
-                .next_byte_batch(dictionary_size, None)?
-                .unwrap();
+                .next_byte_batch(dictionary_size, None)?;
             let dictionary_strings = Arc::new(dictionary_strings);
 
             let indexes = stripe.stream_map.get(column, Kind::Data)?;
@@ -111,7 +110,7 @@ impl<T: ByteArrayType> GenericByteArrayDecoder<T> {
         &mut self,
         batch_size: usize,
         parent_present: Option<&[bool]>,
-    ) -> Result<Option<GenericByteArray<T>>> {
+    ) -> Result<GenericByteArray<T>> {
         let present = match (&mut self.present, parent_present) {
             (Some(present), Some(parent_present)) => {
                 let present = present.by_ref().take(batch_size);
@@ -172,11 +171,7 @@ impl<T: ByteArrayType> GenericByteArrayDecoder<T> {
 
         let array =
             GenericByteArray::<T>::try_new(offsets, bytes, null_buffer).context(ArrowSnafu)?;
-        if array.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(array))
-        }
+        Ok(array)
     }
 }
 
@@ -185,9 +180,9 @@ impl<T: ByteArrayType> ArrayBatchDecoder for GenericByteArrayDecoder<T> {
         &mut self,
         batch_size: usize,
         parent_present: Option<&[bool]>,
-    ) -> Result<Option<ArrayRef>> {
+    ) -> Result<ArrayRef> {
         let array = self.next_byte_batch(batch_size, parent_present)?;
-        let array = array.map(|a| Arc::new(a) as ArrayRef);
+        let array = Arc::new(array) as ArrayRef;
         Ok(array)
     }
 }
@@ -211,18 +206,13 @@ impl ArrayBatchDecoder for DictionaryStringArrayDecoder {
         &mut self,
         batch_size: usize,
         parent_present: Option<&[bool]>,
-    ) -> Result<Option<ArrayRef>> {
+    ) -> Result<ArrayRef> {
         let keys = self
             .indexes
-            .next_primitive_batch(batch_size, parent_present)?
-            .unwrap();
+            .next_primitive_batch(batch_size, parent_present)?;
         let array = DictionaryArray::try_new(keys, self.dictionary.clone()).context(ArrowSnafu)?;
 
         let array = Arc::new(array);
-        if array.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(array))
-        }
+        Ok(array)
     }
 }
