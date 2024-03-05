@@ -44,7 +44,7 @@ impl<T: ArrowPrimitiveType> PrimitiveArrayDecoder<T> {
         &mut self,
         batch_size: usize,
         parent_present: Option<&[bool]>,
-    ) -> Result<Option<PrimitiveArray<T>>> {
+    ) -> Result<PrimitiveArray<T>> {
         let mut builder = PrimitiveBuilder::<T>::with_capacity(batch_size);
 
         let mut iter = self.inner.by_ref().take(batch_size);
@@ -75,11 +75,7 @@ impl<T: ArrowPrimitiveType> PrimitiveArrayDecoder<T> {
         };
 
         let array = builder.finish();
-        if array.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(array))
-        }
+        Ok(array)
     }
 }
 
@@ -88,9 +84,9 @@ impl<T: ArrowPrimitiveType> ArrayBatchDecoder for PrimitiveArrayDecoder<T> {
         &mut self,
         batch_size: usize,
         parent_present: Option<&[bool]>,
-    ) -> Result<Option<ArrayRef>> {
+    ) -> Result<ArrayRef> {
         let array = self.next_primitive_batch(batch_size, parent_present)?;
-        let array = array.map(|a| Arc::new(a) as ArrayRef);
+        let array = Arc::new(array) as ArrayRef;
         Ok(array)
     }
 }
@@ -120,7 +116,7 @@ impl ArrayBatchDecoder for BooleanArrayDecoder {
         &mut self,
         batch_size: usize,
         parent_present: Option<&[bool]>,
-    ) -> Result<Option<ArrayRef>> {
+    ) -> Result<ArrayRef> {
         let mut builder = BooleanBuilder::with_capacity(batch_size);
 
         let mut iter = self.inner.by_ref().take(batch_size);
@@ -151,11 +147,7 @@ impl ArrayBatchDecoder for BooleanArrayDecoder {
         };
 
         let array = Arc::new(builder.finish());
-        if array.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(array))
-        }
+        Ok(array)
     }
 }
 
@@ -206,19 +198,15 @@ pub trait ArrayBatchDecoder: Send {
     /// Used as base for decoding ORC columns into Arrow arrays. Provide an input `batch_size`
     /// which specifies the upper limit of the number of values returned in the output array.
     ///
-    /// Will return `None` if no more elements to decode (aka return 0 values).
-    ///
     /// If parent nested type (e.g. Struct) indicates a null in it's PRESENT stream,
     /// then the child doesn't have a value (similar to other nullability). So we need
     /// to take care to insert these null values as Arrow requires the child to hold
     /// data in the null slot of the child.
-    // TODO: reconsider returning Option - array already encodes emptiness, this causes
-    //       more boilerplate?
     fn next_batch(
         &mut self,
         batch_size: usize,
         parent_present: Option<&[bool]>,
-    ) -> Result<Option<ArrayRef>>;
+    ) -> Result<ArrayRef>;
 }
 
 pub fn array_decoder_factory(
@@ -284,9 +272,11 @@ impl NaiveStripeDecoder {
         let mut fields = Vec::with_capacity(self.stripe.columns.len());
 
         for decoder in &mut self.decoders {
-            match decoder.next_batch(chunk, None)? {
-                Some(array) => fields.push(array),
-                None => break,
+            let array = decoder.next_batch(chunk, None)?;
+            if array.is_empty() {
+                break;
+            } else {
+                fields.push(array);
             }
         }
 

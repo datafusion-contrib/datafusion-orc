@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::array::{Array, ArrayRef, MapArray, StructArray};
+use arrow::array::{ArrayRef, MapArray, StructArray};
 use arrow::buffer::{NullBuffer, OffsetBuffer};
 use arrow::datatypes::{Field, Fields};
 use snafu::ResultExt;
@@ -64,7 +64,7 @@ impl ArrayBatchDecoder for MapArrayDecoder {
         &mut self,
         batch_size: usize,
         parent_present: Option<&[bool]>,
-    ) -> Result<Option<ArrayRef>> {
+    ) -> Result<ArrayRef> {
         let present = self.present.by_ref().take(batch_size);
         let present = if let Some(parent_present) = parent_present {
             debug_assert_eq!(
@@ -91,11 +91,8 @@ impl ArrayBatchDecoder for MapArrayDecoder {
         let total_length: u64 = lengths.iter().sum();
         // Fetch key and value arrays, each with total_length elements
         // Fetch child array as one Array with total_length elements
-        let keys_array = self.keys.next_batch(total_length as usize, None)?.unwrap();
-        let values_array = self
-            .values
-            .next_batch(total_length as usize, None)?
-            .unwrap();
+        let keys_array = self.keys.next_batch(total_length as usize, None)?;
+        let values_array = self.values.next_batch(total_length as usize, None)?;
         // Compose the keys + values array into a StructArray with two entries
         let entries =
             StructArray::try_new(self.fields.clone(), vec![keys_array, values_array], None)
@@ -118,10 +115,6 @@ impl ArrayBatchDecoder for MapArrayDecoder {
         let array = MapArray::try_new(field, offsets, entries, Some(null_buffer), false)
             .context(ArrowSnafu)?;
         let array = Arc::new(array);
-        if array.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(array))
-        }
+        Ok(array)
     }
 }
