@@ -264,6 +264,7 @@ pub trait ArrayBatchDecoder: Send {
     // TODO: encode nullability in generic -> for a given column in a stripe, we will always know
     //       upfront if we need to bother with nulls or not, so we don't need to keep checking this
     //       for every invocation of next_batch
+    // NOTE: null parent may have non-null child, so would still have to account for this
     fn next_batch(
         &mut self,
         batch_size: usize,
