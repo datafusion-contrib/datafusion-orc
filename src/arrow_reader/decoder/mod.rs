@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
-use arrow::array::{Array, ArrayRef, BinaryBuilder, BooleanBuilder, PrimitiveBuilder};
-use arrow::datatypes::ArrowPrimitiveType;
+use arrow::array::{
+    Array, ArrayRef, BinaryBuilder, BooleanBuilder, PrimitiveArray, PrimitiveBuilder,
+};
+use arrow::datatypes::{ArrowPrimitiveType, UInt64Type};
 use arrow::datatypes::{
     Date32Type, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, SchemaRef,
     TimestampNanosecondType,
@@ -40,14 +42,12 @@ impl<T: ArrowPrimitiveType> PrimitiveArrayDecoder<T> {
     pub fn new(inner: NullableIterator<T::Native>) -> Self {
         Self { inner }
     }
-}
 
-impl<T: ArrowPrimitiveType> ArrayBatchDecoder for PrimitiveArrayDecoder<T> {
-    fn next_batch(
+    fn next_primitive_batch(
         &mut self,
         batch_size: usize,
         parent_present: Option<&[bool]>,
-    ) -> Result<Option<ArrayRef>> {
+    ) -> Result<Option<PrimitiveArray<T>>> {
         let mut builder = PrimitiveBuilder::<T>::with_capacity(batch_size);
 
         let mut iter = self.inner.by_ref().take(batch_size);
@@ -77,7 +77,7 @@ impl<T: ArrowPrimitiveType> ArrayBatchDecoder for PrimitiveArrayDecoder<T> {
             }
         };
 
-        let array = Arc::new(builder.finish());
+        let array = builder.finish();
         if array.is_empty() {
             Ok(None)
         } else {
@@ -86,6 +86,19 @@ impl<T: ArrowPrimitiveType> ArrayBatchDecoder for PrimitiveArrayDecoder<T> {
     }
 }
 
+impl<T: ArrowPrimitiveType> ArrayBatchDecoder for PrimitiveArrayDecoder<T> {
+    fn next_batch(
+        &mut self,
+        batch_size: usize,
+        parent_present: Option<&[bool]>,
+    ) -> Result<Option<ArrayRef>> {
+        let array = self.next_primitive_batch(batch_size, parent_present)?;
+        let array = array.map(|a| Arc::new(a) as ArrayRef);
+        Ok(array)
+    }
+}
+
+type UInt64ArrayDecoder = PrimitiveArrayDecoder<UInt64Type>;
 type Int64ArrayDecoder = PrimitiveArrayDecoder<Int64Type>;
 type Int32ArrayDecoder = PrimitiveArrayDecoder<Int32Type>;
 type Int16ArrayDecoder = PrimitiveArrayDecoder<Int16Type>;
@@ -256,6 +269,8 @@ pub trait ArrayBatchDecoder: Send {
     /// then the child doesn't have a value (similar to other nullability). So we need
     /// to take care to insert these null values as Arrow requires the child to hold
     /// data in the null slot of the child.
+    // TODO: reconsider returning Option - array already encodes emptiness, this causes
+    //       more boilerplate?
     fn next_batch(
         &mut self,
         batch_size: usize,
