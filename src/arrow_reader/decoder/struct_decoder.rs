@@ -1,6 +1,6 @@
 use crate::{
     arrow_reader::{
-        column::{present::new_present_iter, Column},
+        column::{present::get_present_vec, Column},
         decoder::{array_decoder_factory, merge_parent_present, ArrayBatchDecoder},
         Stripe,
     },
@@ -18,14 +18,13 @@ use snafu::ResultExt;
 pub struct StructArrayDecoder {
     fields: Fields,
     decoders: Vec<Box<dyn ArrayBatchDecoder>>,
-    present: Box<dyn Iterator<Item = bool> + Send>,
+    present: Option<Box<dyn Iterator<Item = bool> + Send>>,
 }
 
 impl StructArrayDecoder {
     pub fn new(column: &Column, stripe: &Stripe) -> Result<Self> {
-        let present = new_present_iter(column, stripe)?.collect::<Result<Vec<_>>>()?;
-        // TODO: this is to make it Send, fix this?
-        let present = Box::new(present.into_iter());
+        let present = get_present_vec(column, stripe)?
+            .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
 
         let decoders = column
             .children()
@@ -55,26 +54,24 @@ impl ArrayBatchDecoder for StructArrayDecoder {
         batch_size: usize,
         parent_present: Option<&[bool]>,
     ) -> Result<ArrayRef> {
-        let present = self.present.by_ref().take(batch_size);
-        let present = if let Some(parent_present) = parent_present {
-            debug_assert_eq!(
-                parent_present.len(),
-                batch_size,
-                "when provided, parent_present length must equal batch_size"
-            );
-            merge_parent_present(parent_present, present)
-        } else {
-            present.collect::<Vec<_>>()
+        let present = match (&mut self.present, parent_present) {
+            (Some(present), Some(parent_present)) => {
+                let present = present.by_ref().take(batch_size);
+                Some(merge_parent_present(parent_present, present))
+            }
+            (Some(present), None) => Some(present.by_ref().take(batch_size).collect::<Vec<_>>()),
+            (None, Some(parent_present)) => Some(parent_present.to_vec()),
+            (None, None) => None,
         };
 
         let child_arrays = self
             .decoders
             .iter_mut()
-            .map(|child| child.next_batch(batch_size, Some(&present)))
+            .map(|child| child.next_batch(batch_size, present.as_deref()))
             .collect::<Result<Vec<_>>>()?;
 
-        let null_buffer = NullBuffer::from(present);
-        let array = StructArray::try_new(self.fields.clone(), child_arrays, Some(null_buffer))
+        let null_buffer = present.map(NullBuffer::from);
+        let array = StructArray::try_new(self.fields.clone(), child_arrays, null_buffer)
             .context(ArrowSnafu)?;
         let array = Arc::new(array);
         Ok(array)

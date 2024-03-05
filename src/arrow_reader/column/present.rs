@@ -19,6 +19,17 @@ pub fn new_present_iter(
     Ok(iter)
 }
 
+/// Prefetch present stream for entire column in stripe.
+///
+/// Makes subsequent operations easier to handle.
+pub fn get_present_vec(column: &Column, stripe: &Stripe) -> Result<Option<Vec<bool>>> {
+    stripe
+        .stream_map
+        .get_opt(column, Kind::Present)
+        .map(|reader| BooleanIter::new(reader).collect::<Result<Vec<_>>>())
+        .transpose()
+}
+
 pub struct DummyPresentIter {
     index: usize,
     number_of_rows: usize,
