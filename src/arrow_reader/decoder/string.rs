@@ -7,7 +7,7 @@ use arrow::buffer::{Buffer, OffsetBuffer};
 use arrow::datatypes::{ByteArrayType, GenericBinaryType, GenericStringType};
 use snafu::ResultExt;
 
-use crate::arrow_reader::column::present::new_present_iter;
+use crate::arrow_reader::column::present::{get_present_vec, new_present_iter};
 use crate::arrow_reader::column::{Column, NullableIterator};
 use crate::arrow_reader::decoder::{
     create_null_buffer, derive_present_vec, populate_lengths_with_nulls, UInt64ArrayDecoder,
@@ -23,19 +23,14 @@ use super::ArrayBatchDecoder;
 
 // TODO: reduce duplication with string below
 pub fn new_binary_decoder(column: &Column, stripe: &Stripe) -> Result<Box<dyn ArrayBatchDecoder>> {
-    let present = new_present_iter(column, stripe)?.collect::<Result<Vec<_>>>()?;
-    // TODO: this is to make it Send, fix this?
-    let present = Box::new(present.into_iter());
+    let present = get_present_vec(column, stripe)?
+        .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
 
     let lengths = stripe.stream_map.get(column, Kind::Length)?;
     let lengths = get_rle_reader::<u64, _>(column, lengths)?;
 
     let bytes = Box::new(stripe.stream_map.get(column, Kind::Data)?);
-    Ok(Box::new(BinaryArrayDecoder::new(
-        bytes,
-        lengths,
-        Some(present),
-    )))
+    Ok(Box::new(BinaryArrayDecoder::new(bytes, lengths, present)))
 }
 
 pub fn new_string_decoder(column: &Column, stripe: &Stripe) -> Result<Box<dyn ArrayBatchDecoder>> {
