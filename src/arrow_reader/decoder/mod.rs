@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::array::{ArrayRef, BooleanBuilder, PrimitiveArray, PrimitiveBuilder};
+use arrow::array::{ArrayRef, BooleanArray, BooleanBuilder, PrimitiveArray, PrimitiveBuilder};
 use arrow::buffer::NullBuffer;
 use arrow::datatypes::{ArrowPrimitiveType, UInt64Type};
 use arrow::datatypes::{
@@ -10,12 +10,12 @@ use arrow::datatypes::{
 use arrow::record_batch::RecordBatch;
 use snafu::ResultExt;
 
-use crate::arrow_reader::column::boolean::new_boolean_iter;
-use crate::arrow_reader::column::float::new_float_iter;
-use crate::arrow_reader::column::int::new_int_iter;
-use crate::arrow_reader::column::timestamp::new_timestamp_iter;
-use crate::arrow_reader::column::NullableIterator;
 use crate::error::{self, Result};
+use crate::proto::stream::Kind;
+use crate::reader::decode::boolean_rle::BooleanIter;
+use crate::reader::decode::byte_rle::ByteRleIter;
+use crate::reader::decode::float::FloatIter;
+use crate::reader::decode::get_rle_reader;
 use crate::schema::DataType;
 use crate::stripe::Stripe;
 
@@ -24,8 +24,8 @@ use self::map::MapArrayDecoder;
 use self::string::{new_binary_decoder, new_string_decoder};
 use self::struct_decoder::StructArrayDecoder;
 
-use super::column::tinyint::new_i8_iter;
-use super::column::Column;
+use super::column::timestamp::TimestampIterator;
+use super::column::{get_present_vec, Column};
 
 mod list;
 mod map;
@@ -33,12 +33,16 @@ mod string;
 mod struct_decoder;
 
 struct PrimitiveArrayDecoder<T: ArrowPrimitiveType> {
-    inner: NullableIterator<T::Native>,
+    iter: Box<dyn Iterator<Item = Result<T::Native>> + Send>,
+    present: Option<Box<dyn Iterator<Item = bool> + Send>>,
 }
 
 impl<T: ArrowPrimitiveType> PrimitiveArrayDecoder<T> {
-    pub fn new(inner: NullableIterator<T::Native>) -> Self {
-        Self { inner }
+    pub fn new(
+        iter: Box<dyn Iterator<Item = Result<T::Native>> + Send>,
+        present: Option<Box<dyn Iterator<Item = bool> + Send>>,
+    ) -> Self {
+        Self { iter, present }
     }
 
     fn next_primitive_batch(
@@ -46,37 +50,37 @@ impl<T: ArrowPrimitiveType> PrimitiveArrayDecoder<T> {
         batch_size: usize,
         parent_present: Option<&[bool]>,
     ) -> Result<PrimitiveArray<T>> {
-        let mut builder = PrimitiveBuilder::<T>::with_capacity(batch_size);
+        let present = derive_present_vec(&mut self.present, parent_present, batch_size);
 
-        let mut iter = self.inner.by_ref().take(batch_size);
-        if let Some(parent_present) = parent_present {
-            debug_assert_eq!(
-                parent_present.len(),
-                batch_size,
-                "when provided, parent_present length must equal batch_size"
-            );
-
-            for &is_present in parent_present {
-                if is_present {
-                    // TODO: return as error instead
-                    let opt = iter
-                        .next()
-                        .transpose()?
-                        .expect("array less than expected length");
-                    builder.append_option(opt);
-                } else {
-                    builder.append_null();
+        match &present {
+            Some(present) => {
+                let mut builder = PrimitiveBuilder::<T>::with_capacity(batch_size);
+                for &is_present in present {
+                    if is_present {
+                        // TODO: return as error instead
+                        let val = self
+                            .iter
+                            .next()
+                            .transpose()?
+                            .expect("array less than expected length");
+                        builder.append_value(val);
+                    } else {
+                        builder.append_null();
+                    }
                 }
+                let array = builder.finish();
+                Ok(array)
             }
-        } else {
-            for opt in iter {
-                let opt = opt?;
-                builder.append_option(opt);
+            None => {
+                let data = self
+                    .iter
+                    .by_ref()
+                    .take(batch_size)
+                    .collect::<Result<Vec<_>>>()?;
+                let array = PrimitiveArray::<T>::from_iter_values(data);
+                Ok(array)
             }
-        };
-
-        let array = builder.finish();
-        Ok(array)
+        }
     }
 }
 
@@ -103,12 +107,16 @@ type TimestampArrayDecoder = PrimitiveArrayDecoder<TimestampNanosecondType>;
 type DateArrayDecoder = PrimitiveArrayDecoder<Date32Type>; // TODO: does ORC encode as i64 or i32?
 
 struct BooleanArrayDecoder {
-    inner: NullableIterator<bool>,
+    iter: Box<dyn Iterator<Item = Result<bool>> + Send>,
+    present: Option<Box<dyn Iterator<Item = bool> + Send>>,
 }
 
 impl BooleanArrayDecoder {
-    pub fn new(inner: NullableIterator<bool>) -> Self {
-        Self { inner }
+    pub fn new(
+        iter: Box<dyn Iterator<Item = Result<bool>> + Send>,
+        present: Option<Box<dyn Iterator<Item = bool> + Send>>,
+    ) -> Self {
+        Self { iter, present }
     }
 }
 
@@ -118,37 +126,39 @@ impl ArrayBatchDecoder for BooleanArrayDecoder {
         batch_size: usize,
         parent_present: Option<&[bool]>,
     ) -> Result<ArrayRef> {
-        let mut builder = BooleanBuilder::with_capacity(batch_size);
+        let present = derive_present_vec(&mut self.present, parent_present, batch_size);
 
-        let mut iter = self.inner.by_ref().take(batch_size);
-        if let Some(parent_present) = parent_present {
-            debug_assert_eq!(
-                parent_present.len(),
-                batch_size,
-                "when provided, parent_present length must equal batch_size"
-            );
-
-            for &is_present in parent_present {
-                if is_present {
-                    // TODO: return as error instead
-                    let opt = iter
-                        .next()
-                        .transpose()?
-                        .expect("array less than expected length");
-                    builder.append_option(opt);
-                } else {
-                    builder.append_null();
+        match &present {
+            Some(present) => {
+                let mut builder = BooleanBuilder::with_capacity(batch_size);
+                for &is_present in present {
+                    if is_present {
+                        // TODO: return as error instead
+                        let val = self
+                            .iter
+                            .next()
+                            .transpose()?
+                            .expect("array less than expected length");
+                        builder.append_value(val);
+                    } else {
+                        builder.append_null();
+                    }
                 }
+                let array = builder.finish();
+                let array = Arc::new(array) as ArrayRef;
+                Ok(array)
             }
-        } else {
-            for opt in iter {
-                let opt = opt?;
-                builder.append_option(opt);
+            None => {
+                let data = self
+                    .iter
+                    .by_ref()
+                    .take(batch_size)
+                    .collect::<Result<Vec<_>>>()?;
+                let array = BooleanArray::from(data);
+                let array = Arc::new(array) as ArrayRef;
+                Ok(array)
             }
-        };
-
-        let array = Arc::new(builder.finish());
-        Ok(array)
+        }
     }
 }
 
@@ -251,6 +261,9 @@ pub trait ArrayBatchDecoder: Send {
     /// then the child doesn't have a value (similar to other nullability). So we need
     /// to take care to insert these null values as Arrow requires the child to hold
     /// data in the null slot of the child.
+    // TODO: encode nullability in generic -> for a given column in a stripe, we will always know
+    //       upfront if we need to bother with nulls or not, so we don't need to keep checking this
+    //       for every invocation of next_batch
     fn next_batch(
         &mut self,
         batch_size: usize,
@@ -263,33 +276,55 @@ pub fn array_decoder_factory(
     stripe: &Stripe,
 ) -> Result<Box<dyn ArrayBatchDecoder>> {
     let decoder: Box<dyn ArrayBatchDecoder> = match column.data_type() {
+        // TODO: try make branches more generic, reduce duplication
         DataType::Boolean { .. } => {
-            let inner = new_boolean_iter(column, stripe)?;
-            Box::new(BooleanArrayDecoder::new(inner))
+            let iter = stripe.stream_map.get(column, Kind::Data)?;
+            let iter = Box::new(BooleanIter::new(iter));
+            let present = get_present_vec(column, stripe)?
+                .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+            Box::new(BooleanArrayDecoder::new(iter, present))
         }
         DataType::Byte { .. } => {
-            let inner = new_i8_iter(column, stripe)?;
-            Box::new(Int8ArrayDecoder::new(inner))
+            let iter = stripe.stream_map.get(column, Kind::Data)?;
+            let iter = Box::new(ByteRleIter::new(iter).map(|value| value.map(|value| value as i8)));
+            let present = get_present_vec(column, stripe)?
+                .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+            Box::new(Int8ArrayDecoder::new(iter, present))
         }
         DataType::Short { .. } => {
-            let inner = new_int_iter(column, stripe)?;
-            Box::new(Int16ArrayDecoder::new(inner))
+            let iter = stripe.stream_map.get(column, Kind::Data)?;
+            let iter = get_rle_reader(column, iter)?;
+            let present = get_present_vec(column, stripe)?
+                .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+            Box::new(Int16ArrayDecoder::new(iter, present))
         }
         DataType::Int { .. } => {
-            let inner = new_int_iter(column, stripe)?;
-            Box::new(Int32ArrayDecoder::new(inner))
+            let iter = stripe.stream_map.get(column, Kind::Data)?;
+            let iter = get_rle_reader(column, iter)?;
+            let present = get_present_vec(column, stripe)?
+                .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+            Box::new(Int32ArrayDecoder::new(iter, present))
         }
         DataType::Long { .. } => {
-            let inner = new_int_iter(column, stripe)?;
-            Box::new(Int64ArrayDecoder::new(inner))
+            let iter = stripe.stream_map.get(column, Kind::Data)?;
+            let iter = get_rle_reader(column, iter)?;
+            let present = get_present_vec(column, stripe)?
+                .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+            Box::new(Int64ArrayDecoder::new(iter, present))
         }
         DataType::Float { .. } => {
-            let inner = new_float_iter(column, stripe)?;
-            Box::new(Float32ArrayDecoder::new(inner))
+            let iter = stripe.stream_map.get(column, Kind::Data)?;
+            let iter = Box::new(FloatIter::new(iter, stripe.number_of_rows));
+            let present = get_present_vec(column, stripe)?
+                .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+            Box::new(Float32ArrayDecoder::new(iter, present))
         }
         DataType::Double { .. } => {
-            let inner = new_float_iter(column, stripe)?;
-            Box::new(Float64ArrayDecoder::new(inner))
+            let iter = stripe.stream_map.get(column, Kind::Data)?;
+            let iter = Box::new(FloatIter::new(iter, stripe.number_of_rows));
+            let present = get_present_vec(column, stripe)?
+                .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+            Box::new(Float64ArrayDecoder::new(iter, present))
         }
         DataType::String { .. } | DataType::Varchar { .. } | DataType::Char { .. } => {
             new_string_decoder(column, stripe)?
@@ -297,13 +332,25 @@ pub fn array_decoder_factory(
         DataType::Binary { .. } => new_binary_decoder(column, stripe)?,
         DataType::Decimal { .. } => todo!(),
         DataType::Timestamp { .. } => {
-            let inner = new_timestamp_iter(column, stripe)?;
-            Box::new(TimestampArrayDecoder::new(inner))
+            let data = stripe.stream_map.get(column, Kind::Data)?;
+            let data = get_rle_reader(column, data)?;
+
+            let secondary = stripe.stream_map.get(column, Kind::Secondary)?;
+            let secondary = get_rle_reader(column, secondary)?;
+
+            let iter = Box::new(TimestampIterator::new(data, secondary));
+            let present = get_present_vec(column, stripe)?
+                .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+
+            Box::new(TimestampArrayDecoder::new(iter, present))
         }
         DataType::TimestampWithLocalTimezone { .. } => todo!(),
         DataType::Date { .. } => {
-            let inner = new_int_iter(column, stripe)?;
-            Box::new(DateArrayDecoder::new(inner))
+            let iter = stripe.stream_map.get(column, Kind::Data)?;
+            let iter = get_rle_reader(column, iter)?;
+            let present = get_present_vec(column, stripe)?
+                .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+            Box::new(DateArrayDecoder::new(iter, present))
         }
         DataType::Struct { .. } => Box::new(StructArrayDecoder::new(column, stripe)?),
         DataType::List { .. } => Box::new(ListArrayDecoder::new(column, stripe)?),

@@ -5,8 +5,7 @@ use arrow::buffer::{NullBuffer, OffsetBuffer};
 use arrow::datatypes::{Field, FieldRef};
 use snafu::ResultExt;
 
-use crate::arrow_reader::column::present::get_present_vec;
-use crate::arrow_reader::column::Column;
+use crate::arrow_reader::column::{get_present_vec, Column};
 use crate::arrow_reader::decoder::{
     array_decoder_factory, derive_present_vec, populate_lengths_with_nulls, ArrayBatchDecoder,
 };
