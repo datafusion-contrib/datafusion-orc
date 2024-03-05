@@ -3,13 +3,15 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use arrow::array::{ArrayRef, DictionaryArray, GenericByteArray, StringArray};
-use arrow::buffer::{Buffer, NullBuffer, OffsetBuffer};
+use arrow::buffer::{Buffer, OffsetBuffer};
 use arrow::datatypes::{ByteArrayType, GenericBinaryType, GenericStringType};
 use snafu::ResultExt;
 
 use crate::arrow_reader::column::present::new_present_iter;
 use crate::arrow_reader::column::{Column, NullableIterator};
-use crate::arrow_reader::decoder::{merge_parent_present, UInt64ArrayDecoder};
+use crate::arrow_reader::decoder::{
+    create_null_buffer, derive_present_vec, populate_lengths_with_nulls, UInt64ArrayDecoder,
+};
 use crate::error::{ArrowSnafu, IoSnafu, Result};
 use crate::proto::column_encoding::Kind as ColumnEncodingKind;
 use crate::proto::stream::Kind;
@@ -111,15 +113,8 @@ impl<T: ByteArrayType> GenericByteArrayDecoder<T> {
         batch_size: usize,
         parent_present: Option<&[bool]>,
     ) -> Result<GenericByteArray<T>> {
-        let present = match (&mut self.present, parent_present) {
-            (Some(present), Some(parent_present)) => {
-                let present = present.by_ref().take(batch_size);
-                Some(merge_parent_present(parent_present, present))
-            }
-            (Some(present), None) => Some(present.by_ref().take(batch_size).collect::<Vec<_>>()),
-            (None, Some(parent_present)) => Some(parent_present.to_vec()),
-            (None, None) => None,
-        };
+        let present = derive_present_vec(&mut self.present, parent_present, batch_size);
+
         // How many lengths we need to fetch
         let elements_to_fetch = if let Some(present) = &present {
             present.iter().filter(|&&is_present| is_present).count()
@@ -145,29 +140,9 @@ impl<T: ByteArrayType> GenericByteArrayDecoder<T> {
             .read_to_end(&mut bytes)
             .context(IoSnafu)?;
         let bytes = Buffer::from(bytes);
-        // Fix the lengths to account for nulls (represented as 0 length)
-        let lengths = if let Some(present) = &present {
-            let mut lengths_with_nulls = Vec::with_capacity(batch_size);
-            let mut lengths = lengths.iter();
-            for &is_present in present {
-                if is_present {
-                    let length = *lengths.next().unwrap();
-                    lengths_with_nulls.push(length as usize);
-                } else {
-                    lengths_with_nulls.push(0);
-                }
-            }
-            lengths_with_nulls
-        } else {
-            lengths.into_iter().map(|l| l as usize).collect()
-        };
+        let lengths = populate_lengths_with_nulls(lengths, batch_size, &present);
         let offsets = OffsetBuffer::<T::Offset>::from_lengths(lengths);
-        let null_buffer = match present {
-            // Edge case where keys of map cannot have a null buffer
-            Some(present) if present.iter().all(|&p| p) => None,
-            Some(present) => Some(NullBuffer::from(present)),
-            None => None,
-        };
+        let null_buffer = create_null_buffer(present);
 
         let array =
             GenericByteArray::<T>::try_new(offsets, bytes, null_buffer).context(ArrowSnafu)?;

@@ -8,7 +8,7 @@ use snafu::ResultExt;
 use crate::arrow_reader::column::present::get_present_vec;
 use crate::arrow_reader::column::Column;
 use crate::arrow_reader::decoder::{
-    array_decoder_factory, merge_parent_present, ArrayBatchDecoder,
+    array_decoder_factory, derive_present_vec, populate_lengths_with_nulls, ArrayBatchDecoder,
 };
 use crate::arrow_reader::Stripe;
 use crate::proto::stream::Kind;
@@ -51,15 +51,8 @@ impl ArrayBatchDecoder for ListArrayDecoder {
         batch_size: usize,
         parent_present: Option<&[bool]>,
     ) -> Result<ArrayRef> {
-        let present = match (&mut self.present, parent_present) {
-            (Some(present), Some(parent_present)) => {
-                let present = present.by_ref().take(batch_size);
-                Some(merge_parent_present(parent_present, present))
-            }
-            (Some(present), None) => Some(present.by_ref().take(batch_size).collect::<Vec<_>>()),
-            (None, Some(parent_present)) => Some(parent_present.to_vec()),
-            (None, None) => None,
-        };
+        let present = derive_present_vec(&mut self.present, parent_present, batch_size);
+
         // How many lengths we need to fetch
         let elements_to_fetch = if let Some(present) = &present {
             present.iter().filter(|&&is_present| is_present).count()
@@ -79,22 +72,7 @@ impl ArrayBatchDecoder for ListArrayDecoder {
         let total_length: u64 = lengths.iter().sum();
         // Fetch child array as one Array with total_length elements
         let child_array = self.inner.next_batch(total_length as usize, None)?;
-        // Fix the lengths to account for nulls (represented as 0 length)
-        let lengths = if let Some(present) = &present {
-            let mut lengths_with_nulls = Vec::with_capacity(batch_size);
-            let mut lengths = lengths.iter();
-            for &is_present in present {
-                if is_present {
-                    let length = *lengths.next().unwrap();
-                    lengths_with_nulls.push(length as usize);
-                } else {
-                    lengths_with_nulls.push(0);
-                }
-            }
-            lengths_with_nulls
-        } else {
-            lengths.into_iter().map(|l| l as usize).collect()
-        };
+        let lengths = populate_lengths_with_nulls(lengths, batch_size, &present);
         let offsets = OffsetBuffer::from_lengths(lengths);
         let null_buffer = present.map(NullBuffer::from);
 

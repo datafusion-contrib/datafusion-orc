@@ -1,7 +1,7 @@
 use crate::{
     arrow_reader::{
         column::{present::get_present_vec, Column},
-        decoder::{array_decoder_factory, merge_parent_present, ArrayBatchDecoder},
+        decoder::{array_decoder_factory, ArrayBatchDecoder},
         Stripe,
     },
     error::{ArrowSnafu, Result},
@@ -14,6 +14,8 @@ use arrow::{
     datatypes::{Field, Fields},
 };
 use snafu::ResultExt;
+
+use super::derive_present_vec;
 
 pub struct StructArrayDecoder {
     fields: Fields,
@@ -54,15 +56,7 @@ impl ArrayBatchDecoder for StructArrayDecoder {
         batch_size: usize,
         parent_present: Option<&[bool]>,
     ) -> Result<ArrayRef> {
-        let present = match (&mut self.present, parent_present) {
-            (Some(present), Some(parent_present)) => {
-                let present = present.by_ref().take(batch_size);
-                Some(merge_parent_present(parent_present, present))
-            }
-            (Some(present), None) => Some(present.by_ref().take(batch_size).collect::<Vec<_>>()),
-            (None, Some(parent_present)) => Some(parent_present.to_vec()),
-            (None, None) => None,
-        };
+        let present = derive_present_vec(&mut self.present, parent_present, batch_size);
 
         let child_arrays = self
             .decoders
