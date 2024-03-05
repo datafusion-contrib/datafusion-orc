@@ -7,8 +7,7 @@ use arrow::buffer::{Buffer, OffsetBuffer};
 use arrow::datatypes::{ByteArrayType, GenericBinaryType, GenericStringType};
 use snafu::ResultExt;
 
-use crate::arrow_reader::column::present::{get_present_vec, new_present_iter};
-use crate::arrow_reader::column::{Column, NullableIterator};
+use crate::arrow_reader::column::{get_present_vec, Column};
 use crate::arrow_reader::decoder::{
     create_null_buffer, derive_present_vec, populate_lengths_with_nulls, UInt64ArrayDecoder,
 };
@@ -36,9 +35,8 @@ pub fn new_binary_decoder(column: &Column, stripe: &Stripe) -> Result<Box<dyn Ar
 pub fn new_string_decoder(column: &Column, stripe: &Stripe) -> Result<Box<dyn ArrayBatchDecoder>> {
     let kind = column.encoding().kind();
     let rle_version = RleVersion::from(kind);
-    let present = new_present_iter(column, stripe)?.collect::<Result<Vec<_>>>()?;
-    // TODO: this is to make it Send, fix this?
-    let present = Box::new(present.into_iter());
+    let present = get_present_vec(column, stripe)?
+        .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
 
     let lengths = stripe.stream_map.get(column, Kind::Length)?;
     let lengths = rle_version.get_unsigned_rle_reader(lengths);
@@ -47,9 +45,7 @@ pub fn new_string_decoder(column: &Column, stripe: &Stripe) -> Result<Box<dyn Ar
         ColumnEncodingKind::Direct | ColumnEncodingKind::DirectV2 => {
             let bytes = Box::new(stripe.stream_map.get(column, Kind::Data)?);
             Ok(Box::new(DirectStringArrayDecoder::new(
-                bytes,
-                lengths,
-                Some(present),
+                bytes, lengths, present,
             )))
         }
         ColumnEncodingKind::Dictionary | ColumnEncodingKind::DictionaryV2 => {
@@ -64,11 +60,7 @@ pub fn new_string_decoder(column: &Column, stripe: &Stripe) -> Result<Box<dyn Ar
 
             let indexes = stripe.stream_map.get(column, Kind::Data)?;
             let indexes = rle_version.get_unsigned_rle_reader(indexes);
-            let indexes = NullableIterator {
-                present: Box::new(present.into_iter()),
-                iter: Box::new(indexes),
-            };
-            let indexes = UInt64ArrayDecoder::new(indexes);
+            let indexes = UInt64ArrayDecoder::new(indexes, present);
 
             Ok(Box::new(DictionaryStringArrayDecoder::new(
                 indexes,

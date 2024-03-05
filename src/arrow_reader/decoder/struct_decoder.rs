@@ -1,11 +1,3 @@
-use crate::{
-    arrow_reader::{
-        column::{present::get_present_vec, Column},
-        decoder::{array_decoder_factory, ArrayBatchDecoder},
-        Stripe,
-    },
-    error::{ArrowSnafu, Result},
-};
 use std::sync::Arc;
 
 use arrow::{
@@ -15,7 +7,14 @@ use arrow::{
 };
 use snafu::ResultExt;
 
-use super::derive_present_vec;
+use crate::error::Result;
+use crate::stripe::Stripe;
+use crate::{
+    arrow_reader::column::{get_present_vec, Column},
+    error::ArrowSnafu,
+};
+
+use super::{array_decoder_factory, derive_present_vec, ArrayBatchDecoder};
 
 pub struct StructArrayDecoder {
     fields: Fields,

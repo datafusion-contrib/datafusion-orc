@@ -5,16 +5,14 @@ use bytes::Bytes;
 use snafu::ResultExt;
 
 use crate::error::{IoSnafu, Result};
+use crate::proto::stream::Kind;
 use crate::proto::{ColumnEncoding, StripeFooter};
+use crate::reader::decode::boolean_rle::BooleanIter;
 use crate::reader::{AsyncChunkReader, ChunkReader};
 use crate::schema::DataType;
+use crate::stripe::Stripe;
 
-pub mod boolean;
-pub mod float;
-pub mod int;
-pub mod present;
 pub mod timestamp;
-pub mod tinyint;
 
 #[derive(Debug)]
 pub struct Column {
@@ -156,40 +154,13 @@ impl Column {
     }
 }
 
-pub struct NullableIterator<T> {
-    pub(crate) present: Box<dyn Iterator<Item = bool> + Send>,
-    pub(crate) iter: Box<dyn Iterator<Item = Result<T>> + Send>,
-}
-
-impl<T> Iterator for NullableIterator<T> {
-    type Item = Result<Option<T>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let present = self.present.next()?;
-        if present {
-            match self.iter.next()? {
-                Ok(value) => Some(Ok(Some(value))),
-                Err(err) => Some(Err(err)),
-            }
-        } else {
-            Some(Ok(None))
-        }
-    }
-}
-
-impl<T> NullableIterator<T> {
-    pub fn collect_chunk(&mut self, chunk: usize) -> Result<Vec<Option<T>>> {
-        let mut buf = Vec::with_capacity(chunk);
-        for _ in 0..chunk {
-            match self.next() {
-                Some(Ok(value)) => {
-                    buf.push(value);
-                }
-                Some(Err(err)) => return Err(err),
-                None => break,
-            }
-        }
-
-        Ok(buf)
-    }
+/// Prefetch present stream for entire column in stripe.
+///
+/// Makes subsequent operations easier to handle.
+pub fn get_present_vec(column: &Column, stripe: &Stripe) -> Result<Option<Vec<bool>>> {
+    stripe
+        .stream_map
+        .get_opt(column, Kind::Present)
+        .map(|reader| BooleanIter::new(reader).collect::<Result<Vec<_>>>())
+        .transpose()
 }
