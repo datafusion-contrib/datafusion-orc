@@ -103,7 +103,7 @@ impl<R: AsyncChunkReader + 'static> ArrowReaderBuilder<R> {
 pub struct ArrowReader<R> {
     cursor: Cursor<R>,
     schema_ref: SchemaRef,
-    current_stripe: Option<Box<dyn Iterator<Item = Result<RecordBatch>>>>,
+    current_stripe: Option<Box<dyn Iterator<Item = Result<RecordBatch>> + Send>>,
     batch_size: usize,
 }
 
