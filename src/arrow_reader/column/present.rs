@@ -8,6 +8,7 @@ pub fn new_present_iter(
     column: &Column,
     stripe: &Stripe,
 ) -> Result<Box<dyn Iterator<Item = Result<bool>>>> {
+    // TODO: return None if no present stream
     let rows = column.number_of_rows as usize;
     let iter = stripe
         .stream_map
