@@ -42,7 +42,7 @@ use super::{AsyncChunkReader, ChunkReader};
 const DEFAULT_FOOTER_SIZE: u64 = 16 * 1024;
 
 /// The file's metadata.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FileMetadata {
     compression: Option<Compression>,
     root_data_type: RootDataType,
