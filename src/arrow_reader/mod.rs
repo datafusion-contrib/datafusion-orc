@@ -66,7 +66,7 @@ impl<R: ChunkReader> ArrowReaderBuilder<R> {
             reader: self.reader,
             file_metadata: self.file_metadata,
             projected_data_type,
-            stripe_offset: 0,
+            stripe_index: 0,
         };
         let schema_ref = Arc::new(create_arrow_schema(&cursor));
         ArrowReader {
@@ -93,7 +93,7 @@ impl<R: AsyncChunkReader + 'static> ArrowReaderBuilder<R> {
             reader: self.reader,
             file_metadata: self.file_metadata,
             projected_data_type,
-            stripe_offset: 0,
+            stripe_index: 0,
         };
         let schema_ref = Arc::new(create_arrow_schema(&cursor));
         ArrowStreamReader::new(cursor, self.batch_size, schema_ref)
@@ -114,25 +114,16 @@ impl<R> ArrowReader<R> {
 }
 
 impl<R: ChunkReader> ArrowReader<R> {
-    fn try_advance_stripe(&mut self) -> Option<std::result::Result<RecordBatch, ArrowError>> {
-        match self
-            .cursor
-            .next()
-            .map(|r| r.map_err(|err| ArrowError::ExternalError(Box::new(err))))
-        {
-            Some(Ok(stripe)) => {
-                match NaiveStripeDecoder::new(stripe, self.schema_ref.clone(), self.batch_size)
-                    .map_err(|err| ArrowError::ExternalError(Box::new(err)))
-                {
-                    Ok(decoder) => {
-                        self.current_stripe = Some(Box::new(decoder));
-                        self.next()
-                    }
-                    Err(err) => Some(Err(err)),
-                }
+    fn try_advance_stripe(&mut self) -> std::result::Result<Option<RecordBatch>, ArrowError> {
+        let stripe = self.cursor.next().transpose()?;
+        match stripe {
+            Some(stripe) => {
+                let decoder =
+                    NaiveStripeDecoder::new(stripe, self.schema_ref.clone(), self.batch_size)?;
+                self.current_stripe = Some(Box::new(decoder));
+                self.next().transpose()
             }
-            Some(Err(err)) => Some(Err(err)),
-            None => None,
+            None => Ok(None),
         }
     }
 }
@@ -164,10 +155,10 @@ impl<R: ChunkReader> Iterator for ArrowReader<R> {
                     .map(|batch| batch.map_err(|err| ArrowError::ExternalError(Box::new(err))))
                 {
                     Some(rb) => Some(rb),
-                    None => self.try_advance_stripe(),
+                    None => self.try_advance_stripe().transpose(),
                 }
             }
-            None => self.try_advance_stripe(),
+            None => self.try_advance_stripe().transpose(),
         }
     }
 }
@@ -176,30 +167,26 @@ pub struct Cursor<R> {
     pub(crate) reader: R,
     pub(crate) file_metadata: Arc<FileMetadata>,
     pub(crate) projected_data_type: RootDataType,
-    pub(crate) stripe_offset: usize,
+    pub(crate) stripe_index: usize,
 }
 
 impl<R: ChunkReader> Iterator for Cursor<R> {
     type Item = Result<Stripe>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(info) = self
-            .file_metadata
+        self.file_metadata
             .stripe_metadatas()
-            .get(self.stripe_offset)
-            .cloned()
-        {
-            let stripe = Stripe::new(
-                &mut self.reader,
-                &self.file_metadata,
-                &self.projected_data_type.clone(),
-                self.stripe_offset,
-                &info,
-            );
-            self.stripe_offset += 1;
-            Some(stripe)
-        } else {
-            None
-        }
+            .get(self.stripe_index)
+            .map(|info| {
+                let stripe = Stripe::new(
+                    &mut self.reader,
+                    &self.file_metadata,
+                    &self.projected_data_type.clone(),
+                    self.stripe_index,
+                    info,
+                );
+                self.stripe_index += 1;
+                stripe
+            })
     }
 }

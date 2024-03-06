@@ -69,8 +69,8 @@ impl<R: AsyncChunkReader + 'static> StripeFactory<R> {
     pub async fn read_next_stripe_inner(&mut self, info: &StripeMetadata) -> Result<Stripe> {
         let inner = &mut self.inner;
 
-        let stripe_offset = inner.stripe_offset;
-        inner.stripe_offset += 1;
+        let stripe_offset = inner.stripe_index;
+        inner.stripe_index += 1;
 
         Stripe::new_async(
             &mut inner.reader,
@@ -87,7 +87,7 @@ impl<R: AsyncChunkReader + 'static> StripeFactory<R> {
             .inner
             .file_metadata
             .stripe_metadatas()
-            .get(self.inner.stripe_offset)
+            .get(self.inner.stripe_index)
             .cloned();
 
         if let Some(info) = info {
