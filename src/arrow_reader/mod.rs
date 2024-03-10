@@ -8,10 +8,15 @@ use arrow::record_batch::{RecordBatch, RecordBatchReader};
 pub use self::decoder::NaiveStripeDecoder;
 use crate::error::Result;
 use crate::projection::ProjectionMask;
-use crate::reader::metadata::{read_metadata, read_metadata_async, FileMetadata};
-use crate::reader::{AsyncChunkReader, ChunkReader};
+#[cfg(feature = "async")]
+use crate::reader::metadata::read_metadata_async;
+use crate::reader::metadata::{read_metadata, FileMetadata};
+#[cfg(feature = "async")]
+use crate::reader::AsyncChunkReader;
+use crate::reader::ChunkReader;
 use crate::schema::RootDataType;
 use crate::stripe::Stripe;
+#[cfg(feature = "async")]
 use crate::ArrowStreamReader;
 
 pub mod column;
@@ -78,6 +83,7 @@ impl<R: ChunkReader> ArrowReaderBuilder<R> {
     }
 }
 
+#[cfg(feature = "async")]
 impl<R: AsyncChunkReader + 'static> ArrowReaderBuilder<R> {
     pub async fn try_new_async(mut reader: R) -> Result<Self> {
         let file_metadata = Arc::new(read_metadata_async(&mut reader).await?);

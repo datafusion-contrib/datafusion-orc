@@ -6,9 +6,6 @@ use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 
 use bytes::Bytes;
-use futures_util::future::BoxFuture;
-use futures_util::FutureExt;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 /// Primary source used for reading required bytes for operations.
 #[allow(clippy::len_without_is_empty)]
@@ -51,48 +48,60 @@ impl ChunkReader for File {
     }
 }
 
-#[allow(clippy::len_without_is_empty)]
-pub trait AsyncChunkReader: Send {
-    // TODO: this is only used for file tail, so replace with load_metadata?
-    fn len(&mut self) -> BoxFuture<'_, std::io::Result<u64>>;
+#[cfg(feature = "async")]
+mod async_chunk_reader {
+    use super::*;
 
-    fn get_bytes(
-        &mut self,
-        offset_from_start: u64,
-        length: u64,
-    ) -> BoxFuture<'_, std::io::Result<Bytes>>;
-}
+    use futures_util::future::BoxFuture;
+    use futures_util::FutureExt;
+    use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
-impl<T: AsyncRead + AsyncSeek + Unpin + Send> AsyncChunkReader for T {
-    fn len(&mut self) -> BoxFuture<'_, std::io::Result<u64>> {
-        async move { self.seek(SeekFrom::End(0)).await }.boxed()
+    #[allow(clippy::len_without_is_empty)]
+    pub trait AsyncChunkReader: Send {
+        // TODO: this is only used for file tail, so replace with load_metadata?
+        fn len(&mut self) -> BoxFuture<'_, std::io::Result<u64>>;
+
+        fn get_bytes(
+            &mut self,
+            offset_from_start: u64,
+            length: u64,
+        ) -> BoxFuture<'_, std::io::Result<Bytes>>;
     }
 
-    fn get_bytes(
-        &mut self,
-        offset_from_start: u64,
-        length: u64,
-    ) -> BoxFuture<'_, std::io::Result<Bytes>> {
-        async move {
-            self.seek(SeekFrom::Start(offset_from_start)).await?;
-            let mut buffer = vec![0; length as usize];
-            self.read_exact(&mut buffer).await?;
-            Ok(buffer.into())
+    impl<T: AsyncRead + AsyncSeek + Unpin + Send> AsyncChunkReader for T {
+        fn len(&mut self) -> BoxFuture<'_, std::io::Result<u64>> {
+            async move { self.seek(SeekFrom::End(0)).await }.boxed()
         }
-        .boxed()
+
+        fn get_bytes(
+            &mut self,
+            offset_from_start: u64,
+            length: u64,
+        ) -> BoxFuture<'_, std::io::Result<Bytes>> {
+            async move {
+                self.seek(SeekFrom::Start(offset_from_start)).await?;
+                let mut buffer = vec![0; length as usize];
+                self.read_exact(&mut buffer).await?;
+                Ok(buffer.into())
+            }
+            .boxed()
+        }
+    }
+
+    impl AsyncChunkReader for Box<dyn AsyncChunkReader> {
+        fn len(&mut self) -> BoxFuture<'_, std::io::Result<u64>> {
+            self.as_mut().len()
+        }
+
+        fn get_bytes(
+            &mut self,
+            offset_from_start: u64,
+            length: u64,
+        ) -> BoxFuture<'_, std::io::Result<Bytes>> {
+            self.as_mut().get_bytes(offset_from_start, length)
+        }
     }
 }
 
-impl AsyncChunkReader for Box<dyn AsyncChunkReader> {
-    fn len(&mut self) -> BoxFuture<'_, std::io::Result<u64>> {
-        self.as_mut().len()
-    }
-
-    fn get_bytes(
-        &mut self,
-        offset_from_start: u64,
-        length: u64,
-    ) -> BoxFuture<'_, std::io::Result<Bytes>> {
-        self.as_mut().get_bytes(offset_from_start, length)
-    }
-}
+#[cfg(feature = "async")]
+pub use async_chunk_reader::*;

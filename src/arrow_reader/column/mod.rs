@@ -8,7 +8,9 @@ use crate::error::{IoSnafu, Result};
 use crate::proto::stream::Kind;
 use crate::proto::{ColumnEncoding, StripeFooter};
 use crate::reader::decode::boolean_rle::BooleanIter;
-use crate::reader::{AsyncChunkReader, ChunkReader};
+#[cfg(feature = "async")]
+use crate::reader::AsyncChunkReader;
+use crate::reader::ChunkReader;
 use crate::schema::DataType;
 use crate::stripe::Stripe;
 
@@ -145,6 +147,7 @@ impl Column {
         reader.get_bytes(start, length).context(IoSnafu)
     }
 
+    #[cfg(feature = "async")]
     pub async fn read_stream_async<R: AsyncChunkReader>(
         reader: &mut R,
         start: u64,
