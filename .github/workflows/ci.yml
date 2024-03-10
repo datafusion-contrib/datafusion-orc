@@ -39,6 +39,11 @@ jobs:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      matrix:
+        features:
+        - ''
+        - '--no-default-features'
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@master
@@ -47,7 +52,7 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
       - name: Run cargo check
-        run: cargo check --workspace --all-targets
+        run: cargo check --workspace --all-targets ${{ matrix.features }}
 
   toml:
     name: Toml Check
@@ -87,6 +92,11 @@ jobs:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      matrix:
+        features:
+        - ''
+        - '--no-default-features'
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@master
@@ -96,7 +106,7 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
       - name: Run cargo clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets ${{ matrix.features }} -- -D warnings
 
   coverage:
     if: github.event.pull_request.draft == false

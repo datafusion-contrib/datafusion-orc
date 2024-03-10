@@ -3,8 +3,10 @@ use std::fs::File;
 use arrow::record_batch::RecordBatch;
 use arrow::util::pretty;
 use datafusion_orc::arrow_reader::{ArrowReader, ArrowReaderBuilder};
+#[cfg(feature = "async")]
 use datafusion_orc::async_arrow_reader::ArrowStreamReader;
 use datafusion_orc::projection::ProjectionMask;
+#[cfg(feature = "async")]
 use futures_util::TryStreamExt;
 
 use crate::misc::{LONG_BOOL_EXPECTED, LONG_STRING_DICT_EXPECTED, LONG_STRING_EXPECTED};
@@ -18,6 +20,7 @@ fn new_arrow_reader(path: &str, fields: &[&str]) -> ArrowReader<File> {
     builder.with_projection(projection).build()
 }
 
+#[cfg(feature = "async")]
 async fn new_arrow_stream_reader_root(path: &str) -> ArrowStreamReader<tokio::fs::File> {
     let f = tokio::fs::File::open(path).await.unwrap();
     ArrowReaderBuilder::try_new_async(f)
@@ -286,6 +289,7 @@ pub fn basic_test_0() {
     assert_batches_eq(&batch, &expected);
 }
 
+#[cfg(feature = "async")]
 #[tokio::test]
 pub async fn async_basic_test_0() {
     let path = basic_path("test.orc");
@@ -326,6 +330,7 @@ pub fn v1_file_test() {
     assert_eq!(expected_row_count as usize, total_rows);
 }
 
+#[cfg(feature = "async")]
 #[tokio::test]
 pub async fn v0_file_test_async() {
     let path = basic_path("demo-11-zlib.orc");
