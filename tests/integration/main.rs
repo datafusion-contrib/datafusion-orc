@@ -80,22 +80,22 @@ fn emptyFile() {
     test_expected_file("TestOrcFile.emptyFile");
 }
 #[test]
-#[ignore] // Why?
+#[ignore] // TODO: Why?
 fn metaData() {
     test_expected_file("TestOrcFile.metaData");
 }
 #[test]
-#[ignore] // Why?
+#[ignore] // TODO: Why?
 fn test1() {
     test_expected_file("TestOrcFile.test1");
 }
 #[test]
-#[should_panic] // Incorrect timezone + representation differs
+#[ignore] // TODO: Incorrect timezone + representation differs
 fn testDate1900() {
     test_expected_file("TestOrcFile.testDate1900");
 }
 #[test]
-#[should_panic] // Incorrect timezone + representation differs
+#[ignore] // TODO: Incorrect timezone + representation differs
 fn testDate2038() {
     test_expected_file("TestOrcFile.testDate2038");
 }
@@ -112,7 +112,7 @@ fn testPredicatePushdown() {
     test_expected_file("TestOrcFile.testPredicatePushdown");
 }
 #[test]
-#[should_panic] // Why?
+#[ignore] // TODO: Why?
 fn testSeek() {
     test_expected_file("TestOrcFile.testSeek");
 }
@@ -121,7 +121,7 @@ fn testSnappy() {
     test_expected_file("TestOrcFile.testSnappy");
 }
 #[test]
-#[should_panic] // arrow_json does not support binaries
+#[ignore] // TODO: arrow_json does not support binaries
 fn testStringAndBinaryStatistics() {
     test_expected_file("TestOrcFile.testStringAndBinaryStatistics");
 }
@@ -130,12 +130,12 @@ fn testStripeLevelStats() {
     test_expected_file("TestOrcFile.testStripeLevelStats");
 }
 #[test]
-#[should_panic] // Non-struct root type are not supported yet
+#[ignore] // TODO: Non-struct root type are not supported yet
 fn testTimestamp() {
     test_expected_file("TestOrcFile.testTimestamp");
 }
 #[test]
-#[should_panic] // Unions are not supported yet
+#[ignore] // TODO: Unions are not supported yet
 fn testUnionAndTimestamp() {
     test_expected_file("TestOrcFile.testUnionAndTimestamp");
 }
@@ -152,22 +152,22 @@ fn testLzo() {
     test_expected_file("TestVectorOrcFile.testLzo");
 }
 #[test]
-#[ignore] // Differs on representation of some Decimals
+#[ignore] // TODO: Differs on representation of some Decimals
 fn decimal() {
     test_expected_file("decimal");
 }
 #[test]
-#[ignore] // Too slow
+#[ignore] // TODO: Too slow
 fn zlib() {
     test_expected_file("demo-12-zlib");
 }
 #[test]
-#[ignore] // Why?
+#[ignore] // TODO: Why?
 fn nulls_at_end_snappy() {
     test_expected_file("nulls-at-end-snappy");
 }
 #[test]
-#[ignore] // Why?
+#[ignore] // TODO: Why?
 fn orc_11_format() {
     test_expected_file("orc-file-11-format");
 }
@@ -176,22 +176,22 @@ fn orc_index_int_string() {
     test_expected_file("orc_index_int_string");
 }
 #[test]
-#[should_panic] // not yet implemented
+#[ignore] // TODO: not yet implemented
 fn orc_split_elim() {
     test_expected_file("orc_split_elim");
 }
 #[test]
-#[should_panic] // not yet implemented
+#[ignore] // TODO: not yet implemented
 fn orc_split_elim_cpp() {
     test_expected_file("orc_split_elim_cpp");
 }
 #[test]
-#[should_panic] // not yet implemented
+#[ignore] // TODO: not yet implemented
 fn orc_split_elim_new() {
     test_expected_file("orc_split_elim_new");
 }
 #[test]
-#[should_panic] // not yet implemented
+#[ignore] // TODO: not yet implemented
 fn over1k_bloom() {
     test_expected_file("over1k_bloom");
 }
