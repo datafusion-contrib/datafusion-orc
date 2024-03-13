@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
 use arrow::datatypes::Field;
+use arrow::datatypes::{DataType as ArrowDataType, TimeUnit, UnionMode};
 use bytes::Bytes;
 use snafu::ResultExt;
 
 use crate::error::{IoSnafu, Result};
+use crate::proto::column_encoding::Kind as ColumnEncodingKind;
 use crate::proto::stream::Kind;
 use crate::proto::{ColumnEncoding, StripeFooter};
 use crate::reader::decode::boolean_rle::BooleanIter;
@@ -26,14 +28,14 @@ pub struct Column {
 
 impl From<Column> for Field {
     fn from(value: Column) -> Self {
-        let dt = value.data_type.to_arrow_data_type();
+        let dt = value.arrow_data_type();
         Field::new(value.name, dt, true)
     }
 }
 
 impl From<&Column> for Field {
     fn from(value: &Column) -> Self {
-        let dt = value.data_type.to_arrow_data_type();
+        let dt = value.arrow_data_type();
         Field::new(value.name.clone(), dt, true)
     }
 }
@@ -67,6 +69,84 @@ impl Column {
 
     pub fn data_type(&self) -> &DataType {
         &self.data_type
+    }
+
+    pub fn arrow_data_type(&self) -> ArrowDataType {
+        let value_type = match self.data_type {
+            DataType::Boolean { .. } => ArrowDataType::Boolean,
+            DataType::Byte { .. } => ArrowDataType::Int8,
+            DataType::Short { .. } => ArrowDataType::Int16,
+            DataType::Int { .. } => ArrowDataType::Int32,
+            DataType::Long { .. } => ArrowDataType::Int64,
+            DataType::Float { .. } => ArrowDataType::Float32,
+            DataType::Double { .. } => ArrowDataType::Float64,
+            DataType::String { .. } | DataType::Varchar { .. } | DataType::Char { .. } => {
+                ArrowDataType::Utf8
+            }
+            DataType::Binary { .. } => ArrowDataType::Binary,
+            DataType::Decimal {
+                precision, scale, ..
+            } => ArrowDataType::Decimal128(precision as u8, scale as i8),
+            DataType::Timestamp { .. } => ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
+            DataType::TimestampWithLocalTimezone { .. } => {
+                // TODO: get writer timezone
+                ArrowDataType::Timestamp(TimeUnit::Nanosecond, None)
+            }
+            DataType::Date { .. } => ArrowDataType::Date32,
+            DataType::Struct { .. } => {
+                let children = self
+                    .children()
+                    .into_iter()
+                    .map(|col| {
+                        let dt = col.arrow_data_type();
+                        Field::new(col.name(), dt, true)
+                    })
+                    .collect();
+                ArrowDataType::Struct(children)
+            }
+            DataType::List { .. } => {
+                let children = self.children();
+                assert_eq!(children.len(), 1);
+                ArrowDataType::new_list(children[0].arrow_data_type(), true)
+            }
+            DataType::Map { .. } => {
+                let children = self.children();
+                assert_eq!(children.len(), 2);
+                let key = &children[0];
+                let key = key.arrow_data_type();
+                let key = Field::new("key", key, false);
+                let value = &children[1];
+                let value = value.arrow_data_type();
+                let value = Field::new("value", value, true);
+
+                let dt = ArrowDataType::Struct(vec![key, value].into());
+                let dt = Arc::new(Field::new("entries", dt, true));
+                ArrowDataType::Map(dt, false)
+            }
+            DataType::Union { .. } => {
+                let fields = self
+                    .children()
+                    .iter()
+                    .enumerate()
+                    .map(|(index, variant)| {
+                        // Should be safe as limited to 256 variants total (in from_proto)
+                        let index = index as u8 as i8;
+                        let arrow_dt = variant.arrow_data_type();
+                        // Name shouldn't matter here (only ORC struct types give names to subtypes anyway)
+                        let field = Arc::new(Field::new(format!("{index}"), arrow_dt, true));
+                        (index, field)
+                    })
+                    .collect();
+                ArrowDataType::Union(fields, UnionMode::Sparse)
+            }
+        };
+
+        match self.encoding().kind() {
+            ColumnEncodingKind::Direct | ColumnEncodingKind::DirectV2 => value_type,
+            ColumnEncodingKind::Dictionary | ColumnEncodingKind::DictionaryV2 => {
+                ArrowDataType::Dictionary(Box::new(ArrowDataType::UInt64), Box::new(value_type))
+            }
+        }
     }
 
     pub fn name(&self) -> &str {

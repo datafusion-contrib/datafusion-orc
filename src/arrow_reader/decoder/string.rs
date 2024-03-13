@@ -143,6 +143,7 @@ impl<T: ByteArrayType> ArrayBatchDecoder for GenericByteArrayDecoder<T> {
         batch_size: usize,
         parent_present: Option<&[bool]>,
     ) -> Result<ArrayRef> {
+        println!("GenericByteArrayDecoder::next_batch");
         let array = self.next_byte_batch(batch_size, parent_present)?;
         let array = Arc::new(array) as ArrayRef;
         Ok(array)
@@ -169,6 +170,7 @@ impl ArrayBatchDecoder for DictionaryStringArrayDecoder {
         batch_size: usize,
         parent_present: Option<&[bool]>,
     ) -> Result<ArrayRef> {
+        println!("DictionaryStringArrayDecoder::next_batch");
         let keys = self
             .indexes
             .next_primitive_batch(batch_size, parent_present)?;

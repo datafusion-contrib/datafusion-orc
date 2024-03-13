@@ -1,14 +1,10 @@
-use std::collections::HashMap;
 use std::fmt::Display;
-use std::sync::Arc;
 
 use snafu::{ensure, OptionExt};
 
 use crate::error::{NoTypesSnafu, Result, UnexpectedSnafu};
 use crate::projection::ProjectionMask;
 use crate::proto;
-
-use arrow::datatypes::{DataType as ArrowDataType, Field, Schema, TimeUnit, UnionMode};
 
 /// Represents the root data type of the ORC file. Contains multiple named child types
 /// which map to the columns available. Allows projecting only specific columns from
@@ -35,19 +31,6 @@ impl RootDataType {
     /// Base columns of the file.
     pub fn children(&self) -> &[NamedColumn] {
         &self.children
-    }
-
-    /// Convert into an Arrow schema.
-    pub fn create_arrow_schema(&self, user_metadata: &HashMap<String, String>) -> Schema {
-        let fields = self
-            .children
-            .iter()
-            .map(|col| {
-                let dt = col.data_type().to_arrow_data_type();
-                Field::new(col.name(), dt, true)
-            })
-            .collect::<Vec<_>>();
-        Schema::new_with_metadata(fields, user_metadata.clone())
     }
 
     /// Create new root data type based on mask of columns to project.
@@ -304,7 +287,10 @@ impl DataType {
             Kind::Long => Self::Long { column_index },
             Kind::Float => Self::Float { column_index },
             Kind::Double => Self::Double { column_index },
-            Kind::String => Self::String { column_index },
+            Kind::String => {
+                println!("{:?} to String", ty);
+                Self::String { column_index }
+            }
             Kind::Binary => Self::Binary { column_index },
             Kind::Timestamp => Self::Timestamp { column_index },
             Kind::List => {
@@ -394,70 +380,6 @@ impl DataType {
             Kind::TimestampInstant => Self::TimestampWithLocalTimezone { column_index },
         };
         Ok(dt)
-    }
-
-    pub fn to_arrow_data_type(&self) -> ArrowDataType {
-        match self {
-            DataType::Boolean { .. } => ArrowDataType::Boolean,
-            DataType::Byte { .. } => ArrowDataType::Int8,
-            DataType::Short { .. } => ArrowDataType::Int16,
-            DataType::Int { .. } => ArrowDataType::Int32,
-            DataType::Long { .. } => ArrowDataType::Int64,
-            DataType::Float { .. } => ArrowDataType::Float32,
-            DataType::Double { .. } => ArrowDataType::Float64,
-            DataType::String { .. } | DataType::Varchar { .. } | DataType::Char { .. } => {
-                ArrowDataType::Utf8
-            }
-            DataType::Binary { .. } => ArrowDataType::Binary,
-            DataType::Decimal {
-                precision, scale, ..
-            } => ArrowDataType::Decimal128(*precision as u8, *scale as i8),
-            DataType::Timestamp { .. } => ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
-            DataType::TimestampWithLocalTimezone { .. } => {
-                // TODO: get writer timezone
-                ArrowDataType::Timestamp(TimeUnit::Nanosecond, None)
-            }
-            DataType::Date { .. } => ArrowDataType::Date32,
-            DataType::Struct { children, .. } => {
-                let children = children
-                    .iter()
-                    .map(|col| {
-                        let dt = col.data_type().to_arrow_data_type();
-                        Field::new(col.name(), dt, true)
-                    })
-                    .collect();
-                ArrowDataType::Struct(children)
-            }
-            DataType::List { child, .. } => {
-                let child = child.to_arrow_data_type();
-                ArrowDataType::new_list(child, true)
-            }
-            DataType::Map { key, value, .. } => {
-                let key = key.to_arrow_data_type();
-                let key = Field::new("key", key, false);
-                let value = value.to_arrow_data_type();
-                let value = Field::new("value", value, true);
-
-                let dt = ArrowDataType::Struct(vec![key, value].into());
-                let dt = Arc::new(Field::new("entries", dt, true));
-                ArrowDataType::Map(dt, false)
-            }
-            DataType::Union { variants, .. } => {
-                let fields = variants
-                    .iter()
-                    .enumerate()
-                    .map(|(index, variant)| {
-                        // Should be safe as limited to 256 variants total (in from_proto)
-                        let index = index as u8 as i8;
-                        let arrow_dt = variant.to_arrow_data_type();
-                        // Name shouldn't matter here (only ORC struct types give names to subtypes anyway)
-                        let field = Arc::new(Field::new(format!("{index}"), arrow_dt, true));
-                        (index, field)
-                    })
-                    .collect();
-                ArrowDataType::Union(fields, UnionMode::Sparse)
-            }
-        }
     }
 }
 
