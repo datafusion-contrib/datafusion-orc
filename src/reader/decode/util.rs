@@ -20,11 +20,7 @@ pub fn read_u8(reader: &mut impl Read) -> Result<u8> {
 pub fn try_read_u8(reader: &mut impl Read) -> Result<Option<u8>> {
     let mut byte = [0];
     let length = reader.read(&mut byte).context(error::IoSnafu)?;
-    if length == 0 {
-        Ok(None)
-    } else {
-        Ok(Some(byte[0]))
-    }
+    Ok((length > 0).then_some(byte[0]))
 }
 
 /// Extracting run length from first two header bytes.
