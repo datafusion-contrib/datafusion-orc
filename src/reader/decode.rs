@@ -19,7 +19,6 @@ pub mod float;
 pub mod rle_v1;
 pub mod rle_v2;
 mod util;
-pub mod variable_length;
 
 #[derive(Clone, Copy, Debug)]
 pub enum RleVersion {
