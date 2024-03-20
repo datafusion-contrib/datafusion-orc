@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use arrow::array::{ArrayRef, DictionaryArray, GenericByteArray, StringArray};
 use arrow::buffer::{Buffer, OffsetBuffer};
-use arrow::datatypes::{ByteArrayType, GenericBinaryType, GenericStringType};
+use arrow::compute::kernels::cast;
+use arrow::datatypes::{ByteArrayType, DataType, GenericBinaryType, GenericStringType};
 use snafu::ResultExt;
 
 use crate::arrow_reader::column::{get_present_vec, Column};
@@ -173,6 +174,7 @@ impl ArrayBatchDecoder for DictionaryStringArrayDecoder {
             .indexes
             .next_primitive_batch(batch_size, parent_present)?;
         let array = DictionaryArray::try_new(keys, self.dictionary.clone()).context(ArrowSnafu)?;
+        let array = cast(&array, &DataType::Utf8).context(ArrowSnafu)?;
 
         let array = Arc::new(array);
         Ok(array)
