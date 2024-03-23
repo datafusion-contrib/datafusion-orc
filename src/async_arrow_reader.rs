@@ -4,7 +4,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use arrow::datatypes::SchemaRef;
 use arrow::error::ArrowError;
 use arrow::record_batch::RecordBatch;
 use futures::future::BoxFuture;
@@ -61,7 +60,6 @@ pub struct StripeFactory<R> {
 pub struct ArrowStreamReader<R: AsyncChunkReader> {
     factory: Option<Box<StripeFactory<R>>>,
     batch_size: usize,
-    schema_ref: SchemaRef,
     state: StreamState<R>,
 }
 
@@ -107,17 +105,12 @@ impl<R: AsyncChunkReader + 'static> StripeFactory<R> {
 }
 
 impl<R: AsyncChunkReader + 'static> ArrowStreamReader<R> {
-    pub fn new(cursor: Cursor<R>, batch_size: usize, schema_ref: SchemaRef) -> Self {
+    pub fn new(cursor: Cursor<R>, batch_size: usize) -> Self {
         Self {
             factory: Some(Box::new(cursor.into())),
             batch_size,
-            schema_ref,
             state: StreamState::Init,
         }
-    }
-
-    pub fn schema(&self) -> SchemaRef {
-        self.schema_ref.clone()
     }
 
     fn poll_next_inner(
@@ -149,11 +142,7 @@ impl<R: AsyncChunkReader + 'static> ArrowStreamReader<R> {
                 StreamState::Reading(f) => match ready!(f.poll_unpin(cx)) {
                     Ok((factory, Some(stripe))) => {
                         self.factory = Some(Box::new(factory));
-                        match NaiveStripeDecoder::new(
-                            stripe,
-                            self.schema_ref.clone(),
-                            self.batch_size,
-                        ) {
+                        match NaiveStripeDecoder::new(stripe, self.batch_size) {
                             Ok(decoder) => {
                                 self.state = StreamState::Decoding(Box::new(decoder));
                             }

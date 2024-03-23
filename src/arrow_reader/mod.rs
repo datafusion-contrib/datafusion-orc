@@ -1,9 +1,7 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
-use arrow::datatypes::{Schema, SchemaRef};
 use arrow::error::ArrowError;
-use arrow::record_batch::{RecordBatch, RecordBatchReader};
+use arrow::record_batch::RecordBatch;
 
 pub use self::decoder::NaiveStripeDecoder;
 use crate::error::Result;
@@ -73,10 +71,8 @@ impl<R: ChunkReader> ArrowReaderBuilder<R> {
             projected_data_type,
             stripe_index: 0,
         };
-        let schema_ref = Arc::new(create_arrow_schema(&cursor));
         ArrowReader {
             cursor,
-            schema_ref,
             current_stripe: None,
             batch_size: self.batch_size,
         }
@@ -101,14 +97,12 @@ impl<R: AsyncChunkReader + 'static> ArrowReaderBuilder<R> {
             projected_data_type,
             stripe_index: 0,
         };
-        let schema_ref = Arc::new(create_arrow_schema(&cursor));
-        ArrowStreamReader::new(cursor, self.batch_size, schema_ref)
+        ArrowStreamReader::new(cursor, self.batch_size)
     }
 }
 
 pub struct ArrowReader<R> {
     cursor: Cursor<R>,
-    schema_ref: SchemaRef,
     current_stripe: Option<Box<dyn Iterator<Item = Result<RecordBatch>> + Send>>,
     batch_size: usize,
 }
@@ -124,29 +118,12 @@ impl<R: ChunkReader> ArrowReader<R> {
         let stripe = self.cursor.next().transpose()?;
         match stripe {
             Some(stripe) => {
-                let decoder =
-                    NaiveStripeDecoder::new(stripe, self.schema_ref.clone(), self.batch_size)?;
+                let decoder = NaiveStripeDecoder::new(stripe, self.batch_size)?;
                 self.current_stripe = Some(Box::new(decoder));
                 self.next().transpose()
             }
             None => Ok(None),
         }
-    }
-}
-
-pub fn create_arrow_schema<R>(cursor: &Cursor<R>) -> Schema {
-    let metadata = cursor
-        .file_metadata
-        .user_custom_metadata()
-        .iter()
-        .map(|(key, value)| (key.clone(), String::from_utf8_lossy(value).to_string()))
-        .collect::<HashMap<_, _>>();
-    cursor.projected_data_type.create_arrow_schema(&metadata)
-}
-
-impl<R: ChunkReader> RecordBatchReader for ArrowReader<R> {
-    fn schema(&self) -> SchemaRef {
-        self.schema_ref.clone()
     }
 }
 

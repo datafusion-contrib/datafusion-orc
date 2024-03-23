@@ -4,7 +4,7 @@ use arrow::array::{ArrayRef, BooleanArray, BooleanBuilder, PrimitiveArray, Primi
 use arrow::buffer::NullBuffer;
 use arrow::datatypes::{ArrowPrimitiveType, UInt64Type};
 use arrow::datatypes::{
-    Date32Type, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, SchemaRef,
+    Date32Type, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type,
     TimestampNanosecondType,
 };
 use arrow::record_batch::RecordBatch;
@@ -230,7 +230,6 @@ fn create_null_buffer(present: Option<Vec<bool>>) -> Option<NullBuffer> {
 
 pub struct NaiveStripeDecoder {
     stripe: Stripe,
-    schema_ref: SchemaRef,
     decoders: Vec<Box<dyn ArrayBatchDecoder>>,
     index: usize,
     batch_size: usize,
@@ -388,10 +387,10 @@ impl NaiveStripeDecoder {
         } else {
             //TODO(weny): any better way?
             let fields = self
-                .schema_ref
-                .fields
-                .into_iter()
-                .map(|field| field.name())
+                .stripe
+                .columns
+                .iter()
+                .map(|col| col.name())
                 .zip(fields)
                 .collect::<Vec<_>>();
 
@@ -401,7 +400,7 @@ impl NaiveStripeDecoder {
         }
     }
 
-    pub fn new(stripe: Stripe, schema_ref: SchemaRef, batch_size: usize) -> Result<Self> {
+    pub fn new(stripe: Stripe, batch_size: usize) -> Result<Self> {
         let mut decoders = Vec::with_capacity(stripe.columns.len());
         let number_of_rows = stripe.number_of_rows;
 
@@ -412,7 +411,6 @@ impl NaiveStripeDecoder {
 
         Ok(Self {
             stripe,
-            schema_ref,
             decoders,
             index: 0,
             batch_size,

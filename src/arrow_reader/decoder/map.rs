@@ -36,13 +36,9 @@ impl MapArrayDecoder {
         let reader = stripe.stream_map.get(column, Kind::Length)?;
         let lengths = get_rle_reader(column, reader)?;
 
-        let keys_field = Field::new("keys", keys_column.data_type().to_arrow_data_type(), false);
+        let keys_field = Field::new("keys", keys_column.arrow_data_type(), false);
         let keys_field = Arc::new(keys_field);
-        let values_field = Field::new(
-            "values",
-            values_column.data_type().to_arrow_data_type(),
-            true,
-        );
+        let values_field = Field::new("values", values_column.arrow_data_type(), true);
         let values_field = Arc::new(values_field);
 
         let fields = Fields::from(vec![keys_field, values_field]);

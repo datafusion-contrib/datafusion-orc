@@ -36,7 +36,12 @@ impl StructArrayDecoder {
         let fields = column
             .children()
             .into_iter()
-            .map(Field::from)
+            .map(|col| {
+                println!("col {:#?}", col);
+                let field = Field::from(col);
+                println!("field {:?}", field);
+                field
+            })
             .map(Arc::new)
             .collect::<Vec<_>>();
         let fields = Fields::from(fields);
@@ -64,6 +69,10 @@ impl ArrayBatchDecoder for StructArrayDecoder {
             .collect::<Result<Vec<_>>>()?;
 
         let null_buffer = present.map(NullBuffer::from);
+        println!(
+            "next batch fields = {:?}, child_arrays = {:?}, nulls = {:?}",
+            self.fields, child_arrays, null_buffer
+        );
         let array = StructArray::try_new(self.fields.clone(), child_arrays, null_buffer)
             .context(ArrowSnafu)?;
         let array = Arc::new(array);

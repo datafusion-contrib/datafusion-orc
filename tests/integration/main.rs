@@ -85,7 +85,7 @@ fn metaData() {
     test_expected_file("TestOrcFile.metaData");
 }
 #[test]
-#[ignore] // TODO: Why?
+#[ignore] // TODO: {} instead of [{}] and decimal representation differs
 fn test1() {
     test_expected_file("TestOrcFile.test1");
 }
