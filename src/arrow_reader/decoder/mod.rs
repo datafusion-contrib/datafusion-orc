@@ -52,10 +52,10 @@ impl<T: ArrowPrimitiveType> PrimitiveArrayDecoder<T> {
     ) -> Result<PrimitiveArray<T>> {
         let present = derive_present_vec(&mut self.present, parent_present, batch_size);
 
-        match &present {
+        match present {
             Some(present) => {
                 let mut builder = PrimitiveBuilder::<T>::with_capacity(batch_size);
-                for &is_present in present {
+                for is_present in present {
                     if is_present {
                         // TODO: return as error instead
                         let val = self
@@ -128,10 +128,10 @@ impl ArrayBatchDecoder for BooleanArrayDecoder {
     ) -> Result<ArrayRef> {
         let present = derive_present_vec(&mut self.present, parent_present, batch_size);
 
-        match &present {
+        match present {
             Some(present) => {
                 let mut builder = BooleanBuilder::with_capacity(batch_size);
-                for &is_present in present {
+                for is_present in present {
                     if is_present {
                         // TODO: return as error instead
                         let val = self
