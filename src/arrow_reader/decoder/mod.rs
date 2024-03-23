@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use arrow::array::{ArrayRef, BooleanArray, BooleanBuilder, PrimitiveArray, PrimitiveBuilder};
 use arrow::buffer::NullBuffer;
-use arrow::datatypes::{ArrowPrimitiveType, UInt64Type};
+use arrow::datatypes::{ArrowPrimitiveType, Decimal128Type, UInt64Type};
 use arrow::datatypes::{
     Date32Type, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, SchemaRef,
     TimestampNanosecondType,
@@ -10,7 +10,7 @@ use arrow::datatypes::{
 use arrow::record_batch::RecordBatch;
 use snafu::ResultExt;
 
-use crate::error::{self, Result};
+use crate::error::{self, ArrowSnafu, Result};
 use crate::proto::stream::Kind;
 use crate::reader::decode::boolean_rle::BooleanIter;
 use crate::reader::decode::byte_rle::ByteRleIter;
@@ -19,6 +19,7 @@ use crate::reader::decode::get_rle_reader;
 use crate::schema::DataType;
 use crate::stripe::Stripe;
 
+use self::decimal::new_decimal_decoder;
 use self::list::ListArrayDecoder;
 use self::map::MapArrayDecoder;
 use self::string::{new_binary_decoder, new_string_decoder};
@@ -27,6 +28,7 @@ use self::struct_decoder::StructArrayDecoder;
 use super::column::timestamp::TimestampIterator;
 use super::column::{get_present_vec, Column};
 
+mod decimal;
 mod list;
 mod map;
 mod string;
@@ -105,6 +107,46 @@ type Float32ArrayDecoder = PrimitiveArrayDecoder<Float32Type>;
 type Float64ArrayDecoder = PrimitiveArrayDecoder<Float64Type>;
 type TimestampArrayDecoder = PrimitiveArrayDecoder<TimestampNanosecondType>;
 type DateArrayDecoder = PrimitiveArrayDecoder<Date32Type>; // TODO: does ORC encode as i64 or i32?
+
+/// Wrapper around PrimitiveArrayDecoder to allow specifying the precision and scale
+/// of the output decimal array.
+struct DecimalArrayDecoder {
+    precision: u8,
+    scale: i8,
+    inner: PrimitiveArrayDecoder<Decimal128Type>,
+}
+
+impl DecimalArrayDecoder {
+    pub fn new(
+        precision: u8,
+        scale: i8,
+        iter: Box<dyn Iterator<Item = Result<i128>> + Send>,
+        present: Option<Box<dyn Iterator<Item = bool> + Send>>,
+    ) -> Self {
+        let inner = PrimitiveArrayDecoder::<Decimal128Type>::new(iter, present);
+        Self {
+            precision,
+            scale,
+            inner,
+        }
+    }
+}
+
+impl ArrayBatchDecoder for DecimalArrayDecoder {
+    fn next_batch(
+        &mut self,
+        batch_size: usize,
+        parent_present: Option<&[bool]>,
+    ) -> Result<ArrayRef> {
+        let array = self
+            .inner
+            .next_primitive_batch(batch_size, parent_present)?
+            .with_precision_and_scale(self.precision, self.scale)
+            .context(ArrowSnafu)?;
+        let array = Arc::new(array) as ArrayRef;
+        Ok(array)
+    }
+}
 
 struct BooleanArrayDecoder {
     iter: Box<dyn Iterator<Item = Result<bool>> + Send>,
@@ -331,7 +373,9 @@ pub fn array_decoder_factory(
             new_string_decoder(column, stripe)?
         }
         DataType::Binary { .. } => new_binary_decoder(column, stripe)?,
-        DataType::Decimal { .. } => todo!(),
+        DataType::Decimal {
+            precision, scale, ..
+        } => new_decimal_decoder(column, stripe, *precision, *scale)?,
         DataType::Timestamp { .. } => {
             let data = stripe.stream_map.get(column, Kind::Data)?;
             let data = get_rle_reader(column, data)?;
