@@ -24,7 +24,7 @@ Read [Apache ORC](https://orc.apache.org/) in Rust.
 | Boolean                   | ✓    |       | Boolean                 |
 | TinyInt                   | ✓    |       | Int8                    |
 | Binary                    | ✓    |       | Binary                  |
-| Decimal                   | ✗    |       |                         |
+| Decimal                   | ✓    |       | Decimal128              |
 | Date                      | ✓    |       | Date32                  |
 | Timestamp                 | ✓    |       | Timestamp(Nanosecond,_) |
 | Timestamp instant         | ✗    |       |                         |

@@ -15,6 +15,7 @@ use self::util::{signed_msb_decode, signed_zigzag_decode};
 
 pub mod boolean_rle;
 pub mod byte_rle;
+pub mod decimal;
 pub mod float;
 pub mod rle_v1;
 pub mod rle_v2;
@@ -219,5 +220,33 @@ impl NInt for u64 {
     #[inline]
     fn from_be_bytes(b: Self::Bytes) -> Self {
         Self::from_be_bytes(b)
+    }
+}
+
+// This impl is used only for varint decoding.
+// Hence some methods are left unimplemented since they are not used.
+// TODO: maybe split NInt into traits for the specific use case
+//         - patched base decoding
+//         - varint decoding
+//         - etc.
+impl NInt for i128 {
+    type Bytes = [u8; 16];
+    const BYTE_SIZE: usize = 16;
+
+    fn from_u64(_u: u64) -> Self {
+        unimplemented!()
+    }
+
+    fn from_u8(u: u8) -> Self {
+        u as Self
+    }
+
+    fn from_be_bytes(_b: Self::Bytes) -> Self {
+        unimplemented!()
+    }
+
+    #[inline]
+    fn zigzag_decode(self) -> Self {
+        signed_zigzag_decode(self)
     }
 }

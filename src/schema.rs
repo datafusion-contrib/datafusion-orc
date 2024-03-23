@@ -411,7 +411,7 @@ impl DataType {
             DataType::Binary { .. } => ArrowDataType::Binary,
             DataType::Decimal {
                 precision, scale, ..
-            } => ArrowDataType::Decimal128(*precision as u8, *scale as i8),
+            } => ArrowDataType::Decimal128(*precision as u8, *scale as i8), // TODO: safety of cast?
             DataType::Timestamp { .. } => ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
             DataType::TimestampWithLocalTimezone { .. } => {
                 // TODO: get writer timezone
