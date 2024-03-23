@@ -434,12 +434,12 @@ impl DataType {
             }
             DataType::Map { key, value, .. } => {
                 let key = key.to_arrow_data_type();
-                let key = Field::new("key", key, false);
+                let key = Field::new("keys", key, false);
                 let value = value.to_arrow_data_type();
-                let value = Field::new("value", value, true);
+                let value = Field::new("values", value, true);
 
                 let dt = ArrowDataType::Struct(vec![key, value].into());
-                let dt = Arc::new(Field::new("entries", dt, true));
+                let dt = Arc::new(Field::new("entries", dt, false));
                 ArrowDataType::Map(dt, false)
             }
             DataType::Union { variants, .. } => {
