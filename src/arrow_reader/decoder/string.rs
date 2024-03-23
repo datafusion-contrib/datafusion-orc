@@ -173,7 +173,13 @@ impl ArrayBatchDecoder for DictionaryStringArrayDecoder {
         let keys = self
             .indexes
             .next_primitive_batch(batch_size, parent_present)?;
+        // TODO: ORC spec states: For dictionary encodings the dictionary is sorted
+        //       (in lexicographical order of bytes in the UTF-8 encodings).
+        //       So we can set the is_ordered property here?
         let array = DictionaryArray::try_new(keys, self.dictionary.clone()).context(ArrowSnafu)?;
+        // Cast back to StringArray to ensure all stripes have consistent datatype
+        // TODO: Is there anyway to preserve the dictionary encoding?
+        //       This costs performance.
         let array = cast(&array, &DataType::Utf8).context(ArrowSnafu)?;
 
         let array = Arc::new(array);
