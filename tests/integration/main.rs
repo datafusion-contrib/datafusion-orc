@@ -1,35 +1,52 @@
 /// Tests ORC files from the official test suite (`orc/examples/`) against Arrow feather
 /// expected data sourced by reading the ORC files with PyArrow and persisting as feather.
-use std::fs::File;
+use std::{fs::File, sync::Arc};
 
-use arrow::{compute::concat_batches, ipc::reader::FileReader, record_batch::RecordBatchReader};
+use arrow::{
+    array::{AsArray, MapArray, StructArray},
+    compute::concat_batches,
+    datatypes::{DataType, Field, Fields, Schema},
+    ipc::reader::FileReader,
+    record_batch::{RecordBatch, RecordBatchReader},
+};
 use pretty_assertions::assert_eq;
 
 use datafusion_orc::arrow_reader::ArrowReaderBuilder;
 
-/// Checks specific `.orc` file against corresponding expected feather file
-fn test_expected_file(name: &str) {
-    let dir = env!("CARGO_MANIFEST_DIR");
-    let orc_path = format!("{}/tests/integration/data/{}.orc", dir, name);
-    let feather_path = format!(
-        "{}/tests/integration/data/expected_arrow/{}.feather",
-        dir, name
+fn read_orc_file(name: &str) -> RecordBatch {
+    let path = format!(
+        "{}/tests/integration/data/{}.orc",
+        env!("CARGO_MANIFEST_DIR"),
+        name
     );
-
-    let f = File::open(orc_path).unwrap();
-    let orc_reader = ArrowReaderBuilder::try_new(f).unwrap().build();
-    let actual_schema = orc_reader.schema();
-    let actual_batches = orc_reader.collect::<Result<Vec<_>, _>>().unwrap();
-
-    let f = File::open(feather_path).unwrap();
-    let feather_reader = FileReader::try_new(f, None).unwrap();
-    let expected_schema = feather_reader.schema();
-    let expected_batches = feather_reader.collect::<Result<Vec<_>, _>>().unwrap();
+    let f = File::open(path).unwrap();
+    let reader = ArrowReaderBuilder::try_new(f).unwrap().build();
+    let schema = reader.schema();
+    let batches = reader.collect::<Result<Vec<_>, _>>().unwrap();
 
     // Gather all record batches into single one for easier comparison
-    let actual_batch = concat_batches(&actual_schema, actual_batches.iter()).unwrap();
-    let expected_batch = concat_batches(&expected_schema, expected_batches.iter()).unwrap();
+    concat_batches(&schema, batches.iter()).unwrap()
+}
 
+fn read_feather_file(name: &str) -> RecordBatch {
+    let feather_path = format!(
+        "{}/tests/integration/data/expected_arrow/{}.feather",
+        env!("CARGO_MANIFEST_DIR"),
+        name
+    );
+    let f = File::open(feather_path).unwrap();
+    let reader = FileReader::try_new(f, None).unwrap();
+    let schema = reader.schema();
+    let batches = reader.collect::<Result<Vec<_>, _>>().unwrap();
+
+    // Gather all record batches into single one for easier comparison
+    concat_batches(&schema, batches.iter()).unwrap()
+}
+
+/// Checks specific `.orc` file against corresponding expected feather file
+fn test_expected_file(name: &str) {
+    let actual_batch = read_orc_file(name);
+    let expected_batch = read_feather_file(name);
     assert_eq!(actual_batch, expected_batch);
 }
 
@@ -51,11 +68,47 @@ fn meta_data() {
 }
 
 #[test]
-// TODO: PyArrow names Map child fields as key and value
-//       but arrow-rs names as keys and values
-#[ignore]
 fn test1() {
-    test_expected_file("TestOrcFile.test1");
+    let actual_batch = read_orc_file("TestOrcFile.test1");
+    let expected_batch = read_feather_file("TestOrcFile.test1");
+
+    // Super ugly code to rename the "key" and "value" in PyArrow MapArray to
+    // "keys" and "values" which arrow-rs does
+    // TODO: surely there is some better way to handle this?
+    let mut fields = expected_batch.schema().fields[..11].to_vec();
+    let entries_fields: Fields = vec![
+        Field::new("keys", DataType::Utf8, false),
+        Field::new(
+            "values",
+            DataType::Struct(
+                vec![
+                    Field::new("int1", DataType::Int32, true),
+                    Field::new("string1", DataType::Utf8, true),
+                ]
+                .into(),
+            ),
+            true,
+        ),
+    ]
+    .into();
+    let entries_field = Arc::new(Field::new_struct("entries", entries_fields.clone(), false));
+    let map_field = Field::new("map", DataType::Map(entries_field.clone(), false), true);
+    fields.push(Arc::new(map_field));
+    let schema = Arc::new(Schema::new(fields));
+    let mut columns = expected_batch.columns()[..11].to_vec();
+    // Have to destruct the MapArray inorder to reconstruct with correct names for
+    // MapArray struct children
+    let map_array = expected_batch.column(11).as_map().clone();
+    let (_, offsets, entries, nulls, ordered) = map_array.into_parts();
+    let entries = {
+        let (_, arrays, nulls) = entries.into_parts();
+        StructArray::new(entries_fields, arrays, nulls)
+    };
+    let map_array = MapArray::new(entries_field, offsets, entries, nulls, ordered);
+    columns.push(Arc::new(map_array));
+    let expected_batch = RecordBatch::try_new(schema, columns).unwrap();
+
+    assert_eq!(actual_batch, expected_batch);
 }
 
 #[test]
