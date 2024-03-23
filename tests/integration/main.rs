@@ -51,7 +51,9 @@ fn meta_data() {
 }
 
 #[test]
-#[ignore] // TODO: error when concat record batches
+// TODO: PyArrow names Map child fields as key and value
+//       but arrow-rs names as keys and values
+#[ignore]
 fn test1() {
     test_expected_file("TestOrcFile.test1");
 }

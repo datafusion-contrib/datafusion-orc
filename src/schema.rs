@@ -433,6 +433,8 @@ impl DataType {
                 ArrowDataType::new_list(child, true)
             }
             DataType::Map { key, value, .. } => {
+                // TODO: this needs to be kept in sync with MapArrayDecoder
+                //       move to common location?
                 let key = key.to_arrow_data_type();
                 let key = Field::new("keys", key, false);
                 let value = value.to_arrow_data_type();
