@@ -36,6 +36,8 @@ impl MapArrayDecoder {
         let reader = stripe.stream_map.get(column, Kind::Length);
         let lengths = get_rle_reader(column, reader)?;
 
+        // TODO: should it be "keys" and "values" (like arrow-rs)
+        //       or "key" and "value" like PyArrow and in Schema.fbs?
         let keys_field = Field::new("keys", keys_column.data_type().to_arrow_data_type(), false);
         let keys_field = Arc::new(keys_field);
         let values_field = Field::new(

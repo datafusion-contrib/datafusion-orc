@@ -435,6 +435,8 @@ impl DataType {
             DataType::Map { key, value, .. } => {
                 // TODO: this needs to be kept in sync with MapArrayDecoder
                 //       move to common location?
+                // TODO: should it be "keys" and "values" (like arrow-rs)
+                //       or "key" and "value" like PyArrow and in Schema.fbs?
                 let key = key.to_arrow_data_type();
                 let key = Field::new("keys", key, false);
                 let value = value.to_arrow_data_type();
