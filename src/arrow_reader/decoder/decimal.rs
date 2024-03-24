@@ -16,7 +16,7 @@ pub fn new_decimal_decoder(
     precision: u32,
     fixed_scale: u32,
 ) -> Result<Box<dyn ArrayBatchDecoder>> {
-    let varint_iter = stripe.stream_map.get(column, Kind::Data)?;
+    let varint_iter = stripe.stream_map.get(column, Kind::Data);
     let varint_iter = Box::new(UnboundedVarintStreamDecoder::new(
         varint_iter,
         stripe.number_of_rows,
@@ -24,7 +24,7 @@ pub fn new_decimal_decoder(
     let varint_iter = varint_iter as Box<dyn Iterator<Item = Result<i128>> + Send>;
 
     // Scale is specified on a per varint basis (in addition to being encoded in the type)
-    let scale_iter = stripe.stream_map.get(column, Kind::Secondary)?;
+    let scale_iter = stripe.stream_map.get(column, Kind::Secondary);
     let scale_iter = get_rle_reader::<i32, _>(column, scale_iter)?;
 
     let present = get_present_vec(column, stripe)?
