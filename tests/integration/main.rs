@@ -56,7 +56,10 @@ fn column_projection() {
 }
 
 #[test]
-#[ignore] // TODO: Why?
+// TODO: arrow-ipc reader can't read invalid custom_metadata
+//       from the expected feather file:
+//       https://github.com/apache/arrow-rs/issues/5547
+#[ignore]
 fn meta_data() {
     test_expected_file("TestOrcFile.metaData");
 }

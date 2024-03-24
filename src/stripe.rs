@@ -2,12 +2,12 @@ use std::{collections::HashMap, io::Read, sync::Arc};
 
 use bytes::Bytes;
 use prost::Message;
-use snafu::{OptionExt, ResultExt};
+use snafu::ResultExt;
 
 use crate::{
     arrow_reader::column::Column,
+    error::Result,
     error::{self, IoSnafu},
-    error::{InvalidColumnSnafu, Result},
     proto::{self, stream::Kind, StripeFooter},
     reader::{
         decompress::{Compression, Decompressor},
@@ -162,10 +162,13 @@ pub struct StreamMap {
 }
 
 impl StreamMap {
-    pub fn get(&self, column: &Column, kind: Kind) -> Result<Decompressor> {
-        self.get_opt(column, kind).context(InvalidColumnSnafu {
-            name: column.name(),
-        })
+    pub fn get(&self, column: &Column, kind: Kind) -> Decompressor {
+        // There is edge case where if column has no data then the stream might be omitted entirely
+        // (e.g. if there is only 1 null element, then it'll have present stream, but no data stream)
+        // See the integration::meta_data test for an example of this
+        // TODO: some better way to handle this?
+        self.get_opt(column, kind)
+            .unwrap_or_else(|| Decompressor::new(Bytes::new(), self.compression, vec![]))
     }
 
     pub fn get_opt(&self, column: &Column, kind: Kind) -> Option<Decompressor> {

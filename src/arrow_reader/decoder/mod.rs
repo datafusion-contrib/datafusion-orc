@@ -321,49 +321,49 @@ pub fn array_decoder_factory(
     let decoder: Box<dyn ArrayBatchDecoder> = match column.data_type() {
         // TODO: try make branches more generic, reduce duplication
         DataType::Boolean { .. } => {
-            let iter = stripe.stream_map.get(column, Kind::Data)?;
+            let iter = stripe.stream_map.get(column, Kind::Data);
             let iter = Box::new(BooleanIter::new(iter));
             let present = get_present_vec(column, stripe)?
                 .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
             Box::new(BooleanArrayDecoder::new(iter, present))
         }
         DataType::Byte { .. } => {
-            let iter = stripe.stream_map.get(column, Kind::Data)?;
+            let iter = stripe.stream_map.get(column, Kind::Data);
             let iter = Box::new(ByteRleIter::new(iter).map(|value| value.map(|value| value as i8)));
             let present = get_present_vec(column, stripe)?
                 .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
             Box::new(Int8ArrayDecoder::new(iter, present))
         }
         DataType::Short { .. } => {
-            let iter = stripe.stream_map.get(column, Kind::Data)?;
+            let iter = stripe.stream_map.get(column, Kind::Data);
             let iter = get_rle_reader(column, iter)?;
             let present = get_present_vec(column, stripe)?
                 .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
             Box::new(Int16ArrayDecoder::new(iter, present))
         }
         DataType::Int { .. } => {
-            let iter = stripe.stream_map.get(column, Kind::Data)?;
+            let iter = stripe.stream_map.get(column, Kind::Data);
             let iter = get_rle_reader(column, iter)?;
             let present = get_present_vec(column, stripe)?
                 .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
             Box::new(Int32ArrayDecoder::new(iter, present))
         }
         DataType::Long { .. } => {
-            let iter = stripe.stream_map.get(column, Kind::Data)?;
+            let iter = stripe.stream_map.get(column, Kind::Data);
             let iter = get_rle_reader(column, iter)?;
             let present = get_present_vec(column, stripe)?
                 .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
             Box::new(Int64ArrayDecoder::new(iter, present))
         }
         DataType::Float { .. } => {
-            let iter = stripe.stream_map.get(column, Kind::Data)?;
+            let iter = stripe.stream_map.get(column, Kind::Data);
             let iter = Box::new(FloatIter::new(iter, stripe.number_of_rows));
             let present = get_present_vec(column, stripe)?
                 .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
             Box::new(Float32ArrayDecoder::new(iter, present))
         }
         DataType::Double { .. } => {
-            let iter = stripe.stream_map.get(column, Kind::Data)?;
+            let iter = stripe.stream_map.get(column, Kind::Data);
             let iter = Box::new(FloatIter::new(iter, stripe.number_of_rows));
             let present = get_present_vec(column, stripe)?
                 .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
@@ -377,10 +377,10 @@ pub fn array_decoder_factory(
             precision, scale, ..
         } => new_decimal_decoder(column, stripe, *precision, *scale)?,
         DataType::Timestamp { .. } => {
-            let data = stripe.stream_map.get(column, Kind::Data)?;
+            let data = stripe.stream_map.get(column, Kind::Data);
             let data = get_rle_reader(column, data)?;
 
-            let secondary = stripe.stream_map.get(column, Kind::Secondary)?;
+            let secondary = stripe.stream_map.get(column, Kind::Secondary);
             let secondary = get_rle_reader(column, secondary)?;
 
             let iter = Box::new(TimestampIterator::new(data, secondary));
@@ -391,7 +391,7 @@ pub fn array_decoder_factory(
         }
         DataType::TimestampWithLocalTimezone { .. } => todo!(),
         DataType::Date { .. } => {
-            let iter = stripe.stream_map.get(column, Kind::Data)?;
+            let iter = stripe.stream_map.get(column, Kind::Data);
             let iter = get_rle_reader(column, iter)?;
             let present = get_present_vec(column, stripe)?
                 .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
