@@ -18,37 +18,35 @@ impl TimestampIterator {
     ) -> Self {
         Self { data, secondary }
     }
-
-    fn iter_next(&mut self) -> Result<Option<i64>> {
-        let next = match (self.data.next(), self.secondary.next()) {
-            (Some(seconds_since_orc_base), Some(nanos)) => {
-                let data = seconds_since_orc_base?;
-                let mut nanos = nanos?;
-                // last 3 bits indicate how many trailing zeros were truncated
-                let zeros = nanos & 0x7;
-                nanos >>= 3;
-                // multiply by powers of 10 to get back the trailing zeros
-                if zeros != 0 {
-                    nanos *= 10_u64.pow(zeros as u32 + 1);
-                }
-                // convert into nanoseconds since epoch, which Arrow uses as native representation
-                // of timestamps
-                let nanoseconds_since_epoch = (data + TIMESTAMP_BASE_SECONDS_SINCE_EPOCH)
-                    * NANOSECONDS_IN_SECOND
-                    + (nanos as i64);
-                Some(nanoseconds_since_epoch)
-            }
-            // TODO: throw error for mismatched stream lengths?
-            _ => None,
-        };
-        Ok(next)
-    }
 }
 
 impl Iterator for TimestampIterator {
     type Item = Result<i64>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter_next().transpose()
+        // TODO: throw error for mismatched stream lengths?
+        let (seconds_since_orc_base, nanoseconds) =
+            self.data.by_ref().zip(self.secondary.by_ref()).next()?;
+        decode_timestamp(seconds_since_orc_base, nanoseconds).transpose()
     }
+}
+
+fn decode_timestamp(
+    seconds_since_orc_base: Result<i64>,
+    nanoseconds: Result<u64>,
+) -> Result<Option<i64>> {
+    let data = seconds_since_orc_base?;
+    let mut nanoseconds = nanoseconds?;
+    // last 3 bits indicate how many trailing zeros were truncated
+    let zeros = nanoseconds & 0x7;
+    nanoseconds >>= 3;
+    // multiply by powers of 10 to get back the trailing zeros
+    if zeros != 0 {
+        nanoseconds *= 10_u64.pow(zeros as u32 + 1);
+    }
+    // convert into nanoseconds since epoch, which Arrow uses as native representation
+    // of timestamps
+    let nanoseconds_since_epoch =
+        (data + TIMESTAMP_BASE_SECONDS_SINCE_EPOCH) * NANOSECONDS_IN_SECOND + (nanoseconds as i64);
+    Ok(Some(nanoseconds_since_epoch))
 }
