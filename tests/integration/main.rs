@@ -180,7 +180,9 @@ fn test_predicate_pushdown() {
 }
 
 #[test]
-#[ignore] // TODO: Why?
+// TODO: Map key/value vs keys/values name issue again
+//       See test1 and empty_file
+#[ignore]
 fn test_seek() {
     test_expected_file("TestOrcFile.testSeek");
 }
@@ -270,7 +272,6 @@ fn orc_split_elim_new() {
 }
 
 #[test]
-#[ignore] // TODO: not yet implemented
 fn over1k_bloom() {
     test_expected_file("over1k_bloom");
 }
