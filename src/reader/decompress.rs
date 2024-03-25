@@ -22,6 +22,10 @@ pub struct Compression {
 }
 
 impl Compression {
+    pub fn compression_type(&self) -> CompressionType {
+        self.compression_type
+    }
+
     pub fn from_proto(
         kind: proto::CompressionKind,
         compression_block_size: Option<u64>,
@@ -61,6 +65,12 @@ pub enum CompressionType {
     Lzo,
     Lz4,
     Zstd,
+}
+
+impl std::fmt::Display for CompressionType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 /// Indicates length of block and whether it's compressed or not.
