@@ -19,6 +19,7 @@ rust-version = "1.70"
 [dependencies]
 arrow = { version = "50", features = ["prettyprint"] }
 bytes = "1.4"
+clap = { version = "4.5.3", features = ["derive"], optional = true }
 fallible-streaming-iterator = { version = "0.1" }
 flate2 = "1"
 futures = { version = "0.3", optional = true, default-features = false, features = ["std"] }
@@ -54,6 +55,7 @@ serde_json = { version = "1.0", default-features = false, features = ["std"] }
 default = ["async"]
 
 async = ["futures", "futures-util", "tokio"]
+cli = ["clap"]
 
 [[bench]]
 name = "arrow_reader"
@@ -63,3 +65,7 @@ required-features = ["async"]
 [[example]]
 name = "datafusion_integration"
 required-features = ["async"]
+
+[[bin]]
+name = "orc-metadata"
+required-features = ["cli"]
