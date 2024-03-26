@@ -153,6 +153,10 @@ impl Stripe {
     pub fn stripe_offset(&self) -> usize {
         self.stripe_offset
     }
+
+    pub fn number_of_rows(&self) -> usize {
+        self.number_of_rows
+    }
 }
 
 #[derive(Debug)]
