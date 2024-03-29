@@ -1,6 +1,8 @@
 use std::fs::File;
+use std::sync::Arc;
 
-use arrow::record_batch::RecordBatch;
+use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
+use arrow::record_batch::{RecordBatch, RecordBatchReader};
 use arrow::util::pretty;
 use datafusion_orc::arrow_reader::{ArrowReader, ArrowReaderBuilder};
 #[cfg(feature = "async")]
@@ -366,6 +368,47 @@ pub fn alltypes_test() {
             "+---------+------+--------+-------------+----------------------+------------+----------------+------------------+--------------------------+----------+------------+",
         ];
         assert_batches_eq(&batches, &expected);
+    }
+}
+
+#[test]
+pub fn timestamps_test() {
+    let path = basic_path("pyarrow_timestamps.orc");
+    let reader = new_arrow_reader_root(&path);
+    let schema = reader.schema();
+    let batches = reader.collect::<Result<Vec<_>, _>>().unwrap();
+
+    let expected = [
+        "+---------------------+----------------------+",
+        "| timestamp_notz      | timestamp_utc        |",
+        "+---------------------+----------------------+",
+        "|                     |                      |",
+        "| 1970-01-01T00:00:00 | 1970-01-01T00:00:00Z |",
+        "| 1970-01-02T23:59:59 | 1970-01-02T23:59:59Z |",
+        "| 1969-12-31T23:59:59 | 1969-12-31T23:59:59Z |",
+        "| 2262-04-11T11:47:16 | 2262-04-11T11:47:16Z |",
+        "| 2001-04-13T02:14:00 | 2001-04-13T02:14:00Z |",
+        "| 2000-01-01T23:10:10 | 2000-01-01T23:10:10Z |",
+        "| 1900-01-01T14:25:14 | 1900-01-01T14:25:14Z |",
+        "+---------------------+----------------------+",
+    ];
+    assert_batches_eq(&batches, &expected);
+
+    let expected_schema = Arc::new(Schema::new(vec![
+        Field::new(
+            "timestamp_notz",
+            DataType::Timestamp(TimeUnit::Nanosecond, None),
+            true,
+        ),
+        Field::new(
+            "timestamp_utc",
+            DataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into())),
+            true,
+        ),
+    ]));
+    assert_eq!(schema, expected_schema);
+    for batch in &batches {
+        assert_eq!(batch.schema(), expected_schema);
     }
 }
 
