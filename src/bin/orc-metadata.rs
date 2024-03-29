@@ -49,9 +49,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!(
                 "writer timezone: {}",
                 stripe
-                    .footer()
-                    .writer_timezone
-                    .clone()
+                    .writer_tz()
+                    .map(|tz| tz.to_string())
                     .unwrap_or("None".to_string())
             );
             println!();

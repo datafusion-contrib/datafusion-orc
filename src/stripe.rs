@@ -90,12 +90,12 @@ impl TryFrom<(&proto::StripeInformation, &proto::StripeStatistics)> for StripeMe
 
 #[derive(Debug)]
 pub struct Stripe {
-    footer: Arc<StripeFooter>,
     columns: Vec<Column>,
     stripe_offset: usize,
     /// <(ColumnId, Kind), Bytes>
     stream_map: Arc<StreamMap>,
     number_of_rows: usize,
+    tz: Option<chrono_tz::Tz>,
 }
 
 impl Stripe {
@@ -113,7 +113,6 @@ impl Stripe {
             .context(IoSnafu)?;
         let footer = Arc::new(deserialize_stripe_footer(&footer, compression)?);
 
-        //TODO(weny): add tz
         let columns = projected_data_type
             .children()
             .iter()
@@ -134,8 +133,13 @@ impl Stripe {
             stream_offset += length;
         }
 
+        let tz: Option<chrono_tz::Tz> = footer
+            .writer_timezone
+            .as_ref()
+            // TODO: make this return error
+            .map(|a| a.parse::<chrono_tz::Tz>().unwrap());
+
         Ok(Self {
-            footer,
             columns,
             stripe_offset: stripe,
             stream_map: Arc::new(StreamMap {
@@ -143,6 +147,7 @@ impl Stripe {
                 compression,
             }),
             number_of_rows: info.number_of_rows() as usize,
+            tz,
         })
     }
 
@@ -163,7 +168,6 @@ impl Stripe {
             .context(IoSnafu)?;
         let footer = Arc::new(deserialize_stripe_footer(&footer, compression)?);
 
-        //TODO(weny): add tz
         let columns = projected_data_type
             .children()
             .iter()
@@ -184,8 +188,13 @@ impl Stripe {
             stream_offset += length;
         }
 
+        let tz: Option<chrono_tz::Tz> = footer
+            .writer_timezone
+            .as_ref()
+            // TODO: make this return error
+            .map(|a| a.parse::<chrono_tz::Tz>().unwrap());
+
         Ok(Self {
-            footer,
             columns,
             stripe_offset: stripe,
             stream_map: Arc::new(StreamMap {
@@ -193,11 +202,8 @@ impl Stripe {
                 compression,
             }),
             number_of_rows: info.number_of_rows() as usize,
+            tz,
         })
-    }
-
-    pub fn footer(&self) -> &StripeFooter {
-        &self.footer
     }
 
     pub fn stripe_offset(&self) -> usize {
@@ -214,6 +220,10 @@ impl Stripe {
 
     pub fn columns(&self) -> &[Column] {
         &self.columns
+    }
+
+    pub fn writer_tz(&self) -> Option<chrono_tz::Tz> {
+        self.tz
     }
 }
 
