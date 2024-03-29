@@ -162,7 +162,7 @@ impl Column {
 /// Makes subsequent operations easier to handle.
 pub fn get_present_vec(column: &Column, stripe: &Stripe) -> Result<Option<Vec<bool>>> {
     stripe
-        .stream_map
+        .stream_map()
         .get_opt(column, Kind::Present)
         .map(|reader| BooleanIter::new(reader).collect::<Result<Vec<_>>>())
         .transpose()

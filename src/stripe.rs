@@ -90,12 +90,12 @@ impl TryFrom<(&proto::StripeInformation, &proto::StripeStatistics)> for StripeMe
 
 #[derive(Debug)]
 pub struct Stripe {
-    pub(crate) footer: Arc<StripeFooter>,
-    pub(crate) columns: Vec<Column>,
-    pub(crate) stripe_offset: usize,
+    footer: Arc<StripeFooter>,
+    columns: Vec<Column>,
+    stripe_offset: usize,
     /// <(ColumnId, Kind), Bytes>
-    pub(crate) stream_map: Arc<StreamMap>,
-    pub(crate) number_of_rows: usize,
+    stream_map: Arc<StreamMap>,
+    number_of_rows: usize,
 }
 
 impl Stripe {
@@ -146,7 +146,57 @@ impl Stripe {
         })
     }
 
-    pub fn footer(&self) -> &Arc<StripeFooter> {
+    // TODO: reduce duplication with above
+    #[cfg(feature = "async")]
+    pub async fn new_async<R: crate::reader::AsyncChunkReader>(
+        reader: &mut R,
+        file_metadata: &Arc<FileMetadata>,
+        projected_data_type: &RootDataType,
+        stripe: usize,
+        info: &StripeMetadata,
+    ) -> Result<Self> {
+        let compression = file_metadata.compression();
+
+        let footer = reader
+            .get_bytes(info.footer_offset(), info.footer_length())
+            .await
+            .context(IoSnafu)?;
+        let footer = Arc::new(deserialize_stripe_footer(&footer, compression)?);
+
+        //TODO(weny): add tz
+        let columns = projected_data_type
+            .children()
+            .iter()
+            .map(|col| Column::new(col.name(), col.data_type(), &footer, info.number_of_rows()))
+            .collect();
+
+        let mut stream_map = HashMap::new();
+        let mut stream_offset = info.offset();
+        for stream in &footer.streams {
+            let length = stream.length();
+            let column_id = stream.column();
+            let kind = stream.kind();
+            let data = Column::read_stream_async(reader, stream_offset, length).await?;
+
+            // TODO(weny): filter out unused streams.
+            stream_map.insert((column_id, kind), data);
+
+            stream_offset += length;
+        }
+
+        Ok(Self {
+            footer,
+            columns,
+            stripe_offset: stripe,
+            stream_map: Arc::new(StreamMap {
+                inner: stream_map,
+                compression,
+            }),
+            number_of_rows: info.number_of_rows() as usize,
+        })
+    }
+
+    pub fn footer(&self) -> &StripeFooter {
         &self.footer
     }
 
@@ -156,6 +206,14 @@ impl Stripe {
 
     pub fn number_of_rows(&self) -> usize {
         self.number_of_rows
+    }
+
+    pub fn stream_map(&self) -> &StreamMap {
+        &self.stream_map
+    }
+
+    pub fn columns(&self) -> &[Column] {
+        &self.columns
     }
 }
 

@@ -1,7 +1,5 @@
-use std::collections::HashMap;
 use std::fmt::Formatter;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use arrow::datatypes::SchemaRef;
@@ -10,15 +8,11 @@ use arrow::record_batch::RecordBatch;
 use futures::future::BoxFuture;
 use futures::{ready, Stream};
 use futures_util::FutureExt;
-use snafu::ResultExt;
 
-use crate::arrow_reader::column::Column;
 use crate::arrow_reader::{Cursor, NaiveStripeDecoder};
-use crate::error::{IoSnafu, Result};
-use crate::reader::metadata::FileMetadata;
+use crate::error::Result;
 use crate::reader::AsyncChunkReader;
-use crate::schema::RootDataType;
-use crate::stripe::{deserialize_stripe_footer, StreamMap, Stripe, StripeMetadata};
+use crate::stripe::{Stripe, StripeMetadata};
 
 pub type BoxedDecoder = Box<dyn Iterator<Item = Result<RecordBatch>> + Send>;
 
@@ -185,56 +179,5 @@ impl<R: AsyncChunkReader + 'static> Stream for ArrowStreamReader<R> {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         self.poll_next_inner(cx)
             .map_err(|e| ArrowError::ExternalError(Box::new(e)))
-    }
-}
-
-impl Stripe {
-    // TODO: reduce duplication with sync version in arrow_reader.rs
-    pub async fn new_async<R: AsyncChunkReader>(
-        reader: &mut R,
-        file_metadata: &Arc<FileMetadata>,
-        projected_data_type: &RootDataType,
-        stripe: usize,
-        info: &StripeMetadata,
-    ) -> Result<Self> {
-        let compression = file_metadata.compression();
-
-        let footer = reader
-            .get_bytes(info.footer_offset(), info.footer_length())
-            .await
-            .context(IoSnafu)?;
-        let footer = Arc::new(deserialize_stripe_footer(&footer, compression)?);
-
-        //TODO(weny): add tz
-        let columns = projected_data_type
-            .children()
-            .iter()
-            .map(|col| Column::new(col.name(), col.data_type(), &footer, info.number_of_rows()))
-            .collect();
-
-        let mut stream_map = HashMap::new();
-        let mut stream_offset = info.offset();
-        for stream in &footer.streams {
-            let length = stream.length();
-            let column_id = stream.column();
-            let kind = stream.kind();
-            let data = Column::read_stream_async(reader, stream_offset, length).await?;
-
-            // TODO(weny): filter out unused streams.
-            stream_map.insert((column_id, kind), data);
-
-            stream_offset += length;
-        }
-
-        Ok(Stripe {
-            footer,
-            columns,
-            stripe_offset: stripe,
-            stream_map: Arc::new(StreamMap {
-                inner: stream_map,
-                compression,
-            }),
-            number_of_rows: info.number_of_rows() as usize,
-        })
     }
 }

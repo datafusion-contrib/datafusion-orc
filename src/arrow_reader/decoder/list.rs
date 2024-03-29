@@ -30,7 +30,7 @@ impl ListArrayDecoder {
         let child = &column.children()[0];
         let inner = array_decoder_factory(child, stripe)?;
 
-        let reader = stripe.stream_map.get(column, Kind::Length);
+        let reader = stripe.stream_map().get(column, Kind::Length);
         let lengths = get_rle_reader(column, reader)?;
 
         let field = Arc::new(Field::from(child));

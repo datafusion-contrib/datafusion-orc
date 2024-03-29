@@ -26,10 +26,10 @@ pub fn new_binary_decoder(column: &Column, stripe: &Stripe) -> Result<Box<dyn Ar
     let present = get_present_vec(column, stripe)?
         .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
 
-    let lengths = stripe.stream_map.get(column, Kind::Length);
+    let lengths = stripe.stream_map().get(column, Kind::Length);
     let lengths = get_rle_reader::<u64, _>(column, lengths)?;
 
-    let bytes = Box::new(stripe.stream_map.get(column, Kind::Data));
+    let bytes = Box::new(stripe.stream_map().get(column, Kind::Data));
     Ok(Box::new(BinaryArrayDecoder::new(bytes, lengths, present)))
 }
 
@@ -39,18 +39,18 @@ pub fn new_string_decoder(column: &Column, stripe: &Stripe) -> Result<Box<dyn Ar
     let present = get_present_vec(column, stripe)?
         .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
 
-    let lengths = stripe.stream_map.get(column, Kind::Length);
+    let lengths = stripe.stream_map().get(column, Kind::Length);
     let lengths = rle_version.get_unsigned_rle_reader(lengths);
 
     match kind {
         ColumnEncodingKind::Direct | ColumnEncodingKind::DirectV2 => {
-            let bytes = Box::new(stripe.stream_map.get(column, Kind::Data));
+            let bytes = Box::new(stripe.stream_map().get(column, Kind::Data));
             Ok(Box::new(DirectStringArrayDecoder::new(
                 bytes, lengths, present,
             )))
         }
         ColumnEncodingKind::Dictionary | ColumnEncodingKind::DictionaryV2 => {
-            let bytes = Box::new(stripe.stream_map.get(column, Kind::DictionaryData));
+            let bytes = Box::new(stripe.stream_map().get(column, Kind::DictionaryData));
             // TODO: is this always guaranteed to be set for all dictionaries?
             let dictionary_size = column.dictionary_size();
             // We assume here we have fetched all the dictionary strings (according to size above)
@@ -58,7 +58,7 @@ pub fn new_string_decoder(column: &Column, stripe: &Stripe) -> Result<Box<dyn Ar
                 .next_byte_batch(dictionary_size, None)?;
             let dictionary_strings = Arc::new(dictionary_strings);
 
-            let indexes = stripe.stream_map.get(column, Kind::Data);
+            let indexes = stripe.stream_map().get(column, Kind::Data);
             let indexes = rle_version.get_unsigned_rle_reader(indexes);
             let indexes = UInt64ArrayDecoder::new(indexes, present);
 
