@@ -33,7 +33,7 @@ impl MapArrayDecoder {
         let values_column = &column.children()[1];
         let values = array_decoder_factory(values_column, stripe)?;
 
-        let reader = stripe.stream_map.get(column, Kind::Length);
+        let reader = stripe.stream_map().get(column, Kind::Length);
         let lengths = get_rle_reader(column, reader)?;
 
         // TODO: should it be "keys" and "values" (like arrow-rs)
