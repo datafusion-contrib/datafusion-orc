@@ -108,6 +108,34 @@ type Float64ArrayDecoder = PrimitiveArrayDecoder<Float64Type>;
 type TimestampArrayDecoder = PrimitiveArrayDecoder<TimestampNanosecondType>;
 type DateArrayDecoder = PrimitiveArrayDecoder<Date32Type>; // TODO: does ORC encode as i64 or i32?
 
+/// Wrapper around TimestampArrayDecoder to allow specifying the timezone of the output
+/// timestamp array
+struct TimestampInstantArrayDecoder(TimestampArrayDecoder);
+
+impl TimestampInstantArrayDecoder {
+    pub fn new(
+        iter: Box<dyn Iterator<Item = Result<i64>> + Send>,
+        present: Option<Box<dyn Iterator<Item = bool> + Send>>,
+    ) -> Self {
+        Self(TimestampArrayDecoder::new(iter, present))
+    }
+}
+
+impl ArrayBatchDecoder for TimestampInstantArrayDecoder {
+    fn next_batch(
+        &mut self,
+        batch_size: usize,
+        parent_present: Option<&[bool]>,
+    ) -> Result<ArrayRef> {
+        let array = self
+            .0
+            .next_primitive_batch(batch_size, parent_present)?
+            .with_timezone("UTC");
+        let array = Arc::new(array) as ArrayRef;
+        Ok(array)
+    }
+}
+
 /// Wrapper around PrimitiveArrayDecoder to allow specifying the precision and scale
 /// of the output decimal array.
 struct DecimalArrayDecoder {
@@ -377,6 +405,7 @@ pub fn array_decoder_factory(
             precision, scale, ..
         } => new_decimal_decoder(column, stripe, *precision, *scale)?,
         DataType::Timestamp { .. } => {
+            // TODO: this needs to consider timezone
             let data = stripe.stream_map.get(column, Kind::Data);
             let data = get_rle_reader(column, data)?;
 
@@ -389,7 +418,20 @@ pub fn array_decoder_factory(
 
             Box::new(TimestampArrayDecoder::new(iter, present))
         }
-        DataType::TimestampWithLocalTimezone { .. } => todo!(),
+        // TODO: duplicated with above
+        DataType::TimestampWithLocalTimezone { .. } => {
+            let data = stripe.stream_map.get(column, Kind::Data);
+            let data = get_rle_reader(column, data)?;
+
+            let secondary = stripe.stream_map.get(column, Kind::Secondary);
+            let secondary = get_rle_reader(column, secondary)?;
+
+            let iter = Box::new(TimestampIterator::new(data, secondary));
+            let present = get_present_vec(column, stripe)?
+                .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+
+            Box::new(TimestampInstantArrayDecoder::new(iter, present))
+        }
         DataType::Date { .. } => {
             let iter = stripe.stream_map.get(column, Kind::Data);
             let iter = get_rle_reader(column, iter)?;

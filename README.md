@@ -16,22 +16,24 @@ Read [Apache ORC](https://orc.apache.org/) in Rust.
 
 ## Current Support
 
-| Column Encoding           | Read | Write | Arrow DataType          |
-| ------------------------- | ---- | ----- | ----------------------- |
-| SmallInt, Int, BigInt     | ✓    |       | Int16, Int32, Int64     |
-| Float, Double             | ✓    |       | Float32, Float64        |
-| String, Char, and VarChar | ✓    |       | Utf8                    |
-| Boolean                   | ✓    |       | Boolean                 |
-| TinyInt                   | ✓    |       | Int8                    |
-| Binary                    | ✓    |       | Binary                  |
-| Decimal                   | ✓    |       | Decimal128              |
-| Date                      | ✓    |       | Date32                  |
-| Timestamp                 | ✓    |       | Timestamp(Nanosecond,_) |
-| Timestamp instant         | ✗    |       |                         |
-| Struct                    | ✓    |       | Struct                  |
-| List                      | ✓    |       | List                    |
-| Map                       | ✓    |       | Map                     |
-| Union                     | ✗    |       |                         |
+| Column Encoding           | Read | Write | Arrow DataType             |
+| ------------------------- | ---- | ----- | -------------------------- |
+| SmallInt, Int, BigInt     | ✓    |       | Int16, Int32, Int64        |
+| Float, Double             | ✓    |       | Float32, Float64           |
+| String, Char, and VarChar | ✓    |       | Utf8                       |
+| Boolean                   | ✓    |       | Boolean                    |
+| TinyInt                   | ✓    |       | Int8                       |
+| Binary                    | ✓    |       | Binary                     |
+| Decimal                   | ✓    |       | Decimal128                 |
+| Date                      | ✓    |       | Date32                     |
+| Timestamp                 | *    |       | Timestamp(Nanosecond,_)    |
+| Timestamp instant         | ✓    |       | Timestamp(Nanosecond, UTC) |
+| Struct                    | ✓    |       | Struct                     |
+| List                      | ✓    |       | List                       |
+| Map                       | ✓    |       | Map                        |
+| Union                     | ✗    |       |                            |
+
+- *Timestamp support is still being worked on
 
 
 ## Compression Support

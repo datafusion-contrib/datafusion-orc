@@ -414,8 +414,7 @@ impl DataType {
             } => ArrowDataType::Decimal128(*precision as u8, *scale as i8), // TODO: safety of cast?
             DataType::Timestamp { .. } => ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
             DataType::TimestampWithLocalTimezone { .. } => {
-                // TODO: get writer timezone
-                ArrowDataType::Timestamp(TimeUnit::Nanosecond, None)
+                ArrowDataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into()))
             }
             DataType::Date { .. } => ArrowDataType::Date32,
             DataType::Struct { children, .. } => {
