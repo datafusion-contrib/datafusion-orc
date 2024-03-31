@@ -49,6 +49,7 @@ pub struct FileMetadata {
     compression: Option<Compression>,
     root_data_type: RootDataType,
     number_of_rows: u64,
+    file_format_version: String,
     /// Statistics of columns across entire file
     column_statistics: Vec<ColumnStatistics>,
     stripes: Vec<StripeMetadata>,
@@ -82,10 +83,21 @@ impl FileMetadata {
             .map(|kv| (kv.name().to_owned(), kv.value().to_vec()))
             .collect::<HashMap<_, _>>();
 
+        let file_format_version = postscript
+            .version
+            .iter()
+            .map(|v| v.to_string() + ".")
+            .collect::<String>();
+        let file_format_version = file_format_version
+            .strip_suffix('.')
+            .unwrap_or("")
+            .to_string();
+
         Ok(Self {
             compression,
             root_data_type,
             number_of_rows,
+            file_format_version,
             column_statistics,
             stripes,
             user_custom_metadata,
@@ -114,6 +126,10 @@ impl FileMetadata {
 
     pub fn user_custom_metadata(&self) -> &HashMap<String, Vec<u8>> {
         &self.user_custom_metadata
+    }
+
+    pub fn file_format_version(&self) -> &str {
+        &self.file_format_version
     }
 }
 
