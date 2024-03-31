@@ -21,6 +21,16 @@ pub struct Compression {
     max_decompressed_block_size: usize,
 }
 
+impl std::fmt::Display for Compression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} ({} byte max block size)",
+            self.compression_type, self.max_decompressed_block_size
+        )
+    }
+}
+
 impl Compression {
     pub fn compression_type(&self) -> CompressionType {
         self.compression_type

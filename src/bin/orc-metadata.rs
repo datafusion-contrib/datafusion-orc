@@ -21,19 +21,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     let metadata = Arc::new(read_metadata(&mut f)?);
 
     // TODO: better way to handle this printing?
-    // TODO: move this display to actual library
     println!(
         "compression: {}",
         metadata
             .compression()
-            .map(|c| c.compression_type().to_string())
+            .map(|c| c.to_string())
             .unwrap_or("None".to_string())
     );
+    println!("file format version: {}", metadata.file_format_version());
     println!("number of rows: {}", metadata.number_of_rows());
     println!("number of stripes: {}", metadata.stripe_metadatas().len());
+
     // TODO: nesting types indentation is messed up
     println!("schema:\n{}", metadata.root_data_type());
-
     if cli.stripes {
         println!("\n=== Stripes ===");
         for (i, stripe_metadata) in metadata.stripe_metadatas().iter().enumerate() {
