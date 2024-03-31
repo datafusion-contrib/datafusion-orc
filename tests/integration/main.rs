@@ -245,7 +245,9 @@ fn nulls_at_end_snappy() {
 }
 
 #[test]
-#[ignore] // TODO: Why?
+// #[ignore]
+// TODO: investigate why this fails (zero metadata length how?)
+//       because of difference with ORC 0.11 vs 0.12?
 fn orc_11_format() {
     test_expected_file("orc-file-11-format");
 }
@@ -256,7 +258,8 @@ fn orc_index_int_string() {
 }
 
 #[test]
-#[ignore] // TODO: not yet implemented
+#[ignore]
+// TODO: how to handle DECIMAL(0, 0) type? Arrow expects non-zero precision
 fn orc_split_elim() {
     test_expected_file("orc_split_elim");
 }
