@@ -354,11 +354,12 @@ impl DataType {
                 }
             }
             Kind::Union => {
+                // TODO: bump this limit up to 256
                 ensure!(
-                    ty.subtypes.len() <= 256,
+                    ty.subtypes.len() <= 127,
                     UnexpectedSnafu {
                         msg: format!(
-                            "Union type for column index {} cannot exceed 256 variants, found {}",
+                            "Union type for column index {} cannot exceed 127 variants, found {}",
                             column_index,
                             ty.subtypes.len()
                         )
@@ -450,11 +451,14 @@ impl DataType {
                     .iter()
                     .enumerate()
                     .map(|(index, variant)| {
-                        // Should be safe as limited to 256 variants total (in from_proto)
+                        // Limited to 127 variants max (in from_proto)
+                        // TODO: Support up to including 256
+                        //       Need to do Union within Union
                         let index = index as u8 as i8;
                         let arrow_dt = variant.to_arrow_data_type();
                         // Name shouldn't matter here (only ORC struct types give names to subtypes anyway)
-                        let field = Arc::new(Field::new(format!("{index}"), arrow_dt, true));
+                        // Using naming convention following PyArrow for easier comparison
+                        let field = Arc::new(Field::new(format!("_union_{index}"), arrow_dt, true));
                         (index, field)
                     })
                     .collect();
