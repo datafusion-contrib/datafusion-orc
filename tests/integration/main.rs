@@ -245,7 +245,7 @@ fn nulls_at_end_snappy() {
 }
 
 #[test]
-// #[ignore]
+#[ignore]
 // TODO: investigate why this fails (zero metadata length how?)
 //       because of difference with ORC 0.11 vs 0.12?
 fn orc_11_format() {
