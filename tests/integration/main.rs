@@ -198,11 +198,9 @@ fn test_predicate_pushdown() {
 }
 
 #[test]
-// TODO: Map key/value vs keys/values name issue again
-//       See test1 and empty_file
-#[ignore]
 fn test_seek() {
-    test_expected_file("TestOrcFile.testSeek");
+    // Compare formatted becase Map key/value field names differs from PyArrow
+    test_expected_file_formatted("TestOrcFile.testSeek");
 }
 
 #[test]
@@ -228,6 +226,8 @@ fn test_timestamp() {
 
 #[test]
 fn test_union_and_timestamp() {
+    // Compare formatted because internal Union representation can differ
+    // even if it represents the same logical values
     test_expected_file_formatted("TestOrcFile.testUnionAndTimestamp");
 }
 
