@@ -199,7 +199,7 @@ fn test_predicate_pushdown() {
 
 #[test]
 fn test_seek() {
-    // Compare formatted becase Map key/value field names differs from PyArrow
+    // Compare formatted because Map key/value field names differs from PyArrow
     test_expected_file_formatted("TestOrcFile.testSeek");
 }
 
