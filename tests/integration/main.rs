@@ -1,11 +1,9 @@
 /// Tests ORC files from the official test suite (`orc/examples/`) against Arrow feather
 /// expected data sourced by reading the ORC files with PyArrow and persisting as feather.
-use std::{fs::File, sync::Arc};
+use std::fs::File;
 
 use arrow::{
-    array::{AsArray, MapArray, StructArray},
     compute::concat_batches,
-    datatypes::{DataType, Field, Fields, Schema},
     ipc::reader::FileReader,
     record_batch::{RecordBatch, RecordBatchReader},
 };
@@ -84,90 +82,14 @@ fn meta_data() {
 
 #[test]
 fn test1() {
-    let actual_batch = read_orc_file("TestOrcFile.test1");
-    let expected_batch = read_feather_file("TestOrcFile.test1");
-
-    // Super ugly code to rename the "key" and "value" in PyArrow MapArray to
-    // "keys" and "values" which arrow-rs does
-    // TODO: surely there is some better way to handle this?
-    let mut fields = expected_batch.schema().fields[..11].to_vec();
-    let entries_fields: Fields = vec![
-        Field::new("keys", DataType::Utf8, false),
-        Field::new(
-            "values",
-            DataType::Struct(
-                vec![
-                    Field::new("int1", DataType::Int32, true),
-                    Field::new("string1", DataType::Utf8, true),
-                ]
-                .into(),
-            ),
-            true,
-        ),
-    ]
-    .into();
-    let entries_field = Arc::new(Field::new_struct("entries", entries_fields.clone(), false));
-    let map_field = Field::new("map", DataType::Map(entries_field.clone(), false), true);
-    fields.push(Arc::new(map_field));
-    let schema = Arc::new(Schema::new(fields));
-    let mut columns = expected_batch.columns()[..11].to_vec();
-    // Have to destruct the MapArray inorder to reconstruct with correct names for
-    // MapArray struct children
-    let map_array = expected_batch.column(11).as_map().clone();
-    let (_, offsets, entries, nulls, ordered) = map_array.into_parts();
-    let entries = {
-        let (_, arrays, nulls) = entries.into_parts();
-        StructArray::new(entries_fields, arrays, nulls)
-    };
-    let map_array = MapArray::new(entries_field, offsets, entries, nulls, ordered);
-    columns.push(Arc::new(map_array));
-    let expected_batch = RecordBatch::try_new(schema, columns).unwrap();
-
-    assert_eq!(actual_batch, expected_batch);
+    // Compare formatted because Map key/value field names differs from PyArrow
+    test_expected_file_formatted("TestOrcFile.test1");
 }
 
 #[test]
 fn empty_file() {
-    let actual_batch = read_orc_file("TestOrcFile.emptyFile");
-    let expected_batch = read_feather_file("TestOrcFile.emptyFile");
-
-    // Super ugly code to rename the "key" and "value" in PyArrow MapArray to
-    // "keys" and "values" which arrow-rs does
-    // TODO: surely there is some better way to handle this?
-    let mut fields = expected_batch.schema().fields[..11].to_vec();
-    let entries_fields: Fields = vec![
-        Field::new("keys", DataType::Utf8, false),
-        Field::new(
-            "values",
-            DataType::Struct(
-                vec![
-                    Field::new("int1", DataType::Int32, true),
-                    Field::new("string1", DataType::Utf8, true),
-                ]
-                .into(),
-            ),
-            true,
-        ),
-    ]
-    .into();
-    let entries_field = Arc::new(Field::new_struct("entries", entries_fields.clone(), false));
-    let map_field = Field::new("map", DataType::Map(entries_field.clone(), false), true);
-    fields.push(Arc::new(map_field));
-    let schema = Arc::new(Schema::new(fields));
-    let mut columns = expected_batch.columns()[..11].to_vec();
-    // Have to destruct the MapArray inorder to reconstruct with correct names for
-    // MapArray struct children
-    let map_array = expected_batch.column(11).as_map().clone();
-    let (_, offsets, entries, nulls, ordered) = map_array.into_parts();
-    let entries = {
-        let (_, arrays, nulls) = entries.into_parts();
-        StructArray::new(entries_fields, arrays, nulls)
-    };
-    let map_array = MapArray::new(entries_field, offsets, entries, nulls, ordered);
-    columns.push(Arc::new(map_array));
-    let expected_batch = RecordBatch::try_new(schema, columns).unwrap();
-
-    assert_eq!(actual_batch, expected_batch);
+    // Compare formatted because Map key/value field names differs from PyArrow
+    test_expected_file_formatted("TestOrcFile.emptyFile");
 }
 
 #[test]
