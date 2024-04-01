@@ -50,6 +50,24 @@ fn test_expected_file(name: &str) {
     assert_eq!(actual_batch, expected_batch);
 }
 
+/// Similar to test_expected_file but compares the pretty formatted RecordBatches.
+/// Useful when checking equality of values but not exact equality (e.g. representation
+/// for UnionArrays can differ internally but logically represent the same values)
+fn test_expected_file_formatted(name: &str) {
+    let actual_batch = read_orc_file(name);
+    let expected_batch = read_feather_file(name);
+
+    let actual = arrow::util::pretty::pretty_format_batches(&[actual_batch])
+        .unwrap()
+        .to_string();
+    let expected = arrow::util::pretty::pretty_format_batches(&[expected_batch])
+        .unwrap()
+        .to_string();
+    let actual_lines = actual.trim().lines().collect::<Vec<_>>();
+    let expected_lines = expected.trim().lines().collect::<Vec<_>>();
+    assert_eq!(&actual_lines, &expected_lines);
+}
+
 #[test]
 fn column_projection() {
     test_expected_file("TestOrcFile.columnProjection");
@@ -209,9 +227,8 @@ fn test_timestamp() {
 }
 
 #[test]
-#[ignore] // TODO: Unions are not supported yet
 fn test_union_and_timestamp() {
-    test_expected_file("TestOrcFile.testUnionAndTimestamp");
+    test_expected_file_formatted("TestOrcFile.testUnionAndTimestamp");
 }
 
 #[test]

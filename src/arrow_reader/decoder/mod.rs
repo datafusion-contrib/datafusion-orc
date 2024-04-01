@@ -24,6 +24,7 @@ use self::map::MapArrayDecoder;
 use self::string::{new_binary_decoder, new_string_decoder};
 use self::struct_decoder::StructArrayDecoder;
 use self::timestamp::{new_timestamp_decoder, new_timestamp_instant_decoder};
+use self::union::UnionArrayDecoder;
 
 use super::column::{get_present_vec, Column};
 
@@ -33,6 +34,7 @@ mod map;
 mod string;
 mod struct_decoder;
 mod timestamp;
+mod union;
 
 struct PrimitiveArrayDecoder<T: ArrowPrimitiveType> {
     iter: Box<dyn Iterator<Item = Result<T::Native>> + Send>,
@@ -390,7 +392,7 @@ pub fn array_decoder_factory(
         DataType::Struct { .. } => Box::new(StructArrayDecoder::new(column, stripe)?),
         DataType::List { .. } => Box::new(ListArrayDecoder::new(column, stripe)?),
         DataType::Map { .. } => Box::new(MapArrayDecoder::new(column, stripe)?),
-        DataType::Union { .. } => todo!(),
+        DataType::Union { .. } => Box::new(UnionArrayDecoder::new(column, stripe)?),
     };
 
     Ok(decoder)

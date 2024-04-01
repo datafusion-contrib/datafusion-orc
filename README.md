@@ -26,15 +26,12 @@ Read [Apache ORC](https://orc.apache.org/) in Rust.
 | Binary                    | ✓    |       | Binary                     |
 | Decimal                   | ✓    |       | Decimal128                 |
 | Date                      | ✓    |       | Date32                     |
-| Timestamp                 | *    |       | Timestamp(Nanosecond,_)    |
+| Timestamp                 | ✓    |       | Timestamp(Nanosecond,_)    |
 | Timestamp instant         | ✓    |       | Timestamp(Nanosecond, UTC) |
 | Struct                    | ✓    |       | Struct                     |
 | List                      | ✓    |       | List                       |
 | Map                       | ✓    |       | Map                        |
-| Union                     | ✗    |       |                            |
-
-- *Timestamp support is still being worked on
-
+| Union                     | ✓    |       | Union(_, Sparse)           |
 
 ## Compression Support
 
