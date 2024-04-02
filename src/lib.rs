@@ -5,7 +5,7 @@
 //!
 //! ```no_run
 //! # use std::fs::File;
-//! # use datafusion_orc::arrow_reader::{ArrowReader, ArrowReaderBuilder};
+//! # use orc_rust::arrow_reader::{ArrowReader, ArrowReaderBuilder};
 //! let file = File::open("/path/to/file.orc").unwrap();
 //! let reader = ArrowReaderBuilder::try_new(file).unwrap().build();
 //! let record_batches = reader.collect::<Result<Vec<_>, _>>().unwrap();

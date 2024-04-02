@@ -1,7 +1,7 @@
 use std::{error::Error, fs::File, path::PathBuf, sync::Arc};
 
 use clap::Parser;
-use datafusion_orc::{reader::metadata::read_metadata, stripe::Stripe};
+use orc_rust::{reader::metadata::read_metadata, stripe::Stripe};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]

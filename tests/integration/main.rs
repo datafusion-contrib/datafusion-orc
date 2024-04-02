@@ -9,7 +9,7 @@ use arrow::{
 };
 use pretty_assertions::assert_eq;
 
-use datafusion_orc::arrow_reader::ArrowReaderBuilder;
+use orc_rust::arrow_reader::ArrowReaderBuilder;
 
 fn read_orc_file(name: &str) -> RecordBatch {
     let path = format!(

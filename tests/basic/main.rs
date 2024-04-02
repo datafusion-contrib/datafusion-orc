@@ -4,12 +4,12 @@ use std::sync::Arc;
 use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
 use arrow::record_batch::{RecordBatch, RecordBatchReader};
 use arrow::util::pretty;
-use datafusion_orc::arrow_reader::{ArrowReader, ArrowReaderBuilder};
-#[cfg(feature = "async")]
-use datafusion_orc::async_arrow_reader::ArrowStreamReader;
-use datafusion_orc::projection::ProjectionMask;
 #[cfg(feature = "async")]
 use futures_util::TryStreamExt;
+use orc_rust::arrow_reader::{ArrowReader, ArrowReaderBuilder};
+#[cfg(feature = "async")]
+use orc_rust::async_arrow_reader::ArrowStreamReader;
+use orc_rust::projection::ProjectionMask;
 
 use crate::misc::{LONG_BOOL_EXPECTED, LONG_STRING_DICT_EXPECTED, LONG_STRING_EXPECTED};
 
