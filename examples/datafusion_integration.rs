@@ -21,8 +21,8 @@ use datafusion::physical_plan::{
 };
 use datafusion::prelude::*;
 use datafusion_expr::{Expr, LogicalPlanBuilder};
-use datafusion_orc::ArrowReaderBuilder;
 use datafusion_physical_expr::PhysicalSortExpr;
+use orc_rust::ArrowReaderBuilder;
 
 use async_trait::async_trait;
 use futures_util::StreamExt;

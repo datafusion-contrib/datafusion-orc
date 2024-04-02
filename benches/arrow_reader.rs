@@ -18,8 +18,8 @@
 use std::fs::File;
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use datafusion_orc::arrow_reader::ArrowReaderBuilder;
 use futures_util::TryStreamExt;
+use orc_rust::arrow_reader::ArrowReaderBuilder;
 
 fn basic_path(path: &str) -> String {
     let dir = env!("CARGO_MANIFEST_DIR");
