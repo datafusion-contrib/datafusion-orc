@@ -1,20 +1,15 @@
-[workspace]
-members = ["gen"]
-
 [package]
-name = "datafusion-orc"
-version = "0.2.43"
+name = "orc-rust"
+version = "0.3.0"
 edition = "2021"
 homepage = "https://github.com/datafusion-contrib/datafusion-orc"
 repository = "https://github.com/datafusion-contrib/datafusion-orc"
-authors = ["Weny <wenymedia@gmail.com>"]
+authors = ["Weny <wenymedia@gmail.com>", "Jeffrey Vo <jeffreyvo@apache.org>"]
 license = "Apache-2.0"
-description = "Implementation of ORC file format"
+description = "Implementation of Apache ORC file format using Apache Arrow in-memory format"
 keywords = ["arrow", "orc", "arrow-rs", "datafusion"]
 include = ["src/**/*.rs", "Cargo.toml"]
 rust-version = "1.70"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 arrow = { version = "50", features = ["prettyprint"] }

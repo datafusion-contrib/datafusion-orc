@@ -1,9 +1,10 @@
 [default.extend-words]
 ue = "ue"
 datas = "datas"
+
 [files]
 extend-exclude = [
-    "corrupted",
+    "tests/**/data/**",
     "format/orc_proto.proto",
     "src/proto.rs"
 ]
