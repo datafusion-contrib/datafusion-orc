@@ -73,7 +73,9 @@ The following table lists how ORC data types are read into Arrow data types:
 | Struct            | Struct                      |
 | List              | List                        |
 | Map               | Map                         |
-| Union             | Union(_, Sparse)            |
+| Union             | Union(_, Sparse)*           |
+
+*Currently only supports a maximum of 127 variants
 
 ## Contributing
 
