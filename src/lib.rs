@@ -14,7 +14,6 @@
 pub mod arrow_reader;
 #[cfg(feature = "async")]
 pub mod async_arrow_reader;
-pub(crate) mod builder;
 pub mod error;
 pub mod projection;
 pub mod proto;
