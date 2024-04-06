@@ -58,7 +58,7 @@ cli = ["clap"]
 name = "arrow_reader"
 harness = false
 required-features = ["async"]
-path = "./benches/datafusion_integration.rs"
+path = "./benches/arrow_reader.rs"
 
 [[example]]
 name = "datafusion_integration"
