@@ -17,11 +17,12 @@ use datafusion::error::Result;
 use datafusion::execution::context::{SessionState, TaskContext};
 use datafusion::execution::object_store::ObjectStoreUrl;
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, SendableRecordBatchStream,
+    DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, Partitioning, PlanProperties,
+    SendableRecordBatchStream,
 };
 use datafusion::prelude::*;
 use datafusion_expr::{Expr, LogicalPlanBuilder};
-use datafusion_physical_expr::PhysicalSortExpr;
+use datafusion_physical_expr::EquivalenceProperties;
 use orc_rust::ArrowReaderBuilder;
 
 use async_trait::async_trait;
@@ -101,11 +102,20 @@ impl TableProvider for OrcDataSource {
 struct OrcExec {
     orc: OrcDataSource,
     schema: SchemaRef,
+    properties: PlanProperties,
 }
 
 impl OrcExec {
     fn new(orc: OrcDataSource, schema: SchemaRef) -> Result<Self> {
-        Ok(Self { orc, schema })
+        Ok(Self {
+            orc,
+            schema: schema.clone(),
+            properties: PlanProperties::new(
+                EquivalenceProperties::new(schema),
+                Partitioning::UnknownPartitioning(1),
+                ExecutionMode::Bounded,
+            ),
+        })
     }
 }
 
@@ -135,12 +145,8 @@ impl ExecutionPlan for OrcExec {
         self.schema.clone()
     }
 
-    fn output_partitioning(&self) -> Partitioning {
-        Partitioning::UnknownPartitioning(1)
-    }
-
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        None
+    fn properties(&self) -> &PlanProperties {
+        &self.properties
     }
 
     fn execute(
