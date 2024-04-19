@@ -1,8 +1,9 @@
 use std::{fs::File, io, path::PathBuf};
 
 use anyhow::Result;
-use arrow::csv;
-use clap::Parser;
+use arrow::{array::RecordBatch, csv, error::ArrowError, json};
+use clap::{Parser, ValueEnum};
+use json::writer::{JsonFormat, LineDelimited};
 use orc_rust::ArrowReaderBuilder;
 
 #[derive(Parser)]
@@ -13,30 +14,75 @@ struct Cli {
     file: PathBuf,
     /// Output file. If not provided output will be printed on console
     #[arg(short, long)]
-    output: Option<PathBuf>,
+    output_file: Option<PathBuf>,
+    /// Output format. If not provided then the output is csv
+    #[arg(value_enum, short, long)]
+    format: Option<FileFormat>,
     // TODO: head=N
     // TODO: convert_dates
-    // TODO: format=[csv|json]
     // TODO: columns="col1,col2"
+}
+
+#[derive(Clone, Debug, ValueEnum)]
+enum FileFormat {
+    /// Output data in csv format
+    Csv,
+    /// Output data in json format
+    Json,
+}
+
+enum OutputWriter<W: io::Write, F: JsonFormat> {
+    Csv(csv::Writer<W>),
+    Json(json::Writer<W, F>),
+}
+
+impl<W, F> OutputWriter<W, F>
+where
+    W: io::Write,
+    F: JsonFormat,
+{
+    fn write(&mut self, batch: &RecordBatch) -> Result<(), ArrowError> {
+        match self {
+            OutputWriter::Csv(w) => w.write(batch),
+            OutputWriter::Json(w) => w.write(batch),
+        }
+    }
+
+    fn finish(&mut self) -> Result<(), ArrowError> {
+        match self {
+            OutputWriter::Csv(_) => Ok(()),
+            OutputWriter::Json(w) => w.finish(),
+        }
+    }
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    // Prepare reader
     let f = File::open(&cli.file)?;
-    let output_writer: Box<dyn io::Write> = if let Some(output) = cli.output {
+    let reader = ArrowReaderBuilder::try_new(f)?.build();
+
+    // Prepare writer
+    let writer: Box<dyn io::Write> = if let Some(output) = cli.output_file {
         Box::new(File::create(output)?)
     } else {
         Box::new(io::stdout())
     };
 
-    let reader = ArrowReaderBuilder::try_new(f)?.build();
-    let mut writer = csv::WriterBuilder::new()
-        .with_header(true)
-        .build(output_writer);
+    let mut output_writer = match cli.format {
+        Some(FileFormat::Json) => {
+            OutputWriter::Json(json::WriterBuilder::new().build::<_, LineDelimited>(writer))
+        }
+        _ => OutputWriter::Csv(csv::WriterBuilder::new().with_header(true).build(writer)),
+    };
 
+    // Convert data
     for batch in reader.flatten() {
-        writer.write(&batch)?;
+        output_writer.write(&batch)?;
     }
+
+    output_writer.finish()?;
 
     Ok(())
 }
