@@ -18,7 +18,9 @@ struct Cli {
     /// Output format. If not provided then the output is csv
     #[arg(value_enum, short, long)]
     format: Option<FileFormat>,
-    // TODO: head=N
+    /// export only first N records
+    #[arg(short, long, value_name = "N")]
+    num_rows: Option<i64>,
     // TODO: convert_dates
     // TODO: columns="col1,col2"
 }
@@ -78,8 +80,18 @@ fn main() -> Result<()> {
     };
 
     // Convert data
-    for batch in reader.flatten() {
+    let mut num_rows = cli.num_rows.unwrap_or(i64::MAX);
+    for mut batch in reader.flatten() {
+        if num_rows < batch.num_rows() as i64 {
+            batch = batch.slice(0, num_rows as usize);
+        }
+          
         output_writer.write(&batch)?;
+
+        num_rows = num_rows - batch.num_rows() as i64;
+        if num_rows <= 0 {
+            break
+        }
     }
 
     output_writer.finish()?;
