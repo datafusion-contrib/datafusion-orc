@@ -11,7 +11,7 @@ use orc_rust::ArrowReaderBuilder;
 struct Cli {
     /// Path to the orc file
     file: PathBuf,
-    /// Output file
+    /// Output file. If not provided output will be printed on console
     #[arg(short, long)]
     output: Option<PathBuf>,
     // TODO: head=N
@@ -24,12 +24,12 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let f = File::open(&cli.file)?;
     let output_writer: Box<dyn io::Write> = if let Some(output) = cli.output {
-        Box::new(File::create(output).unwrap())
+        Box::new(File::create(output)?)
     } else {
         Box::new(io::stdout())
     };
 
-    let reader = ArrowReaderBuilder::try_new(f).unwrap().build();
+    let reader = ArrowReaderBuilder::try_new(f)?.build();
     let mut writer = csv::WriterBuilder::new()
         .with_header(true)
         .build(output_writer);
