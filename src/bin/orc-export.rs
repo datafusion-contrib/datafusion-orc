@@ -85,12 +85,12 @@ fn main() -> Result<()> {
         if num_rows < batch.num_rows() as i64 {
             batch = batch.slice(0, num_rows as usize);
         }
-          
+
         output_writer.write(&batch)?;
 
         num_rows = num_rows - batch.num_rows() as i64;
         if num_rows <= 0 {
-            break
+            break;
         }
     }
 
