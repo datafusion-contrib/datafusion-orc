@@ -1,10 +1,10 @@
 use std::{fs::File, io, path::PathBuf};
 
 use anyhow::Result;
-use arrow::{array::RecordBatch, csv, error::ArrowError, json};
+use arrow::{array::RecordBatch, csv, datatypes::DataType, error::ArrowError, json};
 use clap::{Parser, ValueEnum};
 use json::writer::{JsonFormat, LineDelimited};
-use orc_rust::ArrowReaderBuilder;
+use orc_rust::{reader::metadata::read_metadata, ArrowReaderBuilder};
 
 #[derive(Parser)]
 #[command(name = "orc-export")]
@@ -21,11 +21,10 @@ struct Cli {
     /// export only first N records
     #[arg(short, long, value_name = "N")]
     num_rows: Option<i64>,
-    // TODO: convert_dates
     // TODO: columns="col1,col2"
 }
 
-#[derive(Clone, Debug, ValueEnum)]
+#[derive(Clone, Debug, PartialEq, ValueEnum)]
 enum FileFormat {
     /// Output data in csv format
     Csv,
@@ -62,7 +61,8 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Prepare reader
-    let f = File::open(&cli.file)?;
+    let mut f = File::open(&cli.file)?;
+    let metadata = read_metadata(&mut f)?;
     let reader = ArrowReaderBuilder::try_new(f)?.build();
 
     // Prepare writer
@@ -79,15 +79,39 @@ fn main() -> Result<()> {
         _ => OutputWriter::Csv(csv::WriterBuilder::new().with_header(true).build(writer)),
     };
 
+    // Select columns which should be exported (Binary and Decimal are not supported)
+    let is_json = cli.format == Some(FileFormat::Json);
+    let skip_cols: Vec<usize> = metadata
+        .root_data_type()
+        .children()
+        .iter()
+        .enumerate()
+        .filter(|(_, nc)| match nc.data_type().to_arrow_data_type() {
+            DataType::Binary => true,
+            DataType::Decimal128(_, _) | DataType::Decimal256(_, _) => is_json,
+            _ => false,
+        })
+        .map(|(i, _)| i)
+        .rev()
+        .collect();
+
     // Convert data
     let mut num_rows = cli.num_rows.unwrap_or(i64::MAX);
     for mut batch in reader.flatten() {
+        // Restrict rows
         if num_rows < batch.num_rows() as i64 {
             batch = batch.slice(0, num_rows as usize);
         }
 
+        // Restrict column
+        for i in &skip_cols {
+            batch.remove_column(*i);
+        }
+
+        // Save
         output_writer.write(&batch)?;
 
+        // Have we reached limit on number of rows?
         num_rows = num_rows - batch.num_rows() as i64;
         if num_rows <= 0 {
             break;
