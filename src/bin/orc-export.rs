@@ -21,7 +21,9 @@ struct Cli {
     /// export only first N records
     #[arg(short, long, value_name = "N")]
     num_rows: Option<i64>,
-    // TODO: columns="col1,col2"
+    /// export only provided columns. Comma separated list
+    #[arg(short, long, value_delimiter = ',')]
+    columns: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, PartialEq, ValueEnum)]
@@ -89,7 +91,13 @@ fn main() -> Result<()> {
         .filter(|(_, nc)| match nc.data_type().to_arrow_data_type() {
             DataType::Binary => true,
             DataType::Decimal128(_, _) | DataType::Decimal256(_, _) => is_json,
-            _ => false,
+            _ => {
+                if let Some(cols) = &cli.columns {
+                    !cols.iter().any(|c| nc.name().eq(c))
+                } else {
+                    false
+                }
+            }
         })
         .map(|(i, _)| i)
         .rev()
