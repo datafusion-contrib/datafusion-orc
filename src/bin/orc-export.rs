@@ -4,7 +4,7 @@ use anyhow::Result;
 use arrow::{array::RecordBatch, csv, datatypes::DataType, error::ArrowError, json};
 use clap::{Parser, ValueEnum};
 use json::writer::{JsonFormat, LineDelimited};
-use orc_rust::{reader::metadata::read_metadata, ArrowReaderBuilder};
+use orc_rust::{projection::ProjectionMask, reader::metadata::read_metadata, ArrowReaderBuilder};
 
 #[derive(Parser)]
 #[command(name = "orc-export")]
@@ -16,11 +16,11 @@ struct Cli {
     #[arg(short, long)]
     output_file: Option<PathBuf>,
     /// Output format. If not provided then the output is csv
-    #[arg(value_enum, short, long)]
-    format: Option<FileFormat>,
+    #[arg(value_enum, short, long, default_value_t = FileFormat::Csv)]
+    format: FileFormat,
     /// export only first N records
     #[arg(short, long, value_name = "N")]
-    num_rows: Option<i64>,
+    num_rows: Option<u64>,
     /// export only provided columns. Comma separated list
     #[arg(short, long, value_delimiter = ',')]
     columns: Option<Vec<String>>,
@@ -65,7 +65,34 @@ fn main() -> Result<()> {
     // Prepare reader
     let mut f = File::open(&cli.file)?;
     let metadata = read_metadata(&mut f)?;
-    let reader = ArrowReaderBuilder::try_new(f)?.build();
+
+    // Select columns which should be exported (Binary and Decimal are not supported)
+    let cols: Vec<usize> = metadata
+        .root_data_type()
+        .children()
+        .iter()
+        .enumerate()
+        // TODO: handle nested types
+        .filter(|(_, nc)| match nc.data_type().to_arrow_data_type() {
+            DataType::Binary => false,
+            DataType::Decimal128(_, _) | DataType::Decimal256(_, _) => {
+                matches!(cli.format, FileFormat::Csv)
+            }
+            _ => {
+                if let Some(cols) = &cli.columns {
+                    cols.iter().any(|c| nc.name().eq(c))
+                } else {
+                    true
+                }
+            }
+        })
+        .map(|(i, _)| i)
+        .collect();
+
+    let projection = ProjectionMask::roots(metadata.root_data_type(), cols);
+    let reader = ArrowReaderBuilder::try_new(f)?
+        .with_projection(projection)
+        .build();
 
     // Prepare writer
     let writer: Box<dyn io::Write> = if let Some(output) = cli.output_file {
@@ -75,53 +102,27 @@ fn main() -> Result<()> {
     };
 
     let mut output_writer = match cli.format {
-        Some(FileFormat::Json) => {
+        FileFormat::Json => {
             OutputWriter::Json(json::WriterBuilder::new().build::<_, LineDelimited>(writer))
         }
         _ => OutputWriter::Csv(csv::WriterBuilder::new().with_header(true).build(writer)),
     };
 
-    // Select columns which should be exported (Binary and Decimal are not supported)
-    let is_json = cli.format == Some(FileFormat::Json);
-    let skip_cols: Vec<usize> = metadata
-        .root_data_type()
-        .children()
-        .iter()
-        .enumerate()
-        .filter(|(_, nc)| match nc.data_type().to_arrow_data_type() {
-            DataType::Binary => true,
-            DataType::Decimal128(_, _) | DataType::Decimal256(_, _) => is_json,
-            _ => {
-                if let Some(cols) = &cli.columns {
-                    !cols.iter().any(|c| nc.name().eq(c))
-                } else {
-                    false
-                }
-            }
-        })
-        .map(|(i, _)| i)
-        .rev()
-        .collect();
-
     // Convert data
-    let mut num_rows = cli.num_rows.unwrap_or(i64::MAX);
+    let mut num_rows = cli.num_rows.unwrap_or(u64::MAX);
     for mut batch in reader.flatten() {
         // Restrict rows
-        if num_rows < batch.num_rows() as i64 {
+        if num_rows < batch.num_rows() as u64 {
             batch = batch.slice(0, num_rows as usize);
-        }
-
-        // Restrict column
-        for i in &skip_cols {
-            batch.remove_column(*i);
         }
 
         // Save
         output_writer.write(&batch)?;
 
-        // Have we reached limit on number of rows?
-        num_rows = num_rows - batch.num_rows() as i64;
-        if num_rows <= 0 {
+        // Have we reached limit on the number of rows?
+        if num_rows > batch.num_rows() as u64 {
+            num_rows = num_rows - batch.num_rows() as u64;
+        } else {
             break;
         }
     }
