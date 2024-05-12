@@ -95,10 +95,9 @@ enum CompressionHeader {
 /// compressed or not.
 fn decode_header(bytes: [u8; 3]) -> CompressionHeader {
     let bytes = [bytes[0], bytes[1], bytes[2], 0];
-    let length = u32::from_le_bytes(bytes);
-    let is_original = length & 1 == 1;
-    // to clear the is_original bit
-    let length = length >> 1;
+    let length_and_flag = u32::from_le_bytes(bytes);
+    let is_original = length_and_flag & 1 == 1;
+    let length = length_and_flag >> 1;
     if is_original {
         CompressionHeader::Original(length)
     } else {

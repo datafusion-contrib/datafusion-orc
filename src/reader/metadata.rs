@@ -189,13 +189,13 @@ pub fn read_metadata<R: ChunkReader>(reader: &mut R) -> Result<FileMetadata> {
     };
 
     let footer = deserialize_footer(
-        &tail_bytes[tail_bytes.len() - footer_length as usize..],
+        tail_bytes.slice(tail_bytes.len() - footer_length as usize..),
         compression,
     )?;
     tail_bytes.truncate(tail_bytes.len() - footer_length as usize);
 
     let metadata = deserialize_footer_metadata(
-        &tail_bytes[tail_bytes.len() - metadata_length as usize..],
+        tail_bytes.slice(tail_bytes.len() - metadata_length as usize..),
         compression,
     )?;
 
@@ -263,32 +263,30 @@ pub async fn read_metadata_async<R: super::AsyncChunkReader>(
     };
 
     let footer = deserialize_footer(
-        &tail_bytes[tail_bytes.len() - footer_length as usize..],
+        tail_bytes.slice(tail_bytes.len() - footer_length as usize..),
         compression,
     )?;
     tail_bytes.truncate(tail_bytes.len() - footer_length as usize);
 
     let metadata = deserialize_footer_metadata(
-        &tail_bytes[tail_bytes.len() - metadata_length as usize..],
+        tail_bytes.slice(tail_bytes.len() - metadata_length as usize..),
         compression,
     )?;
 
     FileMetadata::from_proto(&postscript, &footer, &metadata)
 }
 
-fn deserialize_footer(bytes: &[u8], compression: Option<Compression>) -> Result<Footer> {
+fn deserialize_footer(bytes: Bytes, compression: Option<Compression>) -> Result<Footer> {
     let mut buffer = vec![];
-    // TODO: refactor to not need Bytes::copy_from_slice
-    Decompressor::new(Bytes::copy_from_slice(bytes), compression, vec![])
+    Decompressor::new(bytes, compression, vec![])
         .read_to_end(&mut buffer)
         .context(error::IoSnafu)?;
     Footer::decode(buffer.as_slice()).context(error::DecodeProtoSnafu)
 }
 
-fn deserialize_footer_metadata(bytes: &[u8], compression: Option<Compression>) -> Result<Metadata> {
+fn deserialize_footer_metadata(bytes: Bytes, compression: Option<Compression>) -> Result<Metadata> {
     let mut buffer = vec![];
-    // TODO: refactor to not need Bytes::copy_from_slice
-    Decompressor::new(Bytes::copy_from_slice(bytes), compression, vec![])
+    Decompressor::new(bytes, compression, vec![])
         .read_to_end(&mut buffer)
         .context(error::IoSnafu)?;
     Metadata::decode(buffer.as_slice()).context(error::DecodeProtoSnafu)
