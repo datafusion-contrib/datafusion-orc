@@ -1,5 +1,6 @@
 use std::fmt::Formatter;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use arrow::datatypes::SchemaRef;
@@ -9,10 +10,13 @@ use futures::future::BoxFuture;
 use futures::{ready, Stream};
 use futures_util::FutureExt;
 
+use crate::arrow_reader::create_arrow_schema;
 use crate::arrow_reader::{decoder::NaiveStripeDecoder, Cursor};
 use crate::error::Result;
+use crate::reader::metadata::read_metadata_async;
 use crate::reader::AsyncChunkReader;
 use crate::stripe::{Stripe, StripeMetadata};
+use crate::ArrowReaderBuilder;
 
 type BoxedDecoder = Box<dyn Iterator<Item = Result<RecordBatch>> + Send>;
 
@@ -173,5 +177,27 @@ impl<R: AsyncChunkReader + 'static> Stream for ArrowStreamReader<R> {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         self.poll_next_inner(cx)
             .map_err(|e| ArrowError::ExternalError(Box::new(e)))
+    }
+}
+
+impl<R: AsyncChunkReader + 'static> ArrowReaderBuilder<R> {
+    pub async fn try_new_async(mut reader: R) -> Result<Self> {
+        let file_metadata = Arc::new(read_metadata_async(&mut reader).await?);
+        Ok(Self::new(reader, file_metadata))
+    }
+
+    pub fn build_async(self) -> ArrowStreamReader<R> {
+        let projected_data_type = self
+            .file_metadata()
+            .root_data_type()
+            .project(&self.projection);
+        let cursor = Cursor {
+            reader: self.reader,
+            file_metadata: self.file_metadata,
+            projected_data_type,
+            stripe_index: 0,
+        };
+        let schema_ref = Arc::new(create_arrow_schema(&cursor));
+        ArrowStreamReader::new(cursor, self.batch_size, schema_ref)
     }
 }
