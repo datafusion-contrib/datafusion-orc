@@ -8,10 +8,8 @@ use arrow::compute::kernels::cast;
 use arrow::datatypes::{ByteArrayType, DataType, GenericBinaryType, GenericStringType};
 use snafu::ResultExt;
 
+use crate::array_decoder::{create_null_buffer, derive_present_vec, populate_lengths_with_nulls};
 use crate::arrow_reader::column::{get_present_vec, Column};
-use crate::arrow_reader::decoder::{
-    create_null_buffer, derive_present_vec, populate_lengths_with_nulls, UInt64ArrayDecoder,
-};
 use crate::error::{ArrowSnafu, IoSnafu, Result};
 use crate::proto::column_encoding::Kind as ColumnEncodingKind;
 use crate::proto::stream::Kind;
@@ -19,7 +17,7 @@ use crate::reader::decode::{get_rle_reader, RleVersion};
 use crate::reader::decompress::Decompressor;
 use crate::stripe::Stripe;
 
-use super::ArrayBatchDecoder;
+use super::{ArrayBatchDecoder, UInt64ArrayDecoder};
 
 // TODO: reduce duplication with string below
 pub fn new_binary_decoder(column: &Column, stripe: &Stripe) -> Result<Box<dyn ArrayBatchDecoder>> {

@@ -5,6 +5,7 @@ use arrow::datatypes::{Schema, SchemaRef};
 use arrow::error::ArrowError;
 use arrow::record_batch::{RecordBatch, RecordBatchReader};
 
+use crate::array_decoder::NaiveStripeDecoder;
 use crate::error::Result;
 use crate::projection::ProjectionMask;
 use crate::reader::metadata::{read_metadata, FileMetadata};
@@ -12,10 +13,7 @@ use crate::reader::ChunkReader;
 use crate::schema::RootDataType;
 use crate::stripe::Stripe;
 
-use self::decoder::NaiveStripeDecoder;
-
 pub(crate) mod column;
-pub(crate) mod decoder;
 
 const DEFAULT_BATCH_SIZE: usize = 8192;
 

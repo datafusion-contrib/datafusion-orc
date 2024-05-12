@@ -9,6 +9,7 @@ use arrow::datatypes::{
 use arrow::record_batch::RecordBatch;
 use snafu::ResultExt;
 
+use crate::arrow_reader::column::{get_present_vec, Column};
 use crate::error::{self, ArrowSnafu, Result};
 use crate::proto::stream::Kind;
 use crate::reader::decode::boolean_rle::BooleanIter;
@@ -25,8 +26,6 @@ use self::string::{new_binary_decoder, new_string_decoder};
 use self::struct_decoder::StructArrayDecoder;
 use self::timestamp::{new_timestamp_decoder, new_timestamp_instant_decoder};
 use self::union::UnionArrayDecoder;
-
-use super::column::{get_present_vec, Column};
 
 mod decimal;
 mod list;
