@@ -7,16 +7,10 @@ use arrow::record_batch::{RecordBatch, RecordBatchReader};
 
 use crate::error::Result;
 use crate::projection::ProjectionMask;
-#[cfg(feature = "async")]
-use crate::reader::metadata::read_metadata_async;
 use crate::reader::metadata::{read_metadata, FileMetadata};
-#[cfg(feature = "async")]
-use crate::reader::AsyncChunkReader;
 use crate::reader::ChunkReader;
 use crate::schema::RootDataType;
 use crate::stripe::Stripe;
-#[cfg(feature = "async")]
-use crate::ArrowStreamReader;
 
 use self::decoder::NaiveStripeDecoder;
 
@@ -26,14 +20,14 @@ pub(crate) mod decoder;
 const DEFAULT_BATCH_SIZE: usize = 8192;
 
 pub struct ArrowReaderBuilder<R> {
-    reader: R,
-    file_metadata: Arc<FileMetadata>,
-    batch_size: usize,
-    projection: ProjectionMask,
+    pub(crate) reader: R,
+    pub(crate) file_metadata: Arc<FileMetadata>,
+    pub(crate) batch_size: usize,
+    pub(crate) projection: ProjectionMask,
 }
 
 impl<R> ArrowReaderBuilder<R> {
-    fn new(reader: R, file_metadata: Arc<FileMetadata>) -> Self {
+    pub(crate) fn new(reader: R, file_metadata: Arc<FileMetadata>) -> Self {
         Self {
             reader,
             file_metadata,
@@ -84,29 +78,6 @@ impl<R: ChunkReader> ArrowReaderBuilder<R> {
     }
 }
 
-#[cfg(feature = "async")]
-impl<R: AsyncChunkReader + 'static> ArrowReaderBuilder<R> {
-    pub async fn try_new_async(mut reader: R) -> Result<Self> {
-        let file_metadata = Arc::new(read_metadata_async(&mut reader).await?);
-        Ok(Self::new(reader, file_metadata))
-    }
-
-    pub fn build_async(self) -> ArrowStreamReader<R> {
-        let projected_data_type = self
-            .file_metadata
-            .root_data_type()
-            .project(&self.projection);
-        let cursor = Cursor {
-            reader: self.reader,
-            file_metadata: self.file_metadata,
-            projected_data_type,
-            stripe_index: 0,
-        };
-        let schema_ref = Arc::new(create_arrow_schema(&cursor));
-        ArrowStreamReader::new(cursor, self.batch_size, schema_ref)
-    }
-}
-
 pub struct ArrowReader<R> {
     cursor: Cursor<R>,
     schema_ref: SchemaRef,
@@ -135,7 +106,7 @@ impl<R: ChunkReader> ArrowReader<R> {
     }
 }
 
-fn create_arrow_schema<R>(cursor: &Cursor<R>) -> Schema {
+pub(crate) fn create_arrow_schema<R>(cursor: &Cursor<R>) -> Schema {
     let metadata = cursor
         .file_metadata
         .user_custom_metadata()
