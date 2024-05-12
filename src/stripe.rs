@@ -5,9 +5,8 @@ use prost::Message;
 use snafu::ResultExt;
 
 use crate::{
-    arrow_reader::column::Column,
-    error::Result,
-    error::{self, IoSnafu},
+    column::Column,
+    error::{self, IoSnafu, Result},
     proto::{self, stream::Kind, StripeFooter},
     reader::{
         decompress::{Compression, Decompressor},

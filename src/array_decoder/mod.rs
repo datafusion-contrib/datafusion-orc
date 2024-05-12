@@ -9,7 +9,7 @@ use arrow::datatypes::{
 use arrow::record_batch::RecordBatch;
 use snafu::ResultExt;
 
-use crate::arrow_reader::column::{get_present_vec, Column};
+use crate::column::{get_present_vec, Column};
 use crate::error::{self, ArrowSnafu, Result};
 use crate::proto::stream::Kind;
 use crate::reader::decode::boolean_rle::BooleanIter;

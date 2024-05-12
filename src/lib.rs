@@ -18,6 +18,7 @@ mod array_decoder;
 pub mod arrow_reader;
 #[cfg(feature = "async")]
 pub mod async_arrow_reader;
+mod column;
 pub mod error;
 pub mod projection;
 mod proto;

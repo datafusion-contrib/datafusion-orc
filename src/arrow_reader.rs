@@ -13,8 +13,6 @@ use crate::reader::ChunkReader;
 use crate::schema::RootDataType;
 use crate::stripe::Stripe;
 
-pub(crate) mod column;
-
 const DEFAULT_BATCH_SIZE: usize = 8192;
 
 pub struct ArrowReaderBuilder<R> {

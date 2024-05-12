@@ -7,12 +7,9 @@ use arrow::{
 };
 use snafu::ResultExt;
 
-use crate::error::Result;
 use crate::stripe::Stripe;
-use crate::{
-    arrow_reader::column::{get_present_vec, Column},
-    error::ArrowSnafu,
-};
+use crate::{column::get_present_vec, error::Result};
+use crate::{column::Column, error::ArrowSnafu};
 
 use super::{array_decoder_factory, derive_present_vec, ArrayBatchDecoder};
 
