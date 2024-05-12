@@ -6,7 +6,7 @@ use arrow::datatypes::{Field, Fields};
 use snafu::ResultExt;
 
 use crate::array_decoder::{derive_present_vec, populate_lengths_with_nulls};
-use crate::arrow_reader::column::{get_present_vec, Column};
+use crate::column::{get_present_vec, Column};
 use crate::error::{ArrowSnafu, Result};
 use crate::proto::stream::Kind;
 use crate::reader::decode::get_rle_reader;

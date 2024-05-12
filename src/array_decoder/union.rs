@@ -5,11 +5,12 @@ use arrow::buffer::Buffer;
 use arrow::datatypes::Field;
 use snafu::ResultExt;
 
-use crate::arrow_reader::column::get_present_vec;
+use crate::column::{get_present_vec, Column};
 use crate::error::ArrowSnafu;
+use crate::error::Result;
 use crate::proto::stream::Kind;
 use crate::reader::decode::byte_rle::ByteRleIter;
-use crate::{arrow_reader::column::Column, error::Result, stripe::Stripe};
+use crate::stripe::Stripe;
 
 use super::{array_decoder_factory, derive_present_vec, ArrayBatchDecoder};
 

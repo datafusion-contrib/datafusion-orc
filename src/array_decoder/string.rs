@@ -9,7 +9,7 @@ use arrow::datatypes::{ByteArrayType, DataType, GenericBinaryType, GenericString
 use snafu::ResultExt;
 
 use crate::array_decoder::{create_null_buffer, derive_present_vec, populate_lengths_with_nulls};
-use crate::arrow_reader::column::{get_present_vec, Column};
+use crate::column::{get_present_vec, Column};
 use crate::error::{ArrowSnafu, IoSnafu, Result};
 use crate::proto::column_encoding::Kind as ColumnEncodingKind;
 use crate::proto::stream::Kind;

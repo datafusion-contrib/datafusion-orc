@@ -5,7 +5,7 @@ use std::ops::{BitOrAssign, ShlAssign};
 use num::traits::CheckedShl;
 use num::PrimInt;
 
-use crate::arrow_reader::column::Column;
+use crate::column::Column;
 use crate::error::{InvalidColumnEncodingSnafu, Result};
 use crate::proto::column_encoding::Kind as ProtoColumnKind;
 

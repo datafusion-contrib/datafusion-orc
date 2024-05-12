@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    arrow_reader::column::{get_present_vec, Column},
+    column::{get_present_vec, Column},
     error::Result,
     proto::stream::Kind,
     reader::decode::{get_rle_reader, timestamp::TimestampIterator},

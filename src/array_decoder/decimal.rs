@@ -1,11 +1,11 @@
 use std::cmp::Ordering;
 
-use crate::arrow_reader::column::get_present_vec;
-use crate::error::Result;
+use crate::column::get_present_vec;
 use crate::proto::stream::Kind;
 use crate::reader::decode::decimal::UnboundedVarintStreamDecoder;
+use crate::reader::decode::get_rle_reader;
 use crate::stripe::Stripe;
-use crate::{arrow_reader::column::Column, reader::decode::get_rle_reader};
+use crate::{column::Column, error::Result};
 
 use super::{ArrayBatchDecoder, DecimalArrayDecoder};
 
