@@ -14,8 +14,6 @@ use crate::reader::ChunkReader;
 use crate::schema::DataType;
 use crate::stripe::Stripe;
 
-pub mod timestamp;
-
 #[derive(Debug)]
 pub struct Column {
     number_of_rows: u64,

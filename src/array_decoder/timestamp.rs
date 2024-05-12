@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use crate::{
-    arrow_reader::column::{get_present_vec, timestamp::TimestampIterator, Column},
+    arrow_reader::column::{get_present_vec, Column},
     error::Result,
     proto::stream::Kind,
-    reader::decode::get_rle_reader,
+    reader::decode::{get_rle_reader, timestamp::TimestampIterator},
     stripe::Stripe,
 };
 use arrow::{array::ArrayRef, datatypes::TimestampNanosecondType};

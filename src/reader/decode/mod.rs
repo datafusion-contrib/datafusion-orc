@@ -19,6 +19,7 @@ pub mod decimal;
 pub mod float;
 pub mod rle_v1;
 pub mod rle_v2;
+pub mod timestamp;
 mod util;
 
 #[derive(Clone, Copy, Debug)]
