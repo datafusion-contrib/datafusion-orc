@@ -10,8 +10,8 @@ use futures::future::BoxFuture;
 use futures::{ready, Stream};
 use futures_util::FutureExt;
 
-use crate::arrow_reader::create_arrow_schema;
-use crate::arrow_reader::{decoder::NaiveStripeDecoder, Cursor};
+use crate::array_decoder::NaiveStripeDecoder;
+use crate::arrow_reader::{create_arrow_schema, Cursor};
 use crate::error::Result;
 use crate::reader::metadata::read_metadata_async;
 use crate::reader::AsyncChunkReader;

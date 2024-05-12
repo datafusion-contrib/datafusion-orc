@@ -14,6 +14,7 @@
 //! See the [`datafusion`] module for information on how to integrate with
 //! [Apache DataFusion](https://datafusion.apache.org/).
 
+mod array_decoder;
 pub mod arrow_reader;
 #[cfg(feature = "async")]
 pub mod async_arrow_reader;

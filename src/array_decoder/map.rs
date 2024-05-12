@@ -5,14 +5,14 @@ use arrow::buffer::{NullBuffer, OffsetBuffer};
 use arrow::datatypes::{Field, Fields};
 use snafu::ResultExt;
 
+use crate::array_decoder::{derive_present_vec, populate_lengths_with_nulls};
 use crate::arrow_reader::column::{get_present_vec, Column};
-use crate::arrow_reader::decoder::{
-    array_decoder_factory, derive_present_vec, populate_lengths_with_nulls, ArrayBatchDecoder,
-};
-use crate::arrow_reader::Stripe;
 use crate::error::{ArrowSnafu, Result};
 use crate::proto::stream::Kind;
 use crate::reader::decode::get_rle_reader;
+use crate::stripe::Stripe;
+
+use super::{array_decoder_factory, ArrayBatchDecoder};
 
 pub struct MapArrayDecoder {
     keys: Box<dyn ArrayBatchDecoder>,

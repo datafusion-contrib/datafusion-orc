@@ -1,14 +1,13 @@
 use std::cmp::Ordering;
 
 use crate::arrow_reader::column::get_present_vec;
-use crate::arrow_reader::decoder::DecimalArrayDecoder;
 use crate::error::Result;
 use crate::proto::stream::Kind;
 use crate::reader::decode::decimal::UnboundedVarintStreamDecoder;
 use crate::stripe::Stripe;
 use crate::{arrow_reader::column::Column, reader::decode::get_rle_reader};
 
-use super::ArrayBatchDecoder;
+use super::{ArrayBatchDecoder, DecimalArrayDecoder};
 
 pub fn new_decimal_decoder(
     column: &Column,
