@@ -121,3 +121,44 @@ impl SessionContextOrcExt for SessionContext {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use datafusion::assert_batches_sorted_eq;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn dataframe() -> Result<()> {
+        let ctx = SessionContext::new();
+        ctx.register_orc(
+            "table1",
+            "tests/basic/data/alltypes.snappy.orc",
+            OrcReadOptions::default(),
+        )
+        .await?;
+
+        let actual = ctx
+            .sql("select int16, utf8 from table1 limit 5")
+            .await?
+            .collect()
+            .await?;
+
+        assert_batches_sorted_eq!(
+            [
+                "+-------+--------+",
+                "| int16 | utf8   |",
+                "+-------+--------+",
+                "|       |        |",
+                "| -1    |        |",
+                "| 0     |        |",
+                "| 1     | a      |",
+                "| 32767 | encode |",
+                "+-------+--------+",
+            ],
+            &actual
+        );
+
+        Ok(())
+    }
+}
