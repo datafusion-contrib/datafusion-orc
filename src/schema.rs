@@ -63,7 +63,7 @@ impl RootDataType {
     }
 
     /// Construct from protobuf types.
-    pub fn from_proto(types: &[proto::Type]) -> Result<Self> {
+    pub(crate) fn from_proto(types: &[proto::Type]) -> Result<Self> {
         ensure!(!types.is_empty(), NoTypesSnafu {});
         let children = parse_struct_children_from_proto(types, 0)?;
         Ok(Self { children })

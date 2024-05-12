@@ -1,4 +1,4 @@
-pub mod decode;
+pub(crate) mod decode;
 pub mod decompress;
 pub mod metadata;
 

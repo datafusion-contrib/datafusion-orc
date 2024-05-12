@@ -1,5 +1,5 @@
 // Modified from https://github.com/DataEngineeringLabs/orc-format/blob/416490db0214fc51d53289253c0ee91f7fc9bc17/src/read/decompress/mod.rs
-//! Contains [`Decompressor`]
+//! Related code for handling decompression of ORC files.
 
 use std::io::Read;
 
@@ -36,7 +36,7 @@ impl Compression {
         self.compression_type
     }
 
-    pub fn from_proto(
+    pub(crate) fn from_proto(
         kind: proto::CompressionKind,
         compression_block_size: Option<u64>,
     ) -> Option<Self> {
@@ -174,13 +174,6 @@ impl DecompressorIter {
             scratch,
         }
     }
-
-    pub fn into_inner(self) -> Vec<u8> {
-        match self.current {
-            Some(State::Compressed(some)) => some,
-            _ => self.scratch,
-        }
-    }
 }
 
 impl FallibleStreamingIterator for DecompressorIter {
@@ -232,7 +225,7 @@ impl FallibleStreamingIterator for DecompressorIter {
 }
 
 /// A [`Read`]er fulfilling the ORC specification of reading compressed data.
-pub struct Decompressor {
+pub(crate) struct Decompressor {
     decompressor: DecompressorIter,
     offset: usize,
     is_first: bool,
@@ -246,11 +239,6 @@ impl Decompressor {
             offset: 0,
             is_first: true,
         }
-    }
-
-    /// Returns the internal memory region, so it can be re-used
-    pub fn into_inner(self) -> Vec<u8> {
-        self.decompressor.into_inner()
     }
 }
 

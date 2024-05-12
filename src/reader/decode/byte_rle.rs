@@ -25,10 +25,6 @@ impl<R: Read> ByteRleIter<R> {
         }
     }
 
-    pub fn into_inner(self) -> R {
-        self.reader
-    }
-
     fn read_byte(&mut self) -> Result<u8> {
         read_u8(&mut self.reader)
     }

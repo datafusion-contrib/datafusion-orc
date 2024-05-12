@@ -2,6 +2,7 @@
 //!
 //! File tail structure:
 //!
+//! ```
 //! ------------------
 //! |    Metadata    |
 //! |                |
@@ -11,6 +12,7 @@
 //! ------------------
 //! |  Postscript  |X|
 //! ------------------
+//! ```
 //!
 //! Where X is last byte in file indicating
 //! Postscript length in bytes.
