@@ -108,7 +108,7 @@ impl Stripe {
         let footer = reader
             .get_bytes(info.footer_offset(), info.footer_length())
             .context(IoSnafu)?;
-        let footer = Arc::new(deserialize_stripe_footer(&footer, compression)?);
+        let footer = Arc::new(deserialize_stripe_footer(footer, compression)?);
 
         let columns = projected_data_type
             .children()
@@ -161,7 +161,7 @@ impl Stripe {
             .get_bytes(info.footer_offset(), info.footer_length())
             .await
             .context(IoSnafu)?;
-        let footer = Arc::new(deserialize_stripe_footer(&footer, compression)?);
+        let footer = Arc::new(deserialize_stripe_footer(footer, compression)?);
 
         let columns = projected_data_type
             .children()
@@ -243,13 +243,12 @@ impl StreamMap {
     }
 }
 
-pub(crate) fn deserialize_stripe_footer(
-    bytes: &[u8],
+fn deserialize_stripe_footer(
+    bytes: Bytes,
     compression: Option<Compression>,
 ) -> Result<StripeFooter> {
     let mut buffer = vec![];
-    // TODO: refactor to not need Bytes::copy_from_slice
-    Decompressor::new(Bytes::copy_from_slice(bytes), compression, vec![])
+    Decompressor::new(bytes, compression, vec![])
         .read_to_end(&mut buffer)
         .context(error::IoSnafu)?;
     StripeFooter::decode(buffer.as_slice()).context(error::DecodeProtoSnafu)
