@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use crate::reader::metadata::read_metadata_async;
 use arrow::datatypes::Schema;
-use arrow::error::ArrowError;
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::common::{FileType, Statistics};
 use datafusion::datasource::file_format::FileFormat;
@@ -18,20 +17,16 @@ use futures::TryStreamExt;
 
 use async_trait::async_trait;
 use futures_util::StreamExt;
+use object_store::path::Path;
 use object_store::{ObjectMeta, ObjectStore};
 
 use super::object_store_reader::ObjectStoreReader;
 use super::physical_exec::OrcExec;
 
-async fn fetch_schema(
-    store: &Arc<dyn ObjectStore>,
-    file: &ObjectMeta,
-) -> Result<(object_store::path::Path, Schema)> {
+async fn fetch_schema(store: &Arc<dyn ObjectStore>, file: &ObjectMeta) -> Result<(Path, Schema)> {
     let loc_path = file.location.clone();
     let mut reader = ObjectStoreReader::new(Arc::clone(store), file.clone());
-    let metadata = read_metadata_async(&mut reader)
-        .await
-        .map_err(ArrowError::from)?;
+    let metadata = read_metadata_async(&mut reader).await?;
     let schema = metadata
         .root_data_type()
         .create_arrow_schema(&HashMap::default());

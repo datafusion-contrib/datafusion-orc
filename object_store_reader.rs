@@ -7,6 +7,7 @@ use futures::{FutureExt, TryFutureExt};
 
 use object_store::{ObjectMeta, ObjectStore};
 
+/// Implements [`AsyncChunkReader`] to allow reading ORC files via `object_store` API.
 pub struct ObjectStoreReader {
     store: Arc<dyn ObjectStore>,
     file: ObjectMeta,

@@ -7,12 +7,14 @@ use datafusion::dataframe::DataFrame;
 use datafusion::datasource::listing::{
     ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
 };
-use datafusion::error::Result;
+use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::config::SessionConfig;
 use datafusion::execution::context::{DataFilePaths, SessionContext, SessionState};
 use datafusion::execution::options::ReadOptions;
 
 use async_trait::async_trait;
+
+use crate::error::OrcError;
 
 use self::file_format::OrcFormat;
 
@@ -119,6 +121,12 @@ impl SessionContextOrcExt for SessionContext {
         self.register_listing_table(name, table_path, listing_options, None, None)
             .await?;
         Ok(())
+    }
+}
+
+impl From<OrcError> for DataFusionError {
+    fn from(value: OrcError) -> Self {
+        DataFusionError::External(Box::new(value))
     }
 }
 
