@@ -1,3 +1,30 @@
+//! Integration with [Apache DataFusion](https://datafusion.apache.org/) query engine to
+//! allow querying ORC files with a SQL/DataFrame API.
+//!
+//! # Example usage
+//!
+//! ```no_run
+//! # use datafusion::prelude::*;
+//! # use datafusion::error::Result;
+//! # use orc_rust::datafusion::{OrcReadOptions, SessionContextOrcExt};
+//! # #[tokio::main]
+//! # async fn main() -> Result<()> {
+//! let ctx = SessionContext::new();
+//! ctx.register_orc(
+//!     "table1",
+//!     "/path/to/file.orc",
+//!     OrcReadOptions::default(),
+//! )
+//! .await?;
+//!
+//! ctx.sql("select a, b from table1")
+//!     .await?
+//!     .show()
+//!     .await?;
+//! # Ok(())
+//! # }
+//! ```
+
 use std::sync::Arc;
 
 use datafusion::arrow::datatypes::SchemaRef;
@@ -22,6 +49,7 @@ mod file_format;
 mod object_store_reader;
 mod physical_exec;
 
+/// Configuration options for reading ORC files.
 #[derive(Clone)]
 pub struct OrcReadOptions<'a> {
     pub file_extension: &'a str,
@@ -57,6 +85,8 @@ impl ReadOptions<'_> for OrcReadOptions<'_> {
     }
 }
 
+/// Exposes new functions for registering ORC tables onto a DataFusion [`SessionContext`]
+/// to enable querying them using the SQL or DataFrame API.
 pub trait SessionContextOrcExt {
     fn read_orc<P: DataFilePaths + Send>(
         &self,

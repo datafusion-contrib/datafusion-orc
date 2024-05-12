@@ -10,6 +10,9 @@
 //! let reader = ArrowReaderBuilder::try_new(file).unwrap().build();
 //! let record_batches = reader.collect::<Result<Vec<_>, _>>().unwrap();
 //! ```
+//!
+//! See the [`datafusion`] module for information on how to integrate with
+//! [Apache DataFusion](https://datafusion.apache.org/).
 
 pub mod arrow_reader;
 #[cfg(feature = "async")]
