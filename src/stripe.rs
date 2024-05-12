@@ -89,9 +89,8 @@ impl TryFrom<(&proto::StripeInformation, &proto::StripeStatistics)> for StripeMe
 }
 
 #[derive(Debug)]
-pub struct Stripe {
+pub(crate) struct Stripe {
     columns: Vec<Column>,
-    stripe_offset: usize,
     /// <(ColumnId, Kind), Bytes>
     stream_map: Arc<StreamMap>,
     number_of_rows: usize,
@@ -103,7 +102,6 @@ impl Stripe {
         reader: &mut R,
         file_metadata: &Arc<FileMetadata>,
         projected_data_type: &RootDataType,
-        stripe: usize,
         info: &StripeMetadata,
     ) -> Result<Self> {
         let compression = file_metadata.compression();
@@ -141,7 +139,6 @@ impl Stripe {
 
         Ok(Self {
             columns,
-            stripe_offset: stripe,
             stream_map: Arc::new(StreamMap {
                 inner: stream_map,
                 compression,
@@ -157,7 +154,6 @@ impl Stripe {
         reader: &mut R,
         file_metadata: &Arc<FileMetadata>,
         projected_data_type: &RootDataType,
-        stripe: usize,
         info: &StripeMetadata,
     ) -> Result<Self> {
         let compression = file_metadata.compression();
@@ -196,7 +192,6 @@ impl Stripe {
 
         Ok(Self {
             columns,
-            stripe_offset: stripe,
             stream_map: Arc::new(StreamMap {
                 inner: stream_map,
                 compression,
@@ -204,10 +199,6 @@ impl Stripe {
             number_of_rows: info.number_of_rows() as usize,
             tz,
         })
-    }
-
-    pub fn stripe_offset(&self) -> usize {
-        self.stripe_offset
     }
 
     pub fn number_of_rows(&self) -> usize {
@@ -228,7 +219,7 @@ impl Stripe {
 }
 
 #[derive(Debug)]
-pub struct StreamMap {
+pub(crate) struct StreamMap {
     pub inner: HashMap<(u32, Kind), Bytes>,
     pub compression: Option<Compression>,
 }

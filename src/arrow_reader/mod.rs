@@ -5,7 +5,6 @@ use arrow::datatypes::{Schema, SchemaRef};
 use arrow::error::ArrowError;
 use arrow::record_batch::{RecordBatch, RecordBatchReader};
 
-pub use self::decoder::NaiveStripeDecoder;
 use crate::error::Result;
 use crate::projection::ProjectionMask;
 #[cfg(feature = "async")]
@@ -19,10 +18,12 @@ use crate::stripe::Stripe;
 #[cfg(feature = "async")]
 use crate::ArrowStreamReader;
 
-pub mod column;
-pub mod decoder;
+use self::decoder::NaiveStripeDecoder;
 
-pub const DEFAULT_BATCH_SIZE: usize = 8192;
+pub(crate) mod column;
+pub(crate) mod decoder;
+
+const DEFAULT_BATCH_SIZE: usize = 8192;
 
 pub struct ArrowReaderBuilder<R> {
     reader: R,
@@ -134,7 +135,7 @@ impl<R: ChunkReader> ArrowReader<R> {
     }
 }
 
-pub fn create_arrow_schema<R>(cursor: &Cursor<R>) -> Schema {
+fn create_arrow_schema<R>(cursor: &Cursor<R>) -> Schema {
     let metadata = cursor
         .file_metadata
         .user_custom_metadata()
@@ -169,11 +170,11 @@ impl<R: ChunkReader> Iterator for ArrowReader<R> {
     }
 }
 
-pub struct Cursor<R> {
-    pub(crate) reader: R,
-    pub(crate) file_metadata: Arc<FileMetadata>,
-    pub(crate) projected_data_type: RootDataType,
-    pub(crate) stripe_index: usize,
+pub(crate) struct Cursor<R> {
+    pub reader: R,
+    pub file_metadata: Arc<FileMetadata>,
+    pub projected_data_type: RootDataType,
+    pub stripe_index: usize,
 }
 
 impl<R: ChunkReader> Iterator for Cursor<R> {
@@ -188,7 +189,6 @@ impl<R: ChunkReader> Iterator for Cursor<R> {
                     &mut self.reader,
                     &self.file_metadata,
                     &self.projected_data_type.clone(),
-                    self.stripe_index,
                     info,
                 );
                 self.stripe_index += 1;

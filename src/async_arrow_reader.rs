@@ -9,12 +9,12 @@ use futures::future::BoxFuture;
 use futures::{ready, Stream};
 use futures_util::FutureExt;
 
-use crate::arrow_reader::{Cursor, NaiveStripeDecoder};
+use crate::arrow_reader::{decoder::NaiveStripeDecoder, Cursor};
 use crate::error::Result;
 use crate::reader::AsyncChunkReader;
 use crate::stripe::{Stripe, StripeMetadata};
 
-pub type BoxedDecoder = Box<dyn Iterator<Item = Result<RecordBatch>> + Send>;
+type BoxedDecoder = Box<dyn Iterator<Item = Result<RecordBatch>> + Send>;
 
 enum StreamState<T> {
     /// At the start of a new row group, or the end of the file stream
@@ -47,7 +47,7 @@ impl<R: Send> From<Cursor<R>> for StripeFactory<R> {
     }
 }
 
-pub struct StripeFactory<R> {
+struct StripeFactory<R> {
     inner: Cursor<R>,
     is_end: bool,
 }
@@ -60,23 +60,21 @@ pub struct ArrowStreamReader<R: AsyncChunkReader> {
 }
 
 impl<R: AsyncChunkReader + 'static> StripeFactory<R> {
-    pub async fn read_next_stripe_inner(&mut self, info: &StripeMetadata) -> Result<Stripe> {
+    async fn read_next_stripe_inner(&mut self, info: &StripeMetadata) -> Result<Stripe> {
         let inner = &mut self.inner;
 
-        let stripe_offset = inner.stripe_index;
         inner.stripe_index += 1;
 
         Stripe::new_async(
             &mut inner.reader,
             &inner.file_metadata,
             &inner.projected_data_type,
-            stripe_offset,
             info,
         )
         .await
     }
 
-    pub async fn read_next_stripe(mut self) -> Result<(Self, Option<Stripe>)> {
+    async fn read_next_stripe(mut self) -> Result<(Self, Option<Stripe>)> {
         let info = self
             .inner
             .file_metadata
@@ -94,14 +92,10 @@ impl<R: AsyncChunkReader + 'static> StripeFactory<R> {
             Ok((self, None))
         }
     }
-
-    pub async fn is_end(&self) -> bool {
-        self.is_end
-    }
 }
 
 impl<R: AsyncChunkReader + 'static> ArrowStreamReader<R> {
-    pub fn new(cursor: Cursor<R>, batch_size: usize, schema_ref: SchemaRef) -> Self {
+    pub(crate) fn new(cursor: Cursor<R>, batch_size: usize, schema_ref: SchemaRef) -> Self {
         Self {
             factory: Some(Box::new(cursor.into())),
             batch_size,

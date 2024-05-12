@@ -2,46 +2,30 @@ use snafu::ResultExt;
 
 use crate::error::{self, Result};
 
-/// Sealead trait to generically represent f32 and f64.
-pub trait Float: num::Float + private::Sealed + std::fmt::Debug {
-    type Bytes: AsRef<[u8]> + AsMut<[u8]> + Default;
+/// Generically represent f32 and f64.
+// TODO: figure out how to use num::traits::FromBytes instead of rolling our own?
+pub trait Float: num::Float + std::fmt::Debug + num::traits::ToBytes {
+    /// Named OBytes to not conflict with Bytes from [`num::traits::ToBytes`]
+    type OBytes: AsRef<[u8]> + AsMut<[u8]> + Default;
 
-    fn from_le_bytes(bytes: Self::Bytes) -> Self;
-
-    fn to_le_bytes(&self) -> Self::Bytes;
-}
-
-mod private {
-    pub trait Sealed {} // Users in other crates cannot name this trait.
-    impl Sealed for f32 {}
-    impl Sealed for f64 {}
+    fn from_le_bytes(bytes: Self::OBytes) -> Self;
 }
 
 impl Float for f32 {
-    type Bytes = [u8; 4];
+    type OBytes = [u8; 4];
 
     #[inline]
-    fn from_le_bytes(bytes: Self::Bytes) -> Self {
+    fn from_le_bytes(bytes: Self::OBytes) -> Self {
         Self::from_le_bytes(bytes)
-    }
-
-    #[inline]
-    fn to_le_bytes(&self) -> Self::Bytes {
-        Self::to_le_bytes(*self)
     }
 }
 
 impl Float for f64 {
-    type Bytes = [u8; 8];
+    type OBytes = [u8; 8];
 
     #[inline]
-    fn from_le_bytes(bytes: Self::Bytes) -> Self {
+    fn from_le_bytes(bytes: Self::OBytes) -> Self {
         Self::from_le_bytes(bytes)
-    }
-
-    #[inline]
-    fn to_le_bytes(&self) -> Self::Bytes {
-        Self::to_le_bytes(*self)
     }
 }
 
@@ -68,17 +52,6 @@ impl<T: Float, R: std::io::Read> FloatIter<T, R> {
     pub fn len(&self) -> usize {
         self.remaining
     }
-
-    /// Whether the iterator is empty
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    /// Returns its internal reader
-    pub fn into_inner(self) -> R {
-        self.reader
-    }
 }
 
 impl<T: Float, R: std::io::Read> Iterator for FloatIter<T, R> {
@@ -89,7 +62,7 @@ impl<T: Float, R: std::io::Read> Iterator for FloatIter<T, R> {
         if self.remaining == 0 {
             return None;
         }
-        let mut chunk: T::Bytes = Default::default();
+        let mut chunk: T::OBytes = Default::default();
         if let Err(err) = self
             .reader
             .read_exact(chunk.as_mut())

@@ -2,7 +2,7 @@ use std::io;
 use std::string::FromUtf8Error;
 
 use arrow::error::ArrowError;
-pub use snafu::prelude::*;
+use snafu::prelude::*;
 use snafu::Location;
 
 use crate::proto;

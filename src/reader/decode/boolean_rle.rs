@@ -19,10 +19,6 @@ impl<R: Read> BooleanIter<R> {
         }
     }
 
-    pub fn into_inner(self) -> R {
-        self.iter.into_inner()
-    }
-
     pub fn value(&mut self) -> bool {
         let value = (self.data & 0x80) != 0;
         self.data <<= 1;
