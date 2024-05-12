@@ -104,4 +104,4 @@ mod async_chunk_reader {
 }
 
 #[cfg(feature = "async")]
-pub use async_chunk_reader::*;
+pub use async_chunk_reader::AsyncChunkReader;

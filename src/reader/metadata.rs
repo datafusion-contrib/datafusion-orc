@@ -39,8 +39,6 @@ use crate::statistics::ColumnStatistics;
 use crate::stripe::StripeMetadata;
 
 use super::decompress::Compression;
-#[cfg(feature = "async")]
-use crate::reader::AsyncChunkReader;
 use crate::reader::ChunkReader;
 
 const DEFAULT_FOOTER_SIZE: u64 = 16 * 1024;
@@ -205,7 +203,9 @@ pub fn read_metadata<R: ChunkReader>(reader: &mut R) -> Result<FileMetadata> {
 }
 
 #[cfg(feature = "async")]
-pub async fn read_metadata_async<R: AsyncChunkReader>(reader: &mut R) -> Result<FileMetadata> {
+pub async fn read_metadata_async<R: super::AsyncChunkReader>(
+    reader: &mut R,
+) -> Result<FileMetadata> {
     let file_len = reader.len().await.context(error::IoSnafu)?;
     if file_len == 0 {
         return EmptyFileSnafu.fail();
