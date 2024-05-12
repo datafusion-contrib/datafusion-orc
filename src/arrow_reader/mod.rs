@@ -121,7 +121,7 @@ impl<R> ArrowReader<R> {
 }
 
 impl<R: ChunkReader> ArrowReader<R> {
-    fn try_advance_stripe(&mut self) -> std::result::Result<Option<RecordBatch>, ArrowError> {
+    fn try_advance_stripe(&mut self) -> Result<Option<RecordBatch>, ArrowError> {
         let stripe = self.cursor.next().transpose()?;
         match stripe {
             Some(stripe) => {
@@ -152,7 +152,7 @@ impl<R: ChunkReader> RecordBatchReader for ArrowReader<R> {
 }
 
 impl<R: ChunkReader> Iterator for ArrowReader<R> {
-    type Item = std::result::Result<RecordBatch, ArrowError>;
+    type Item = Result<RecordBatch, ArrowError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.current_stripe.as_mut() {
