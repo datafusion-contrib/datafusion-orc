@@ -25,3 +25,6 @@ pub mod stripe;
 pub use arrow_reader::{ArrowReader, ArrowReaderBuilder};
 #[cfg(feature = "async")]
 pub use async_arrow_reader::ArrowStreamReader;
+
+#[cfg(feature = "datafusion")]
+pub mod datafusion;
