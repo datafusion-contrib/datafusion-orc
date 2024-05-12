@@ -130,7 +130,7 @@ pub enum OrcError {
     },
 }
 
-pub type Result<T> = std::result::Result<T, OrcError>;
+pub type Result<T, E = OrcError> = std::result::Result<T, E>;
 
 impl From<OrcError> for ArrowError {
     fn from(value: OrcError) -> Self {

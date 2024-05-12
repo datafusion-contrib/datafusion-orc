@@ -168,7 +168,7 @@ impl<R: AsyncChunkReader + 'static> ArrowStreamReader<R> {
 }
 
 impl<R: AsyncChunkReader + 'static> Stream for ArrowStreamReader<R> {
-    type Item = std::result::Result<RecordBatch, ArrowError>;
+    type Item = Result<RecordBatch, ArrowError>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         self.poll_next_inner(cx)
