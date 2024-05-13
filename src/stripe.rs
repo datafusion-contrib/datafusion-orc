@@ -230,7 +230,7 @@ impl StreamMap {
         // See the integration::meta_data test for an example of this
         // TODO: some better way to handle this?
         self.get_opt(column, kind)
-            .unwrap_or_else(|| Decompressor::new(Bytes::new(), self.compression, vec![]))
+            .unwrap_or_else(Decompressor::empty)
     }
 
     pub fn get_opt(&self, column: &Column, kind: Kind) -> Option<Decompressor> {
