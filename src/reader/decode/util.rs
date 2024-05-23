@@ -226,6 +226,9 @@ pub fn rle_v2_decode_bit_width(encoded: u8) -> usize {
     debug_assert!(encoded < 32, "encoded bit width cannot exceed 5 bits");
     match encoded {
         0..=23 => encoded as usize + 1,
+        24 => 26,
+        25 => 28,
+        26 => 30,
         27 => 32,
         28 => 40,
         29 => 48,
