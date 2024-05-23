@@ -109,7 +109,8 @@ impl ArrayBatchDecoder for TimestampOffsetArrayDecoder {
         let array = self
             .inner
             .next_primitive_batch(batch_size, parent_present)?;
-        let array = array.unary_opt::<_, TimestampNanosecondType>(|ts| {
+
+        let convert_timezone = |ts| {
             // Convert from writer timezone to reader timezone (which we default to UTC)
             // TODO: more efficient way of doing this?
             self.writer_tz
@@ -117,7 +118,14 @@ impl ArrayBatchDecoder for TimestampOffsetArrayDecoder {
                 .naive_local()
                 .and_utc()
                 .timestamp_nanos_opt()
-        });
+        };
+        let array = array
+            // first try to convert all non-nullable batches to non-nullable batches
+            .try_unary::<_, TimestampNanosecondType, _>(|ts| convert_timezone(ts).ok_or(()))
+            // in the rare case one of the values was out of the 1677-2262 range (see
+            // <https://docs.rs/chrono/latest/chrono/struct.DateTime.html#method.timestamp_nanos_opt>),
+            // try again by allowing a nullable batch as output
+            .unwrap_or_else(|()| array.unary_opt::<_, TimestampNanosecondType>(convert_timezone));
         let array = Arc::new(array) as ArrayRef;
         Ok(array)
     }
