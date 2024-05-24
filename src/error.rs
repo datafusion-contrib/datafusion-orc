@@ -50,6 +50,17 @@ pub enum OrcError {
         source: std::io::Error,
     },
 
+    #[snafu(display(
+        "Overflow while decoding timestamp (seconds={}, nanoseconds={}) to nanoseconds",
+        seconds,
+        nanoseconds
+    ))]
+    DecodeTimestamp {
+        location: Location,
+        seconds: i64,
+        nanoseconds: u64,
+    },
+
     #[snafu(display("Failed to decode proto, source: {}", source))]
     DecodeProto {
         location: Location,
