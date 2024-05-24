@@ -3,7 +3,9 @@
 use std::fs::File;
 
 use arrow::{
+    array::{Array, AsArray},
     compute::concat_batches,
+    datatypes::TimestampNanosecondType,
     ipc::reader::FileReader,
     record_batch::{RecordBatch, RecordBatchReader},
 };
@@ -95,6 +97,27 @@ fn empty_file() {
 #[test]
 fn test_date_1900() {
     test_expected_file("TestOrcFile.testDate1900");
+}
+
+#[test]
+fn test_date_1900_not_null() {
+    // Don't use read_orc_file() because it concatenate batches, which would detect
+    // there are no nulls and remove the NullBuffer, making this test useless
+    let path = format!(
+        "{}/tests/integration/data/TestOrcFile.testDate1900.orc",
+        env!("CARGO_MANIFEST_DIR"),
+    );
+    let f = File::open(path).unwrap();
+    let reader = ArrowReaderBuilder::try_new(f).unwrap().build();
+    let batches = reader.collect::<Result<Vec<_>, _>>().unwrap();
+
+    for batch in batches {
+        assert!(batch.columns()[0]
+            .as_primitive_opt::<TimestampNanosecondType>()
+            .unwrap()
+            .nulls()
+            .is_none());
+    }
 }
 
 #[test]
