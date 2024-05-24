@@ -53,27 +53,27 @@ Versions will be released on an ad-hoc basis (with no fixed schedule).
 
 The following table lists how ORC data types are read into Arrow data types:
 
-| ORC Data Type     | Arrow Data Type             |
-| ----------------- | --------------------------  |
-| Boolean           | Boolean                     |
-| TinyInt           | Int8                        |
-| SmallInt          | Int16                       |
-| Int               | Int32                       |
-| BigInt            | Int64                       |
-| Float             | Float32                     |
-| Double            | Float64                     |
-| String            | Utf8                        |
-| Char              | Utf8                        |
-| VarChar           | Utf8                        |
-| Binary            | Binary                      |
-| Decimal           | Decimal128                  |
-| Date              | Date32                      |
-| Timestamp         | Timestamp(Nanosecond, None) |
-| Timestamp instant | Timestamp(Nanosecond, UTC)  |
-| Struct            | Struct                      |
-| List              | List                        |
-| Map               | Map                         |
-| Union             | Union(_, Sparse)*           |
+| ORC Data Type     | Arrow Data Type             | Notes |
+| ----------------- | --------------------------  | ----- |
+| Boolean           | Boolean                     |       |
+| TinyInt           | Int8                        |       |
+| SmallInt          | Int16                       |       |
+| Int               | Int32                       |       |
+| BigInt            | Int64                       |       |
+| Float             | Float32                     |       |
+| Double            | Float64                     |       |
+| String            | Utf8                        |       |
+| Char              | Utf8                        |       |
+| VarChar           | Utf8                        |       |
+| Binary            | Binary                      |       |
+| Decimal           | Decimal128                  |       |
+| Date              | Date32                      |       |
+| Timestamp         | Timestamp(Nanosecond, None) | Timestamps before 1677-09-21 or after 2261-04-12 return `OrcError` because they cannot be represented as an i64 of nanoseconds |
+| Timestamp instant | Timestamp(Nanosecond, UTC)  | Timestamps before 1677-09-21 or after 2261-04-12 return `OrcError` because they cannot be represented as an i64 of nanoseconds |
+| Struct            | Struct                      |       |
+| List              | List                        |       |
+| Map               | Map                         |       |
+| Union             | Union(_, Sparse)*           |       |
 
 *Currently only supports a maximum of 127 variants
 

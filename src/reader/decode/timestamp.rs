@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::error::{DecodeTimestampSnafu, Result};
 
 const NANOSECONDS_IN_SECOND: i64 = 1_000_000_000;
 
@@ -58,6 +58,18 @@ fn decode_timestamp(
     };
     // Convert into nanoseconds since epoch, which Arrow uses as native representation
     // of timestamps
-    let nanoseconds_since_epoch = seconds * NANOSECONDS_IN_SECOND + (nanoseconds as i64);
+    // The timestamp may overflow as ORC encodes them as a pair of (seconds, nanoseconds)
+    // while we encode them as a single i64 of nanoseconds in Arrow.
+    let nanoseconds_since_epoch = seconds
+        .checked_mul(NANOSECONDS_IN_SECOND)
+        .and_then(|seconds_in_ns| seconds_in_ns.checked_add(nanoseconds as i64))
+        .ok_or(())
+        .or_else(|()| {
+            DecodeTimestampSnafu {
+                seconds,
+                nanoseconds,
+            }
+            .fail()
+        })?;
     Ok(Some(nanoseconds_since_epoch))
 }

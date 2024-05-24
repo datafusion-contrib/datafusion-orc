@@ -412,6 +412,13 @@ pub fn timestamps_test() {
     }
 }
 
+#[test]
+pub fn overflowing_timestamps_test() {
+    let path = basic_path("overflowing_timestamps.orc");
+    let reader = new_arrow_reader_root(&path);
+    assert!(reader.collect::<Result<Vec<_>, _>>().is_err());
+}
+
 // From https://github.com/apache/arrow-rs/blob/7705acad845e8b2a366a08640f7acb4033ed7049/arrow-flight/src/sql/metadata/mod.rs#L67-L75
 pub fn assert_batches_eq(batches: &[RecordBatch], expected_lines: &[&str]) {
     let formatted = pretty::pretty_format_batches(batches).unwrap().to_string();
