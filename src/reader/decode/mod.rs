@@ -11,7 +11,9 @@ use crate::proto::column_encoding::Kind as ProtoColumnKind;
 
 use self::rle_v1::RleReaderV1;
 use self::rle_v2::RleReaderV2;
-use self::util::{signed_msb_decode, signed_zigzag_decode, signed_zigzag_encode};
+use self::util::{
+    signed_msb_decode, signed_msb_encode, signed_zigzag_decode, signed_zigzag_encode,
+};
 
 pub mod boolean_rle;
 pub mod byte_rle;
@@ -110,11 +112,18 @@ pub trait NInt:
     }
 
     #[inline]
-    fn decode_signed_from_msb(self, _encoded_byte_size: usize) -> Self {
+    fn decode_signed_msb(self, _encoded_byte_size: usize) -> Self {
         // Default noop for unsigned (signed should override this)
         // Used when decoding Patched Base in RLEv2
         // TODO: is this correct for unsigned? Spec doesn't state, but seems logical.
         //       Add a test for this to check.
+        self
+    }
+
+    #[inline]
+    fn encode_signed_msb(self, _encoded_byte_size: usize) -> Self {
+        // Default noop for unsigned (signed should override this)
+        // Used when encoding Patched Base in RLEv2
         self
     }
 }
@@ -159,8 +168,13 @@ impl NInt for i16 {
     }
 
     #[inline]
-    fn decode_signed_from_msb(self, encoded_byte_size: usize) -> Self {
+    fn decode_signed_msb(self, encoded_byte_size: usize) -> Self {
         signed_msb_decode(self, encoded_byte_size)
+    }
+
+    #[inline]
+    fn encode_signed_msb(self, encoded_byte_size: usize) -> Self {
+        signed_msb_encode(self, encoded_byte_size)
     }
 }
 
@@ -199,8 +213,13 @@ impl NInt for i32 {
     }
 
     #[inline]
-    fn decode_signed_from_msb(self, encoded_byte_size: usize) -> Self {
+    fn decode_signed_msb(self, encoded_byte_size: usize) -> Self {
         signed_msb_decode(self, encoded_byte_size)
+    }
+
+    #[inline]
+    fn encode_signed_msb(self, encoded_byte_size: usize) -> Self {
+        signed_msb_encode(self, encoded_byte_size)
     }
 }
 
@@ -239,8 +258,13 @@ impl NInt for i64 {
     }
 
     #[inline]
-    fn decode_signed_from_msb(self, encoded_byte_size: usize) -> Self {
+    fn decode_signed_msb(self, encoded_byte_size: usize) -> Self {
         signed_msb_decode(self, encoded_byte_size)
+    }
+
+    #[inline]
+    fn encode_signed_msb(self, encoded_byte_size: usize) -> Self {
+        signed_msb_encode(self, encoded_byte_size)
     }
 }
 

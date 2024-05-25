@@ -67,7 +67,7 @@ impl<N: NInt, R: Read> RleReaderV2<N, R> {
         self.reader
             .read_exact(&mut buffer.as_mut()[N::BYTE_SIZE - base_byte_width..])
             .context(IoSnafu)?;
-        let base = N::from_be_bytes(buffer).decode_signed_from_msb(base_byte_width);
+        let base = N::from_be_bytes(buffer).decode_signed_msb(base_byte_width);
 
         // Get data values
         read_ints(

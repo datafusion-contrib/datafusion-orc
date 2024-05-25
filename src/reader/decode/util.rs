@@ -507,7 +507,7 @@ pub fn signed_zigzag_encode<N: NInt + Signed>(value: N) -> N {
 #[inline]
 pub fn signed_msb_decode<N: NInt + Signed>(encoded: N, encoded_byte_size: usize) -> N {
     let msb_mask = N::one() << (encoded_byte_size * 8 - 1);
-    let is_positive = msb_mask & encoded == N::zero();
+    let is_positive = (encoded & msb_mask) == N::zero();
     let clean_sign_bit_mask = !msb_mask;
     let encoded = encoded & clean_sign_bit_mask;
     if is_positive {
@@ -515,6 +515,18 @@ pub fn signed_msb_decode<N: NInt + Signed>(encoded: N, encoded_byte_size: usize)
     } else {
         -encoded
     }
+}
+
+/// Inverse of [`signed_msb_decode`].
+#[inline]
+pub fn signed_msb_encode<N: NInt + Signed>(value: N, encoded_byte_size: usize) -> N {
+    let msb_mask = !(N::max_value() >> 1);
+    let sign_bit = (value & msb_mask) != N::zero();
+    // 0 if unsigned, 1 if signed
+    let sign_bit = N::from_u8(sign_bit as u8);
+    let value = value.abs();
+    let encoded_msb = sign_bit << (encoded_byte_size * 8 - 1);
+    value | encoded_msb
 }
 
 #[cfg(test)]
@@ -598,6 +610,77 @@ mod tests {
         #[test]
         fn roundtrip_zigzag_i64(value: i64) {
             let out = signed_zigzag_decode(signed_zigzag_encode(value));
+            prop_assert_eq!(value, out);
+        }
+    }
+
+    fn generate_msb_test_value<N: NInt + Signed>(
+        seed_value: N,
+        byte_size: usize,
+        signed: bool,
+    ) -> N {
+        // We mask out to values that can fit within the specified byte_size.
+        let shift = (N::BYTE_SIZE - byte_size) * 8;
+        let mask = N::max_value().unsigned_shr(shift as u32);
+        // And remove the msb since we manually set a value to signed based on the signed parameter.
+        let mask = mask >> 1;
+        let value = seed_value & mask;
+        // This guarantees values that can fit within byte_size when they are msb encoded, both
+        // signed and unsigned.
+        if signed {
+            -value
+        } else {
+            value
+        }
+    }
+
+    #[test]
+    fn roundtrip_msb_edge_cases() {
+        // Testing all cases of max values for byte_size + signed combinations
+        for byte_size in 1..=2 {
+            for signed in [true, false] {
+                let value = generate_msb_test_value(i16::MAX, byte_size, signed);
+                let out = signed_msb_decode(signed_msb_encode(value, byte_size), byte_size);
+                assert_eq!(value, out);
+            }
+        }
+
+        for byte_size in 1..=4 {
+            for signed in [true, false] {
+                let value = generate_msb_test_value(i32::MAX, byte_size, signed);
+                let out = signed_msb_decode(signed_msb_encode(value, byte_size), byte_size);
+                assert_eq!(value, out);
+            }
+        }
+
+        for byte_size in 1..=8 {
+            for signed in [true, false] {
+                let value = generate_msb_test_value(i64::MAX, byte_size, signed);
+                let out = signed_msb_decode(signed_msb_encode(value, byte_size), byte_size);
+                assert_eq!(value, out);
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn roundtrip_msb_i16(value: i16, byte_size in 1..=2_usize, signed: bool) {
+            let value = generate_msb_test_value(value, byte_size, signed);
+            let out = signed_msb_decode(signed_msb_encode(value, byte_size), byte_size);
+            prop_assert_eq!(value, out);
+        }
+
+        #[test]
+        fn roundtrip_msb_i32(value: i32, byte_size in 1..=4_usize, signed: bool) {
+            let value = generate_msb_test_value(value, byte_size, signed);
+            let out = signed_msb_decode(signed_msb_encode(value, byte_size), byte_size);
+            prop_assert_eq!(value, out);
+        }
+
+        #[test]
+        fn roundtrip_msb_i64(value: i64, byte_size in 1..=8_usize, signed: bool) {
+            let value = generate_msb_test_value(value, byte_size, signed);
+            let out = signed_msb_decode(signed_msb_encode(value, byte_size), byte_size);
             prop_assert_eq!(value, out);
         }
     }
