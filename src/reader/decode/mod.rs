@@ -11,7 +11,7 @@ use crate::proto::column_encoding::Kind as ProtoColumnKind;
 
 use self::rle_v1::RleReaderV1;
 use self::rle_v2::RleReaderV2;
-use self::util::{signed_msb_decode, signed_zigzag_decode};
+use self::util::{signed_msb_decode, signed_zigzag_decode, signed_zigzag_encode};
 
 pub mod boolean_rle;
 pub mod byte_rle;
@@ -78,7 +78,7 @@ pub trait NInt:
     + Sync
     + 'static
 {
-    type Bytes: AsRef<[u8]> + AsMut<[u8]> + Default + Clone + Copy;
+    type Bytes: AsRef<[u8]> + AsMut<[u8]> + Default + Clone + Copy + fmt::Debug;
     const BYTE_SIZE: usize;
 
     #[inline]
@@ -95,6 +95,12 @@ pub trait NInt:
 
     #[inline]
     fn zigzag_decode(self) -> Self {
+        // Default noop for unsigned (signed should override this)
+        self
+    }
+
+    #[inline]
+    fn zigzag_encode(self) -> Self {
         // Default noop for unsigned (signed should override this)
         self
     }
@@ -139,6 +145,11 @@ impl NInt for i16 {
     }
 
     #[inline]
+    fn zigzag_encode(self) -> Self {
+        signed_zigzag_encode(self)
+    }
+
+    #[inline]
     fn decode_signed_from_msb(self, encoded_byte_size: usize) -> Self {
         signed_msb_decode(self, encoded_byte_size)
     }
@@ -169,6 +180,11 @@ impl NInt for i32 {
     }
 
     #[inline]
+    fn zigzag_encode(self) -> Self {
+        signed_zigzag_encode(self)
+    }
+
+    #[inline]
     fn decode_signed_from_msb(self, encoded_byte_size: usize) -> Self {
         signed_msb_decode(self, encoded_byte_size)
     }
@@ -196,6 +212,11 @@ impl NInt for i64 {
     #[inline]
     fn zigzag_decode(self) -> Self {
         signed_zigzag_decode(self)
+    }
+
+    #[inline]
+    fn zigzag_encode(self) -> Self {
+        signed_zigzag_encode(self)
     }
 
     #[inline]
@@ -249,5 +270,10 @@ impl NInt for i128 {
     #[inline]
     fn zigzag_decode(self) -> Self {
         signed_zigzag_decode(self)
+    }
+
+    #[inline]
+    fn zigzag_encode(self) -> Self {
+        signed_zigzag_encode(self)
     }
 }

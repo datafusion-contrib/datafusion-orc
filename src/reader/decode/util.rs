@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{Read, Write};
 
 use num::Signed;
 use snafu::{OptionExt, ResultExt};
@@ -239,7 +239,7 @@ pub fn rle_v2_decode_bit_width(encoded: u8) -> usize {
 }
 
 /// Decode Base 128 Unsigned Varint
-fn read_varint_n<N: NInt, R: Read>(r: &mut R) -> Result<N> {
+fn read_varint_n<N: NInt, R: Read>(reader: &mut R) -> Result<N> {
     // Varints are encoded as sequence of bytes.
     // Where the high bit of a byte is set to 1 if the varint
     // continues into the next byte. Eventually it should terminate
@@ -247,7 +247,7 @@ fn read_varint_n<N: NInt, R: Read>(r: &mut R) -> Result<N> {
     let mut num = N::zero();
     let mut offset = 0;
     loop {
-        let byte = read_u8(r)?;
+        let byte = read_u8(reader)?;
         let is_last_byte = byte & 0x80 == 0;
         let without_continuation_bit = byte & 0x7F;
         num |= N::from_u8(without_continuation_bit)
@@ -264,8 +264,39 @@ fn read_varint_n<N: NInt, R: Read>(r: &mut R) -> Result<N> {
     Ok(num)
 }
 
-pub fn read_varint_zigzagged<N: NInt, R: Read>(r: &mut R) -> Result<N> {
-    Ok(read_varint_n::<N, _>(r)?.zigzag_decode())
+/// Encode Base 128 Unsigned Varint
+fn write_varint<N: NInt, W: Write>(writer: &mut W, value: N) -> Result<()> {
+    let bits_used = N::BYTE_SIZE * 8 - value.leading_zeros() as usize;
+    // Take max in case value = 0.
+    // Divide by 7 as high bit is always used as continuation flag.
+    let byte_size = bits_used.div_ceil(7).max(1);
+    // By default we'll have continuation bit set
+    // TODO: how to do without Vec allocation?
+    let mut bytes = vec![0x80; byte_size];
+    // Then just clear for the last one
+    let i = bytes.len() - 1;
+    bytes[i] = 0;
+
+    // Encoding 7 bits at a time into bytes
+    let mask = N::from_u8(0x7F);
+    for (i, b) in bytes.iter_mut().enumerate() {
+        let shift = i * 7;
+        *b |= ((value >> shift) & mask).to_u8().unwrap();
+    }
+
+    writer.write_all(&bytes).context(IoSnafu)?;
+
+    Ok(())
+}
+
+pub fn read_varint_zigzagged<N: NInt, R: Read>(reader: &mut R) -> Result<N> {
+    let unsigned = read_varint_n::<N, _>(reader)?;
+    Ok(unsigned.zigzag_decode())
+}
+
+pub fn write_varint_zigzagged<N: NInt, W: Write>(writer: &mut W, value: N) -> Result<()> {
+    let value = value.zigzag_encode();
+    write_varint(writer, value)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -327,6 +358,14 @@ pub fn signed_zigzag_decode<N: NInt + Signed>(encoded: N) -> N {
     without_sign_bit ^ -sign_bit
 }
 
+/// Opposite of [`signed_zigzag_decode`].
+#[inline]
+pub fn signed_zigzag_encode<N: NInt + Signed>(value: N) -> N {
+    // same = false, differ = true
+    let l = N::BYTE_SIZE * 8 - 1;
+    (value << 1_usize) ^ (value >> l)
+}
+
 /// MSB indicates if value is negated (1 if negative, else positive). Note we
 /// take the MSB of the encoded number which might be smaller than N, hence
 /// we need the encoded number byte size to find this MSB.
@@ -345,10 +384,10 @@ pub fn signed_msb_decode<N: NInt + Signed>(encoded: N, encoded_byte_size: usize)
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
-
+    use super::*;
     use crate::error::Result;
-    use crate::reader::decode::util::{read_varint_zigzagged, signed_zigzag_decode};
+    use proptest::prelude::*;
+    use std::io::Cursor;
 
     #[test]
     fn test_zigzag_decode() {
@@ -365,6 +404,67 @@ mod tests {
 
         assert_eq!(9_223_372_036_854_775_807, signed_zigzag_decode(-2_i64));
         assert_eq!(-9_223_372_036_854_775_808, signed_zigzag_decode(-1_i64));
+    }
+
+    #[test]
+    fn test_zigzag_encode() {
+        assert_eq!(0, signed_zigzag_encode(0));
+        assert_eq!(1, signed_zigzag_encode(-1));
+        assert_eq!(2, signed_zigzag_encode(1));
+        assert_eq!(3, signed_zigzag_encode(-2));
+        assert_eq!(4, signed_zigzag_encode(2));
+        assert_eq!(5, signed_zigzag_encode(-3));
+        assert_eq!(6, signed_zigzag_encode(3));
+        assert_eq!(7, signed_zigzag_encode(-4));
+        assert_eq!(8, signed_zigzag_encode(4));
+        assert_eq!(9, signed_zigzag_encode(-5));
+
+        assert_eq!(-2_i64, signed_zigzag_encode(9_223_372_036_854_775_807));
+        assert_eq!(-1_i64, signed_zigzag_encode(-9_223_372_036_854_775_808));
+    }
+
+    #[test]
+    fn roundtrip_zigzag_edge_cases() {
+        let value = 0_i16;
+        assert_eq!(signed_zigzag_decode(signed_zigzag_encode(value)), value);
+        let value = i16::MAX;
+        assert_eq!(signed_zigzag_decode(signed_zigzag_encode(value)), value);
+        let value = i16::MIN;
+        assert_eq!(signed_zigzag_decode(signed_zigzag_encode(value)), value);
+
+        let value = 0_i32;
+        assert_eq!(signed_zigzag_decode(signed_zigzag_encode(value)), value);
+        let value = i32::MAX;
+        assert_eq!(signed_zigzag_decode(signed_zigzag_encode(value)), value);
+        let value = i32::MIN;
+        assert_eq!(signed_zigzag_decode(signed_zigzag_encode(value)), value);
+
+        let value = 0_i64;
+        assert_eq!(signed_zigzag_decode(signed_zigzag_encode(value)), value);
+        let value = i64::MAX;
+        assert_eq!(signed_zigzag_decode(signed_zigzag_encode(value)), value);
+        let value = i64::MIN;
+        assert_eq!(signed_zigzag_decode(signed_zigzag_encode(value)), value);
+    }
+
+    proptest! {
+        #[test]
+        fn roundtrip_zigzag_i16(value: i16) {
+            let out = signed_zigzag_decode(signed_zigzag_encode(value));
+            prop_assert_eq!(value, out);
+        }
+
+        #[test]
+        fn roundtrip_zigzag_i32(value: i32) {
+            let out = signed_zigzag_decode(signed_zigzag_encode(value));
+            prop_assert_eq!(value, out);
+        }
+
+        #[test]
+        fn roundtrip_zigzag_i64(value: i64) {
+            let out = signed_zigzag_decode(signed_zigzag_encode(value));
+            prop_assert_eq!(value, out);
+        }
     }
 
     #[test]
@@ -407,5 +507,81 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    fn roundtrip_varint<N: NInt>(value: N) -> N {
+        let mut buf = vec![];
+        write_varint_zigzagged(&mut buf, value).unwrap();
+        read_varint_zigzagged::<N, _>(&mut Cursor::new(&buf)).unwrap()
+    }
+
+    proptest! {
+        #[test]
+        fn roundtrip_varint_i16(value: i16) {
+            let out = roundtrip_varint(value);
+            prop_assert_eq!(out, value);
+        }
+
+        #[test]
+        fn roundtrip_varint_i32(value: i32) {
+            let out = roundtrip_varint(value);
+            prop_assert_eq!(out, value);
+        }
+
+        #[test]
+        fn roundtrip_varint_i64(value: i64) {
+            let out = roundtrip_varint(value);
+            prop_assert_eq!(out, value);
+        }
+
+        #[test]
+        fn roundtrip_varint_i128(value: i128) {
+            let out = roundtrip_varint(value);
+            prop_assert_eq!(out, value);
+        }
+
+        #[test]
+        fn roundtrip_varint_u64(value: u64) {
+            let out = roundtrip_varint(value);
+            prop_assert_eq!(out, value);
+        }
+    }
+
+    #[test]
+    fn roundtrip_varint_edge_cases() {
+        let value = 0_i16;
+        assert_eq!(roundtrip_varint(value), value);
+        let value = i16::MIN;
+        assert_eq!(roundtrip_varint(value), value);
+        let value = i16::MAX;
+        assert_eq!(roundtrip_varint(value), value);
+
+        let value = 0_i32;
+        assert_eq!(roundtrip_varint(value), value);
+        let value = i32::MIN;
+        assert_eq!(roundtrip_varint(value), value);
+        let value = i32::MAX;
+        assert_eq!(roundtrip_varint(value), value);
+
+        let value = 0_i64;
+        assert_eq!(roundtrip_varint(value), value);
+        let value = i64::MIN;
+        assert_eq!(roundtrip_varint(value), value);
+        let value = i64::MAX;
+        assert_eq!(roundtrip_varint(value), value);
+
+        let value = 0_i128;
+        assert_eq!(roundtrip_varint(value), value);
+        let value = i128::MIN;
+        assert_eq!(roundtrip_varint(value), value);
+        let value = i128::MAX;
+        assert_eq!(roundtrip_varint(value), value);
+
+        let value = 0_u64;
+        assert_eq!(roundtrip_varint(value), value);
+        let value = u64::MIN;
+        assert_eq!(roundtrip_varint(value), value);
+        let value = u64::MAX;
+        assert_eq!(roundtrip_varint(value), value);
     }
 }

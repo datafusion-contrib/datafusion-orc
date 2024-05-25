@@ -13,6 +13,7 @@ const MAX_RUN_LENGTH: usize = 512;
 pub struct RleReaderV2<N: NInt, R: Read> {
     reader: R,
     decoded_ints: Vec<N>,
+    /// Indexes into decoded_ints to make it act like a queue
     current_head: usize,
 }
 
