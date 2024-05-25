@@ -374,7 +374,7 @@ pub fn get_closest_aligned_bit_width(width: usize) -> usize {
 }
 
 /// Decode Base 128 Unsigned Varint
-fn read_varint_n<N: NInt, R: Read>(reader: &mut R) -> Result<N> {
+fn read_varint<N: NInt, R: Read>(reader: &mut R) -> Result<N> {
     // Varints are encoded as sequence of bytes.
     // Where the high bit of a byte is set to 1 if the varint
     // continues into the next byte. Eventually it should terminate
@@ -425,7 +425,7 @@ fn write_varint<N: NInt, W: Write>(writer: &mut W, value: N) -> Result<()> {
 }
 
 pub fn read_varint_zigzagged<N: NInt, R: Read>(reader: &mut R) -> Result<N> {
-    let unsigned = read_varint_n::<N, _>(reader)?;
+    let unsigned = read_varint::<N, _>(reader)?;
     Ok(unsigned.zigzag_decode())
 }
 
@@ -466,7 +466,7 @@ impl AccumulateOp for SubOp {
 /// Special case for delta where we need to parse as NInt, but it's signed.
 /// So we calculate the absolute value and return the sign via enum variants.
 pub fn read_abs_varint<N: NInt, R: Read>(r: &mut R) -> Result<AbsVarint<N>> {
-    let num = read_varint_n::<N, _>(r)?;
+    let num = read_varint::<N, _>(r)?;
     let is_negative = (num & N::one()) == N::one();
     // Unsigned >> to ensure new MSB is always 0 and not 1
     let num = num.unsigned_shr(1);
@@ -603,7 +603,7 @@ mod tests {
     }
 
     #[test]
-    fn test_read_vulong() -> Result<()> {
+    fn test_read_varint() -> Result<()> {
         fn test_assert(serialized: &[u8], expected: u64) -> Result<()> {
             let mut reader = Cursor::new(serialized);
             assert_eq!(expected, read_varint_zigzagged::<u64, _>(&mut reader)?);
