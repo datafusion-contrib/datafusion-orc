@@ -92,39 +92,34 @@ pub fn read_delta_values<N: NInt, R: Read>(
     // Always signed since can be decreasing sequence
     let delta_base = read_abs_varint::<N, _>(reader)?;
 
-    // If width is 0 then all values have fixed delta of delta_base
-    if delta_bit_width == 0 {
-        match delta_base {
-            AbsVarint::Negative(delta) => {
-                fixed_delta::<N, SubOp>(out_ints, length, base_value, delta)?;
-            }
-            AbsVarint::Positive(delta) => {
-                fixed_delta::<N, AddOp>(out_ints, length, base_value, delta)?;
-            }
-        };
-    } else {
-        match delta_base {
-            AbsVarint::Negative(delta) => {
-                varied_deltas::<N, R, SubOp>(
-                    reader,
-                    out_ints,
-                    length,
-                    base_value,
-                    delta,
-                    delta_bit_width,
-                )?;
-            }
-            AbsVarint::Positive(delta) => {
-                varied_deltas::<N, R, AddOp>(
-                    reader,
-                    out_ints,
-                    length,
-                    base_value,
-                    delta,
-                    delta_bit_width,
-                )?;
-            }
-        };
+    match (delta_bit_width, delta_base) {
+        // If width is 0 then all values have fixed delta of delta_base
+        (0, AbsVarint::Negative(delta)) => {
+            fixed_delta::<N, SubOp>(out_ints, length, base_value, delta)?;
+        }
+        (0, AbsVarint::Positive(delta)) => {
+            fixed_delta::<N, AddOp>(out_ints, length, base_value, delta)?;
+        }
+        (delta_bit_width, AbsVarint::Negative(delta)) => {
+            varied_deltas::<N, R, SubOp>(
+                reader,
+                out_ints,
+                length,
+                base_value,
+                delta,
+                delta_bit_width,
+            )?;
+        }
+        (delta_bit_width, AbsVarint::Positive(delta)) => {
+            varied_deltas::<N, R, AddOp>(
+                reader,
+                out_ints,
+                length,
+                base_value,
+                delta,
+                delta_bit_width,
+            )?;
+        }
     }
     Ok(())
 }
