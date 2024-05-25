@@ -9,7 +9,7 @@ license = "Apache-2.0"
 description = "Implementation of Apache ORC file format using Apache Arrow in-memory format"
 keywords = ["arrow", "orc", "arrow-rs", "datafusion"]
 include = ["src/**/*.rs", "Cargo.toml"]
-rust-version = "1.70"
+rust-version = "1.73"
 
 [dependencies]
 anyhow = { version = "1.0", optional = true }

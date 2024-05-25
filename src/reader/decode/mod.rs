@@ -93,6 +93,10 @@ pub trait NInt:
 
     fn from_be_bytes(b: Self::Bytes) -> Self;
 
+    // TODO: use num_traits::ToBytes instead
+    fn to_be_bytes(self) -> Self::Bytes;
+
+    // TODO: have separate type/trait to represent Zigzag encoded NInt?
     #[inline]
     fn zigzag_decode(self) -> Self {
         // Default noop for unsigned (signed should override this)
@@ -140,6 +144,11 @@ impl NInt for i16 {
     }
 
     #[inline]
+    fn to_be_bytes(self) -> Self::Bytes {
+        self.to_be_bytes()
+    }
+
+    #[inline]
     fn zigzag_decode(self) -> Self {
         signed_zigzag_decode(self)
     }
@@ -172,6 +181,11 @@ impl NInt for i32 {
     #[inline]
     fn from_be_bytes(b: Self::Bytes) -> Self {
         Self::from_be_bytes(b)
+    }
+
+    #[inline]
+    fn to_be_bytes(self) -> Self::Bytes {
+        self.to_be_bytes()
     }
 
     #[inline]
@@ -210,6 +224,11 @@ impl NInt for i64 {
     }
 
     #[inline]
+    fn to_be_bytes(self) -> Self::Bytes {
+        self.to_be_bytes()
+    }
+
+    #[inline]
     fn zigzag_decode(self) -> Self {
         signed_zigzag_decode(self)
     }
@@ -243,6 +262,11 @@ impl NInt for u64 {
     fn from_be_bytes(b: Self::Bytes) -> Self {
         Self::from_be_bytes(b)
     }
+
+    #[inline]
+    fn to_be_bytes(self) -> Self::Bytes {
+        self.to_be_bytes()
+    }
 }
 
 // This impl is used only for varint decoding.
@@ -264,6 +288,11 @@ impl NInt for i128 {
     }
 
     fn from_be_bytes(_b: Self::Bytes) -> Self {
+        unimplemented!()
+    }
+
+    #[inline]
+    fn to_be_bytes(self) -> Self::Bytes {
         unimplemented!()
     }
 

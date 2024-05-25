@@ -216,7 +216,101 @@ fn unrolled_unpack_byte_aligned<N: NInt>(
     Ok(())
 }
 
-/// Encoding table for RLEv2 sub-encodings bit width.
+/// Write bit packed integers, where we expect the `bit_width` to be aligned
+/// by [`get_closest_aligned_bit_width`], and we write the bytes as big endian.
+pub fn write_aligned_packed_ints<N: NInt, W: Write>(
+    values: &[N],
+    bit_width: usize,
+    writer: &mut W,
+) -> Result<()> {
+    match bit_width {
+        1 => unrolled_pack_1(values, writer),
+        2 => unrolled_pack_2(values, writer),
+        4 => unrolled_pack_4(values, writer),
+        n => unrolled_pack_bytes(values, n / 8, writer),
+    }
+}
+
+fn unrolled_pack_1<N: NInt, W: Write>(values: &[N], writer: &mut W) -> Result<()> {
+    let mut iter = values.chunks_exact(8);
+    for chunk in &mut iter {
+        let n1 = chunk[0].to_u8().unwrap() & 0x01;
+        let n2 = chunk[1].to_u8().unwrap() & 0x01;
+        let n3 = chunk[2].to_u8().unwrap() & 0x01;
+        let n4 = chunk[3].to_u8().unwrap() & 0x01;
+        let n5 = chunk[4].to_u8().unwrap() & 0x01;
+        let n6 = chunk[5].to_u8().unwrap() & 0x01;
+        let n7 = chunk[6].to_u8().unwrap() & 0x01;
+        let n8 = chunk[7].to_u8().unwrap() & 0x01;
+        let byte =
+            (n1 << 7) | (n2 << 6) | (n3 << 5) | (n4 << 4) | (n5 << 3) | (n6 << 2) | (n7 << 1) | n8;
+        writer.write_all(&[byte]).context(IoSnafu)?;
+    }
+    let remainder = iter.remainder();
+    if !remainder.is_empty() {
+        let mut byte = 0;
+        for (i, n) in remainder.iter().enumerate() {
+            let n = n.to_u8().unwrap();
+            byte |= (n & 0x03) << (7 - i);
+        }
+        writer.write_all(&[byte]).context(IoSnafu)?;
+    }
+    Ok(())
+}
+
+fn unrolled_pack_2<N: NInt, W: Write>(values: &[N], writer: &mut W) -> Result<()> {
+    let mut iter = values.chunks_exact(4);
+    for chunk in &mut iter {
+        let n1 = chunk[0].to_u8().unwrap() & 0x03;
+        let n2 = chunk[1].to_u8().unwrap() & 0x03;
+        let n3 = chunk[2].to_u8().unwrap() & 0x03;
+        let n4 = chunk[3].to_u8().unwrap() & 0x03;
+        let byte = (n1 << 6) | (n2 << 4) | (n3 << 2) | n4;
+        writer.write_all(&[byte]).context(IoSnafu)?;
+    }
+    let remainder = iter.remainder();
+    if !remainder.is_empty() {
+        let mut byte = 0;
+        for (i, n) in remainder.iter().enumerate() {
+            let n = n.to_u8().unwrap();
+            byte |= (n & 0x03) << (6 - i * 2);
+        }
+        writer.write_all(&[byte]).context(IoSnafu)?;
+    }
+    Ok(())
+}
+
+fn unrolled_pack_4<N: NInt, W: Write>(values: &[N], writer: &mut W) -> Result<()> {
+    let mut iter = values.chunks_exact(2);
+    for chunk in &mut iter {
+        let n1 = chunk[0].to_u8().unwrap() & 0x0F;
+        let n2 = chunk[1].to_u8().unwrap() & 0x0F;
+        let byte = (n1 << 4) | n2;
+        writer.write_all(&[byte]).context(IoSnafu)?;
+    }
+    let remainder = iter.remainder();
+    if !remainder.is_empty() {
+        let byte = remainder[0].to_u8().unwrap() & 0x0F;
+        let byte = byte << 4;
+        writer.write_all(&[byte]).context(IoSnafu)?;
+    }
+    Ok(())
+}
+
+fn unrolled_pack_bytes<N: NInt, W: Write>(
+    values: &[N],
+    byte_size: usize,
+    writer: &mut W,
+) -> Result<()> {
+    for num in values {
+        let bytes = num.to_be_bytes();
+        let bytes = &bytes.as_ref()[N::BYTE_SIZE - byte_size..];
+        writer.write_all(bytes).context(IoSnafu)?;
+    }
+    Ok(())
+}
+
+/// Decoding table for RLEv2 sub-encodings bit width.
 ///
 /// Used by Direct, Patched Base and Delta. By default this assumes non-delta
 /// (0 maps to 1), so Delta handles this discrepancy at the caller side.
@@ -234,6 +328,47 @@ pub fn rle_v2_decode_bit_width(encoded: u8) -> usize {
         29 => 48,
         30 => 56,
         31 => 64,
+        _ => unreachable!(),
+    }
+}
+
+/// Inverse of [`rle_v2_decode_bit_width`].
+///
+/// Assumes supported bit width is passed in. Will panic on invalid
+/// inputs that aren't defined in the ORC bit width encoding table
+/// (such as 50).
+pub fn rle_v2_encode_bit_width(width: usize) -> u8 {
+    debug_assert!(width <= 64, "bit width cannot exceed 64");
+    match width {
+        64 => 31,
+        56 => 30,
+        48 => 29,
+        40 => 28,
+        32 => 27,
+        30 => 26,
+        28 => 25,
+        26 => 24,
+        1..=24 => width as u8 - 1,
+        _ => unreachable!(),
+    }
+}
+
+/// Converts width of 64 bits or less to an aligned width, either rounding
+/// up to the nearest multiple of 8, or rounding up to 1, 2 or 4.
+pub fn get_closest_aligned_bit_width(width: usize) -> usize {
+    debug_assert!(width <= 64, "bit width cannot exceed 64");
+    match width {
+        1 => 1,
+        2 => 2,
+        3..=4 => 4,
+        5..=8 => 8,
+        9..=16 => 16,
+        17..=24 => 24,
+        25..=32 => 32,
+        33..=40 => 40,
+        41..=48 => 48,
+        49..=54 => 56,
+        55..=64 => 64,
         _ => unreachable!(),
     }
 }
@@ -271,7 +406,7 @@ fn write_varint<N: NInt, W: Write>(writer: &mut W, value: N) -> Result<()> {
     // Divide by 7 as high bit is always used as continuation flag.
     let byte_size = bits_used.div_ceil(7).max(1);
     // By default we'll have continuation bit set
-    // TODO: how to do without Vec allocation?
+    // TODO: can probably do without Vec allocation?
     let mut bytes = vec![0x80; byte_size];
     // Then just clear for the last one
     let i = bytes.len() - 1;

@@ -1,14 +1,19 @@
+use std::io::{Read, Write};
+
+use crate::error::Result;
+
+use self::{direct::read_direct_values, short_repeat::read_short_repeat_values};
+
+use super::{util::try_read_u8, NInt};
+
 pub mod delta;
 pub mod direct;
 pub mod patched_base;
 pub mod short_repeat;
-use std::io::Read;
-
-use crate::error::Result;
-
-use super::{util::try_read_u8, NInt};
 
 const MAX_RUN_LENGTH: usize = 512;
+/// Minimum number of repeated values required to use Short Repeat sub-encoding
+const SHORT_REPEAT_MIN_LENGTH: usize = 3;
 
 pub struct RleReaderV2<N: NInt, R: Read> {
     reader: R,
@@ -34,8 +39,12 @@ impl<N: NInt, R: Read> RleReaderV2<N, R> {
         };
 
         match EncodingType::from_header(header) {
-            EncodingType::ShortRepeat => self.read_short_repeat_values(header)?,
-            EncodingType::Direct => self.read_direct_values(header)?,
+            EncodingType::ShortRepeat => {
+                read_short_repeat_values(&mut self.reader, &mut self.decoded_ints, header)?
+            }
+            EncodingType::Direct => {
+                read_direct_values(&mut self.reader, &mut self.decoded_ints, header)?
+            }
             EncodingType::PatchedBase => self.read_patched_base(header)?,
             EncodingType::Delta => self.read_delta_values(header)?,
         }
@@ -86,6 +95,17 @@ impl EncodingType {
             0b_0100_0000 => Self::Direct,
             0b_0000_0000 => Self::ShortRepeat,
             _ => unreachable!(),
+        }
+    }
+
+    /// Return byte with highest two bits set according to variant.
+    #[inline]
+    fn to_header(self) -> u8 {
+        match self {
+            EncodingType::Delta => 0b_1100_0000,
+            EncodingType::PatchedBase => 0b_1000_0000,
+            EncodingType::Direct => 0b_0100_0000,
+            EncodingType::ShortRepeat => 0b_0000_0000,
         }
     }
 }
