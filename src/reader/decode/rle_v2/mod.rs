@@ -2,7 +2,10 @@ use std::io::{Read, Write};
 
 use crate::error::Result;
 
-use self::{direct::read_direct_values, short_repeat::read_short_repeat_values};
+use self::{
+    delta::read_delta_values, direct::read_direct_values, patched_base::read_patched_base,
+    short_repeat::read_short_repeat_values,
+};
 
 use super::{util::try_read_u8, NInt};
 
@@ -45,8 +48,12 @@ impl<N: NInt, R: Read> RleReaderV2<N, R> {
             EncodingType::Direct => {
                 read_direct_values(&mut self.reader, &mut self.decoded_ints, header)?
             }
-            EncodingType::PatchedBase => self.read_patched_base(header)?,
-            EncodingType::Delta => self.read_delta_values(header)?,
+            EncodingType::PatchedBase => {
+                read_patched_base(&mut self.reader, &mut self.decoded_ints, header)?
+            }
+            EncodingType::Delta => {
+                read_delta_values(&mut self.reader, &mut self.decoded_ints, header)?
+            }
         }
 
         Ok(true)
