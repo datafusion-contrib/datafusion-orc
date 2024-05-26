@@ -15,6 +15,8 @@ use self::util::{
     signed_msb_decode, signed_msb_encode, signed_zigzag_decode, signed_zigzag_encode,
 };
 
+// TODO: rename mod to encoding
+
 pub mod boolean_rle;
 pub mod byte_rle;
 pub mod decimal;

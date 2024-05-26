@@ -9,7 +9,7 @@ use crate::column::{get_present_vec, Column};
 use crate::error::ArrowSnafu;
 use crate::error::Result;
 use crate::proto::stream::Kind;
-use crate::reader::decode::byte_rle::ByteRleIter;
+use crate::reader::decode::byte_rle::ByteRleReader;
 use crate::stripe::Stripe;
 
 use super::{array_decoder_factory, derive_present_vec, ArrayBatchDecoder};
@@ -30,7 +30,7 @@ impl UnionArrayDecoder {
             .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
 
         let tags = stripe.stream_map().get(column, Kind::Data);
-        let tags = Box::new(ByteRleIter::new(tags));
+        let tags = Box::new(ByteRleReader::new(tags));
 
         let variants = column
             .children()
