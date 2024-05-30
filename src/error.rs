@@ -16,7 +16,6 @@
 // under the License.
 
 use std::io;
-use std::string::FromUtf8Error;
 
 use arrow::datatypes::DataType as ArrowDataType;
 use arrow::datatypes::TimeUnit;
@@ -25,19 +24,11 @@ use snafu::prelude::*;
 use snafu::Location;
 
 use crate::proto;
-use crate::proto::r#type::Kind;
 use crate::schema::DataType;
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
 pub enum OrcError {
-    #[snafu(display("Failed to seek, source: {}", source))]
-    SeekError {
-        source: std::io::Error,
-        #[snafu(implicit)]
-        location: Location,
-    },
-
     #[snafu(display("Failed to read, source: {}", source))]
     IoError {
         source: std::io::Error,
@@ -51,30 +42,9 @@ pub enum OrcError {
         location: Location,
     },
 
-    #[snafu(display("Invalid input, message: {}", msg))]
-    InvalidInput {
-        msg: String,
-        #[snafu(implicit)]
-        location: Location,
-    },
-
     #[snafu(display("Out of spec, message: {}", msg))]
     OutOfSpec {
         msg: String,
-        #[snafu(implicit)]
-        location: Location,
-    },
-
-    #[snafu(display("Error from map builder: {}", source))]
-    MapBuilder {
-        source: arrow::error::ArrowError,
-        #[snafu(implicit)]
-        location: Location,
-    },
-
-    #[snafu(display("Failed to create new string builder: {}", source))]
-    StringBuilder {
-        source: arrow::error::ArrowError,
         #[snafu(implicit)]
         location: Location,
     },
@@ -113,32 +83,11 @@ pub enum OrcError {
         location: Location,
     },
 
-    #[snafu(display("unsupported type: {:?}", kind))]
-    UnsupportedType {
-        #[snafu(implicit)]
-        location: Location,
-        kind: Kind,
-    },
-
     #[snafu(display("unsupported type variant: {}", msg))]
     UnsupportedTypeVariant {
         #[snafu(implicit)]
         location: Location,
         msg: &'static str,
-    },
-
-    #[snafu(display("Field not found: {:?}", name))]
-    FieldNotFound {
-        #[snafu(implicit)]
-        location: Location,
-        name: String,
-    },
-
-    #[snafu(display("Invalid column : {:?}", name))]
-    InvalidColumn {
-        #[snafu(implicit)]
-        location: Location,
-        name: String,
     },
 
     #[snafu(display(
@@ -159,26 +108,6 @@ pub enum OrcError {
         location: Location,
         name: String,
         encoding: proto::column_encoding::Kind,
-    },
-
-    #[snafu(display("Failed to add day to a date"))]
-    AddDays {
-        #[snafu(implicit)]
-        location: Location,
-    },
-
-    #[snafu(display("Invalid utf8, source: {}", source))]
-    InvalidUft8 {
-        #[snafu(implicit)]
-        location: Location,
-        source: FromUtf8Error,
-    },
-
-    #[snafu(display("Out of bound at: {}", index))]
-    OutOfBound {
-        #[snafu(implicit)]
-        location: Location,
-        index: usize,
     },
 
     #[snafu(display("Failed to convert to record batch: {}", source))]
