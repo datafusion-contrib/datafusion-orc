@@ -29,7 +29,7 @@ use std::io::Read;
 
 use bytes::{Bytes, BytesMut};
 use prost::Message;
-use snafu::{OptionExt, ResultExt};
+use snafu::{ensure, OptionExt, ResultExt};
 
 use crate::error::{self, EmptyFileSnafu, OutOfSpecSnafu, Result};
 use crate::proto::{self, Footer, Metadata, PostScript};
@@ -71,12 +71,27 @@ impl FileMetadata {
             .iter()
             .map(TryFrom::try_from)
             .collect::<Result<Vec<_>>>()?;
-        let stripes = footer
-            .stripes
-            .iter()
-            .zip(metadata.stripe_stats.iter())
-            .map(TryFrom::try_from)
-            .collect::<Result<Vec<_>>>()?;
+        ensure!(
+            metadata.stripe_stats.is_empty() || metadata.stripe_stats.len() == footer.stripes.len(),
+            OutOfSpecSnafu {
+                msg: "stripe stats length must equal the number of stripes"
+            }
+        );
+        // TODO: confirm if this is valid
+        let stripes = if metadata.stripe_stats.is_empty() {
+            footer
+                .stripes
+                .iter()
+                .map(TryFrom::try_from)
+                .collect::<Result<Vec<_>>>()?
+        } else {
+            footer
+                .stripes
+                .iter()
+                .zip(metadata.stripe_stats.iter())
+                .map(TryFrom::try_from)
+                .collect::<Result<Vec<_>>>()?
+        };
         let user_custom_metadata = footer
             .metadata
             .iter()

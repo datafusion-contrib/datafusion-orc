@@ -87,6 +87,21 @@ impl TryFrom<(&proto::StripeInformation, &proto::StripeStatistics)> for StripeMe
     }
 }
 
+impl TryFrom<&proto::StripeInformation> for StripeMetadata {
+    type Error = error::OrcError;
+
+    fn try_from(value: &proto::StripeInformation) -> Result<Self> {
+        Ok(Self {
+            column_statistics: vec![],
+            offset: value.offset(),
+            index_length: value.index_length(),
+            data_length: value.data_length(),
+            footer_length: value.footer_length(),
+            number_of_rows: value.number_of_rows(),
+        })
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct Stripe {
     columns: Vec<Column>,

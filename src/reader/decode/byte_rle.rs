@@ -55,7 +55,7 @@ impl<W: Write> ByteRleWriter<W> {
 
     /// Flush any buffered values to writer in appropriate sequence, and also
     /// flush the underlying writer.
-    pub fn flush(&mut self) -> Result<()> {
+    fn flush(&mut self) -> Result<()> {
         if self.num_literals != 0 {
             if let Some(value) = self.run_value {
                 write_run(&mut self.writer, value, self.num_literals)?;
