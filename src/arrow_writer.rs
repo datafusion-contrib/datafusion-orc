@@ -161,6 +161,10 @@ fn serialize_schema(schema: &SchemaRef) -> Vec<proto::Type> {
                 kind: Some(proto::r#type::Kind::Double.into()),
                 ..Default::default()
             },
+            ArrowDataType::Int8 => proto::Type {
+                kind: Some(proto::r#type::Kind::Byte.into()),
+                ..Default::default()
+            },
             // TODO: support more types
             _ => unimplemented!("unsupported datatype"),
         };
@@ -211,7 +215,7 @@ mod tests {
     use std::{fs::File, sync::Arc};
 
     use arrow::{
-        array::{Float32Array, Float64Array},
+        array::{Float32Array, Float64Array, Int8Array},
         datatypes::{DataType as ArrowDataType, Field, Schema},
     };
 
@@ -221,14 +225,17 @@ mod tests {
 
     #[test]
     fn test_roundtrip_write() {
-        let f_array = Arc::new(Float32Array::from(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0]));
-        let d_array = Arc::new(Float64Array::from(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0]));
+        let f32_array = Arc::new(Float32Array::from(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0]));
+        let f64_array = Arc::new(Float64Array::from(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0]));
+        let int8_array = Arc::new(Int8Array::from(vec![0, 1, 2, 3, 4, 5, 6]));
         let schema = Schema::new(vec![
             Field::new("f32", ArrowDataType::Float32, false),
             Field::new("f64", ArrowDataType::Float64, false),
+            Field::new("int8", ArrowDataType::Int8, false),
         ]);
 
-        let batch = RecordBatch::try_new(Arc::new(schema), vec![f_array, d_array]).unwrap();
+        let batch =
+            RecordBatch::try_new(Arc::new(schema), vec![f32_array, f64_array, int8_array]).unwrap();
 
         let f = File::create("/tmp/new.orc").unwrap();
         let mut writer = ArrowWriterBuilder::new(f, batch.schema())

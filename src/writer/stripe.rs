@@ -8,7 +8,7 @@ use snafu::ResultExt;
 use crate::error::{IoSnafu, Result};
 use crate::proto;
 
-use super::column::{ColumnStripeEncoder, FloatStripeEncoder};
+use super::column::{ByteStripeEncoder, ColumnStripeEncoder, FloatStripeEncoder};
 use super::{ColumnEncoding, StreamType};
 
 #[derive(Copy, Clone, Eq, Debug, PartialEq)]
@@ -140,10 +140,9 @@ impl<W: Write + Seek> StripeWriter<W> {
 
 fn create_encoder(field: &FieldRef) -> Box<dyn ColumnStripeEncoder> {
     match field.data_type() {
-        ArrowDataType::Float32 => {
-            Box::new(FloatStripeEncoder::<Float32Type>::new()) as Box<dyn ColumnStripeEncoder>
-        }
+        ArrowDataType::Float32 => Box::new(FloatStripeEncoder::<Float32Type>::new()),
         ArrowDataType::Float64 => Box::new(FloatStripeEncoder::<Float64Type>::new()),
+        ArrowDataType::Int8 => Box::new(ByteStripeEncoder::new()),
         // TODO: support more datatypes
         _ => unimplemented!("unsupported datatype"),
     }

@@ -1,7 +1,7 @@
-use snafu::ResultExt;
+use bytes::{BufMut, BytesMut};
 
-use crate::error::{IoSnafu, Result};
-use std::io::{Read, Write};
+use crate::error::Result;
+use std::io::Read;
 
 use super::util::read_u8;
 
@@ -9,8 +9,8 @@ const MAX_LITERAL_LENGTH: usize = 128;
 const MIN_REPEAT_LENGTH: usize = 3;
 const MAX_REPEAT_LENGTH: usize = 130;
 
-pub struct ByteRleWriter<W> {
-    writer: W,
+pub struct ByteRleWriter {
+    writer: BytesMut,
     /// Literal values to encode.
     literals: [u8; MAX_LITERAL_LENGTH],
     /// Represents the number of elements currently in `literals` if Literals,
@@ -23,10 +23,10 @@ pub struct ByteRleWriter<W> {
     run_value: Option<u8>,
 }
 
-impl<W: Write> ByteRleWriter<W> {
-    pub fn new(writer: W) -> Self {
+impl ByteRleWriter {
+    pub fn new() -> Self {
         Self {
-            writer,
+            writer: BytesMut::new(),
             literals: [0; MAX_LITERAL_LENGTH],
             num_literals: 0,
             tail_run_length: 0,
@@ -46,38 +46,44 @@ impl<W: Write> ByteRleWriter<W> {
     ///     sequence (or switch to Run if entire current sequence is the repeated value)
     ///   - Whether in Literal or Run mode, keep buffering values and flushing when max length
     ///     reached or encoding is broken (e.g. non-repeated value found in Run mode)
-    pub fn write(&mut self, values: &[u8]) -> Result<()> {
+    pub fn write(&mut self, values: &[u8]) {
         for &byte in values {
-            self.process_value(byte)?;
+            self.process_value(byte);
         }
-        Ok(())
     }
 
-    /// Flush any buffered values to writer in appropriate sequence, and also
-    /// flush the underlying writer.
-    fn flush(&mut self) -> Result<()> {
+    /// Like [`Self::write`] but for a single value.
+    pub fn write_byte(&mut self, byte: u8) {
+        self.process_value(byte);
+    }
+
+    /// Flush any buffered values to writer in appropriate sequence.
+    fn flush(&mut self) {
         if self.num_literals != 0 {
             if let Some(value) = self.run_value {
-                write_run(&mut self.writer, value, self.num_literals)?;
+                write_run(&mut self.writer, value, self.num_literals);
             } else {
                 let literals = &self.literals[..self.num_literals];
-                write_literals(&mut self.writer, literals)?;
+                write_literals(&mut self.writer, literals);
             }
             self.clear_state();
         }
-        self.writer.flush().context(IoSnafu)?;
-        Ok(())
     }
 
-    /// Flush the writer and close it, consuming self.
-    pub fn close(mut self) -> Result<()> {
-        self.flush()?;
-        Ok(())
+    /// Take the encoded bytes, replacing it with an empty buffer.
+    pub fn take_inner(&mut self) -> BytesMut {
+        self.flush();
+        std::mem::take(&mut self.writer)
+    }
+
+    /// Estimated current memory footprint of bytes being encoded.
+    pub fn estimate_memory_size(&self) -> usize {
+        self.writer.len() + self.num_literals
     }
 
     /// Incrementally process values to determine when to encode with a Literal sequence
     /// or when to switch to Run sequence (and vice-versa).
-    fn process_value(&mut self, value: u8) -> Result<()> {
+    fn process_value(&mut self, value: u8) {
         // Adapted from https://github.com/apache/orc/blob/main/java/core/src/java/org/apache/orc/impl/RunLengthByteWriter.java
         if self.num_literals == 0 {
             // Start off in Literal mode
@@ -92,12 +98,12 @@ impl<W: Write> ByteRleWriter<W> {
                 // Continue buffering for Run sequence, flushing if reaching max length
                 self.num_literals += 1;
                 if self.num_literals == MAX_REPEAT_LENGTH {
-                    write_run(&mut self.writer, run_value, MAX_REPEAT_LENGTH)?;
+                    write_run(&mut self.writer, run_value, MAX_REPEAT_LENGTH);
                     self.clear_state();
                 }
             } else {
                 // Run is broken, flush then start again in Literal mode
-                write_run(&mut self.writer, run_value, self.num_literals)?;
+                write_run(&mut self.writer, run_value, self.num_literals);
                 self.run_value = None;
                 self.literals[0] = value;
                 self.num_literals = 1;
@@ -125,7 +131,7 @@ impl<W: Write> ByteRleWriter<W> {
                     // We don't flush the tail end which is a Run sequence
                     let len = self.num_literals - (MIN_REPEAT_LENGTH - 1);
                     let literals = &self.literals[..len];
-                    write_literals(&mut self.writer, literals)?;
+                    write_literals(&mut self.writer, literals);
                     self.run_value = Some(value);
                     self.num_literals = MIN_REPEAT_LENGTH;
                 }
@@ -135,12 +141,11 @@ impl<W: Write> ByteRleWriter<W> {
                 self.num_literals += 1;
                 if self.num_literals == MAX_LITERAL_LENGTH {
                     // Entire literals is filled, pass in as is
-                    write_literals(&mut self.writer, &self.literals)?;
+                    write_literals(&mut self.writer, &self.literals);
                     self.clear_state();
                 }
             }
         }
-        Ok(())
     }
 
     fn clear_state(&mut self) {
@@ -150,27 +155,26 @@ impl<W: Write> ByteRleWriter<W> {
     }
 }
 
-fn write_run<W: Write>(writer: &mut W, value: u8, run_length: usize) -> Result<()> {
+fn write_run(writer: &mut BytesMut, value: u8, run_length: usize) {
     debug_assert!(
         (MIN_REPEAT_LENGTH..=MAX_REPEAT_LENGTH).contains(&run_length),
         "Byte RLE Run sequence must be in range 3..=130"
     );
     // [3, 130] to [0, 127]
     let header = run_length - MIN_REPEAT_LENGTH;
-    writer.write_all(&[header as u8, value]).context(IoSnafu)?;
-    Ok(())
+    writer.put_u8(header as u8);
+    writer.put_u8(value);
 }
 
-fn write_literals<W: Write>(writer: &mut W, literals: &[u8]) -> Result<()> {
+fn write_literals(writer: &mut BytesMut, literals: &[u8]) {
     debug_assert!(
         (1..=MAX_LITERAL_LENGTH).contains(&literals.len()),
         "Byte RLE Literal sequence must be in range 1..=128"
     );
     // [1, 128] to [-1, -128], then writing as a byte
     let header = -(literals.len() as i32);
-    writer.write_all(&[header as u8]).context(IoSnafu)?;
-    writer.write_all(literals).context(IoSnafu)?;
-    Ok(())
+    writer.put_u8(header as u8);
+    writer.put_slice(literals);
 }
 
 pub struct ByteRleReader<R> {
@@ -263,11 +267,11 @@ mod test {
     }
 
     fn roundtrip_byte_rle_helper(values: &[u8]) -> Result<Vec<u8>> {
-        let mut buf = vec![];
-        let mut writer = ByteRleWriter::new(&mut buf);
-        writer.write(values)?;
-        writer.flush()?;
+        let mut writer = ByteRleWriter::new();
+        writer.write(values);
+        writer.flush();
 
+        let buf = writer.take_inner();
         let mut cursor = Cursor::new(&buf);
         let reader = ByteRleReader::new(&mut cursor);
         reader.into_iter().collect::<Result<Vec<_>>>()
