@@ -63,7 +63,7 @@ pub fn write_direct_values<N: NInt, W: Write>(
     let header2 = encoded_length_low_bits;
 
     writer.write_all(&[header1, header2]).context(IoSnafu)?;
-    write_aligned_packed_ints(values, bit_width, writer)?;
+    write_aligned_packed_ints(writer, bit_width, values)?;
 
     Ok(())
 }
