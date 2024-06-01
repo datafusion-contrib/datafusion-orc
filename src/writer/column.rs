@@ -65,9 +65,10 @@ where
         let array = array.as_primitive::<T>();
         // Handling case where if encoding across RecordBatch boundaries, arrays
         // might introduce a NullBuffer
+        // TODO: extract this common functionality into a ValuesEncoder
         match (array.nulls(), &mut self.present) {
             // Need to copy only the valid values as indicated by null_buffer
-            (Some(null_buffer), Some(present)) => {
+            (Some(null_buffer), Some(present)) if null_buffer.null_count() > 0 => {
                 present.extend(null_buffer);
                 for index in null_buffer.valid_indices() {
                     let f = array.value(index);
@@ -75,7 +76,7 @@ where
                     self.data.extend_from_slice(f);
                 }
             }
-            (Some(null_buffer), None) => {
+            (Some(null_buffer), None) if null_buffer.null_count() > 0 => {
                 let mut present = PresentStreamEncoder::new();
                 present.extend(null_buffer);
                 self.present = Some(present);
@@ -86,12 +87,12 @@ where
                 }
             }
             // Simple direct copy from values buffer, extending present if needed
-            (None, Some(present)) => {
+            (_, Some(present)) => {
                 let bytes = array.values().to_byte_slice();
                 self.data.extend_from_slice(bytes);
                 present.extend_present(array.len());
             }
-            (None, None) => {
+            (_, None) => {
                 let bytes = array.values().to_byte_slice();
                 self.data.extend_from_slice(bytes);
             }
