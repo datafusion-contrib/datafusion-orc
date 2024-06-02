@@ -128,6 +128,13 @@ pub trait NInt:
         // Used when encoding Patched Base in RLEv2
         self
     }
+
+    /// Calculate the minimum bit size required to represent this value, by truncating
+    /// the leading zeros.
+    #[inline]
+    fn bits_used(self) -> usize {
+        Self::BYTE_SIZE * 8 - self.leading_zeros() as usize
+    }
 }
 
 // We only implement for i16, i32, i64 and u64.

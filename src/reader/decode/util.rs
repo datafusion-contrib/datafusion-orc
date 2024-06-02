@@ -405,10 +405,9 @@ fn read_varint<N: NInt, R: Read>(reader: &mut R) -> Result<N> {
 
 /// Encode Base 128 Unsigned Varint
 fn write_varint<N: NInt, W: Write>(writer: &mut W, value: N) -> Result<()> {
-    let bits_used = N::BYTE_SIZE * 8 - value.leading_zeros() as usize;
     // Take max in case value = 0.
     // Divide by 7 as high bit is always used as continuation flag.
-    let byte_size = bits_used.div_ceil(7).max(1);
+    let byte_size = value.bits_used().div_ceil(7).max(1);
     // By default we'll have continuation bit set
     // TODO: can probably do without Vec allocation?
     let mut bytes = vec![0x80; byte_size];
@@ -561,7 +560,7 @@ mod tests {
     use super::*;
     use crate::error::Result;
     use num::Unsigned;
-    use proptest::{arbitrary::ParamsFor, prelude::*};
+    use proptest::prelude::*;
     use std::io::Cursor;
 
     #[test]

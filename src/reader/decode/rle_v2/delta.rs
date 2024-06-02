@@ -138,8 +138,7 @@ pub fn write_varying_delta_values<N: NInt, W: Write>(
         max_delta > N::zero(),
         "varying deltas must have at least one non-zero delta"
     );
-    let bit_width = N::BYTE_SIZE * 8 - max_delta.leading_zeros() as usize;
-    let bit_width = get_closest_aligned_bit_width(bit_width);
+    let bit_width = get_closest_aligned_bit_width(max_delta.bits_used());
     // We can't have bit width of 1 for delta as that would get decoded as
     // 0 bit width on reader, which indicates fixed delta, so bump 1 to 2
     // in this case.

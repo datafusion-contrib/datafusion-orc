@@ -59,9 +59,8 @@ pub fn write_short_repeat_values<N: NInt, W: Write>(
 
     let value = value.zigzag_encode();
 
-    let bits_used = N::BYTE_SIZE * 8 - value.leading_zeros() as usize;
     // Take max in case value = 0
-    let byte_size = bits_used.div_ceil(8).max(1) as u8;
+    let byte_size = value.bits_used().div_ceil(8).max(1) as u8;
     let encoded_byte_size = byte_size - 1;
     let encoded_count = (count - SHORT_REPEAT_MIN_LENGTH) as u8;
 
