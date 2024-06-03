@@ -74,6 +74,8 @@ mod tests {
 
     use proptest::prelude::*;
 
+    use crate::reader::decode::VarintSerde;
+
     use super::*;
 
     fn roundtrip_direct_helper<N: NInt>(values: &[N], bit_width: usize) -> Result<Vec<N>> {

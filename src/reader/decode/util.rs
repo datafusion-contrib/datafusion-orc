@@ -5,7 +5,7 @@ use snafu::{OptionExt, ResultExt};
 
 use crate::error::{self, IoSnafu, Result, VarintTooLargeSnafu};
 
-use super::NInt;
+use super::{NInt, VarintSerde};
 
 /// Read single byte
 #[inline]
@@ -378,7 +378,7 @@ pub fn get_closest_aligned_bit_width(width: usize) -> usize {
 }
 
 /// Decode Base 128 Unsigned Varint
-fn read_varint<N: NInt, R: Read>(reader: &mut R) -> Result<N> {
+fn read_varint<N: VarintSerde, R: Read>(reader: &mut R) -> Result<N> {
     // Varints are encoded as sequence of bytes.
     // Where the high bit of a byte is set to 1 if the varint
     // continues into the next byte. Eventually it should terminate
@@ -404,7 +404,7 @@ fn read_varint<N: NInt, R: Read>(reader: &mut R) -> Result<N> {
 }
 
 /// Encode Base 128 Unsigned Varint
-fn write_varint<N: NInt, W: Write>(writer: &mut W, value: N) -> Result<()> {
+fn write_varint<N: VarintSerde, W: Write>(writer: &mut W, value: N) -> Result<()> {
     // Take max in case value = 0.
     // Divide by 7 as high bit is always used as continuation flag.
     let byte_size = value.bits_used().div_ceil(7).max(1);
@@ -427,88 +427,19 @@ fn write_varint<N: NInt, W: Write>(writer: &mut W, value: N) -> Result<()> {
     Ok(())
 }
 
-pub fn read_varint_zigzagged<N: NInt, R: Read>(reader: &mut R) -> Result<N> {
+pub fn read_varint_zigzagged<N: VarintSerde, R: Read>(reader: &mut R) -> Result<N> {
     let unsigned = read_varint::<N, _>(reader)?;
     Ok(unsigned.zigzag_decode())
 }
 
-pub fn write_varint_zigzagged<N: NInt, W: Write>(writer: &mut W, value: N) -> Result<()> {
+pub fn write_varint_zigzagged<N: VarintSerde, W: Write>(writer: &mut W, value: N) -> Result<()> {
     let value = value.zigzag_encode();
     write_varint(writer, value)
 }
 
-/// Inverse of [`read_abs_varint_zigzagged`].
-pub fn write_abs_varint_zigzagged<N: NInt, W: Write>(
-    writer: &mut W,
-    value: AbsVarint<N>,
-) -> Result<()> {
-    let value = match value {
-        // Opposite logic of what is done in read function
-        AbsVarint::Negative(value) => {
-            let value = value - N::one();
-            let value = value << 1_usize;
-            value | N::one()
-        }
-        AbsVarint::Positive(value) => value << 1_usize,
-    };
-    write_varint(writer, value)
-}
-
-/// Used to represent negative values for [`NInt`], in case it is not signed (such as u64).
-/// This is used by RLEv2 Delta encoding where the first delta can be negative to represent
-/// a decreasing sequence.
-///
-/// The inner value is always positive, regardless of if `N` can be signed or not.
-// TODO: can we do this in a cleaner/better way?
-// TODO: what about i16::MIN? Need to consider edge cases
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AbsVarint<N: NInt> {
-    Negative(N),
-    Positive(N),
-}
-
-/// This trait (and its implementations) is intended to make generic the
-/// behaviour of addition/subtraction over NInt.
-// TODO: probably can be done in a cleaner/better way
-pub trait AccumulateOp {
-    fn acc<N: NInt>(a: N, b: N) -> Option<N>;
-}
-
-pub struct AddOp;
-
-impl AccumulateOp for AddOp {
-    fn acc<N: NInt>(a: N, b: N) -> Option<N> {
-        a.checked_add(&b)
-    }
-}
-
-pub struct SubOp;
-
-impl AccumulateOp for SubOp {
-    fn acc<N: NInt>(a: N, b: N) -> Option<N> {
-        a.checked_sub(&b)
-    }
-}
-
-/// Special case for delta where we need to parse as NInt, but it's signed.
-/// So we calculate the absolute value and return the sign via enum variants.
-pub fn read_abs_varint_zigzagged<N: NInt, R: Read>(r: &mut R) -> Result<AbsVarint<N>> {
-    let num = read_varint::<N, _>(r)?;
-    let is_negative = (num & N::one()) == N::one();
-    // Unsigned >> to ensure new MSB is always 0 and not 1
-    let num = num.unsigned_shr(1);
-    if is_negative {
-        // Because of two's complement
-        let num = num + N::one();
-        Ok(AbsVarint::Negative(num))
-    } else {
-        Ok(AbsVarint::Positive(num))
-    }
-}
-
 /// Zigzag encoding stores the sign bit in the least significant bit.
 #[inline]
-pub fn signed_zigzag_decode<N: NInt + Signed>(encoded: N) -> N {
+pub fn signed_zigzag_decode<N: VarintSerde + Signed>(encoded: N) -> N {
     let without_sign_bit = encoded.unsigned_shr(1);
     let sign_bit = encoded & N::one();
     // If positive, sign_bit is 0
@@ -522,7 +453,7 @@ pub fn signed_zigzag_decode<N: NInt + Signed>(encoded: N) -> N {
 
 /// Opposite of [`signed_zigzag_decode`].
 #[inline]
-pub fn signed_zigzag_encode<N: NInt + Signed>(value: N) -> N {
+pub fn signed_zigzag_encode<N: VarintSerde + Signed>(value: N) -> N {
     let l = N::BYTE_SIZE * 8 - 1;
     (value << 1_usize) ^ (value >> l)
 }
@@ -559,7 +490,6 @@ pub fn signed_msb_encode<N: NInt + Signed>(value: N, encoded_byte_size: usize) -
 mod tests {
     use super::*;
     use crate::error::Result;
-    use num::Unsigned;
     use proptest::prelude::*;
     use std::io::Cursor;
 
@@ -752,7 +682,7 @@ mod tests {
         Ok(())
     }
 
-    fn roundtrip_varint<N: NInt>(value: N) -> N {
+    fn roundtrip_varint<N: VarintSerde>(value: N) -> N {
         let mut buf = vec![];
         write_varint_zigzagged(&mut buf, value).unwrap();
         read_varint_zigzagged::<N, _>(&mut Cursor::new(&buf)).unwrap()
@@ -826,95 +756,5 @@ mod tests {
         assert_eq!(roundtrip_varint(value), value);
         let value = u64::MAX;
         assert_eq!(roundtrip_varint(value), value);
-    }
-
-    fn abs_varint_unsigned_strategy<N: NInt + Arbitrary + Unsigned>(
-    ) -> impl Strategy<Value = AbsVarint<N>> {
-        (any::<N>(), any::<bool>()).prop_map(|(a, b)| {
-            // TODO: this is hack to skip high bit values which fail, need to fix
-            let a = a & !(N::one() << (N::BYTE_SIZE * 8 - 1));
-            if b {
-                AbsVarint::Positive(a)
-            } else {
-                AbsVarint::Negative(a)
-            }
-        })
-    }
-
-    fn abs_varint_signed_strategy<N: NInt + Arbitrary + Signed>(
-    ) -> impl Strategy<Value = AbsVarint<N>> {
-        any::<N>().prop_map(|a| {
-            // TODO: this is hack to skip MIN value which fails, need to fix
-            let a = a.max(N::min_value() + N::one());
-            if a >= N::zero() {
-                AbsVarint::Positive(a)
-            } else {
-                AbsVarint::Negative(a.abs())
-            }
-        })
-    }
-
-    // Compare against regular NInt varint zigzagging, only valid when NInt is signed
-    fn abs_varint_checker_signed_helper<N: NInt + Signed>(value: N) -> (Vec<u8>, Vec<u8>) {
-        let abs_varint = if value < N::zero() {
-            AbsVarint::Negative(value.abs())
-        } else {
-            AbsVarint::Positive(value)
-        };
-        let mut abs = vec![];
-        write_abs_varint_zigzagged(&mut abs, abs_varint).unwrap();
-        let mut reg = vec![];
-        write_varint_zigzagged(&mut reg, value).unwrap();
-        (abs, reg)
-    }
-
-    fn roundtrip_abs_varint<N: NInt>(value: AbsVarint<N>) -> AbsVarint<N> {
-        let mut buf = vec![];
-        write_abs_varint_zigzagged(&mut buf, value).unwrap();
-        read_abs_varint_zigzagged::<N, _>(&mut Cursor::new(&buf)).unwrap()
-    }
-
-    proptest! {
-        #[test]
-        fn abs_varint_matches_varint_i16(value in (i16::MIN + 1)..i16::MAX) {
-            let (abs, reg) = abs_varint_checker_signed_helper(value);
-            prop_assert_eq!(abs, reg);
-        }
-
-        #[test]
-        fn abs_varint_matches_varint_i32(value in (i32::MIN + 1)..i32::MAX) {
-            let (abs, reg) = abs_varint_checker_signed_helper(value);
-            prop_assert_eq!(abs, reg);
-        }
-
-        #[test]
-        fn abs_varint_matches_varint_i64(value in (i64::MIN + 1)..i64::MAX) {
-            let (abs, reg) = abs_varint_checker_signed_helper(value);
-            prop_assert_eq!(abs, reg);
-        }
-
-        #[test]
-        fn roundtrip_abs_varint_i16(value in abs_varint_signed_strategy::<i16>()) {
-            let out = roundtrip_abs_varint(value);
-            prop_assert_eq!(out, value);
-        }
-
-        #[test]
-        fn roundtrip_abs_varint_i32(value in abs_varint_signed_strategy::<i32>()) {
-            let out = roundtrip_abs_varint(value);
-            prop_assert_eq!(out, value);
-        }
-
-        #[test]
-        fn roundtrip_abs_varint_i64(value in abs_varint_signed_strategy::<i64>()) {
-            let out = roundtrip_abs_varint(value);
-            prop_assert_eq!(out, value);
-        }
-
-        #[test]
-        fn roundtrip_abs_varint_u64(value in abs_varint_unsigned_strategy::<u64>()) {
-            let out = roundtrip_abs_varint(value);
-            prop_assert_eq!(out, value);
-        }
     }
 }

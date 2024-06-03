@@ -5,67 +5,20 @@ use snafu::{OptionExt, ResultExt};
 use crate::error::{IoSnafu, OrcError, OutOfSpecSnafu, Result};
 use crate::reader::decode::rle_v2::{EncodingType, MAX_RUN_LENGTH};
 use crate::reader::decode::util::{
-    extract_run_length_from_header, get_closest_aligned_bit_width, read_abs_varint_zigzagged,
-    read_ints, read_u8, read_varint_zigzagged, rle_v2_decode_bit_width, rle_v2_encode_bit_width,
-    write_abs_varint_zigzagged, write_aligned_packed_ints, write_varint_zigzagged, AbsVarint,
-    AccumulateOp, AddOp, SubOp,
+    extract_run_length_from_header, get_closest_aligned_bit_width, read_ints, read_u8,
+    read_varint_zigzagged, rle_v2_decode_bit_width, rle_v2_encode_bit_width,
+    write_aligned_packed_ints, write_varint_zigzagged,
 };
 
 use super::NInt;
 
-fn fixed_delta<N: NInt, A: AccumulateOp>(
-    out_ints: &mut Vec<N>,
-    length: usize,
-    base_value: N,
-    delta: N,
-) -> Result<()> {
-    // Skip first value since that's base_value
-    (1..length).try_fold(base_value, |acc, _| {
-        let acc = A::acc(acc, delta).context(OutOfSpecSnafu {
-            msg: "over/underflow when decoding delta integer",
-        })?;
-        out_ints.push(acc);
-        Ok::<_, OrcError>(acc)
-    })?;
-    Ok(())
-}
-
-fn varied_deltas<N: NInt, R: Read, A: AccumulateOp>(
-    reader: &mut R,
-    out_ints: &mut Vec<N>,
-    length: usize,
-    base_value: N,
-    delta: N,
-    delta_bit_width: usize,
-) -> Result<()> {
-    // Add delta base and first value
-    let second_value = A::acc(base_value, delta).context(OutOfSpecSnafu {
-        msg: "over/underflow when decoding delta integer",
-    })?;
-    out_ints.push(second_value);
-    // Run length includes base value and first delta, so skip them
-    let length = length - 2;
-
-    // Unpack the delta values
-    read_ints(out_ints, length, delta_bit_width, reader)?;
-    out_ints
-        .iter_mut()
-        // Ignore base_value and second_value
-        .skip(2)
-        // Each element is the delta, so find actual value using running accumulator
-        .try_fold(second_value, |acc, delta| {
-            let acc = A::acc(acc, *delta).context(OutOfSpecSnafu {
-                msg: "over/underflow when decoding delta integer",
-            })?;
-            *delta = acc;
-            Ok::<_, OrcError>(acc)
-        })?;
-    Ok(())
-}
-
+/// We use i64 and u64 for delta to make things easier and to avoid edge cases,
+/// as for example for i16, the delta may be too large to represent in an i16.
+// TODO: expand on the above
 pub fn read_delta_values<N: NInt, R: Read>(
     reader: &mut R,
     out_ints: &mut Vec<N>,
+    deltas: &mut Vec<u64>,
     header: u8,
 ) -> Result<()> {
     // Encoding format:
@@ -93,35 +46,44 @@ pub fn read_delta_values<N: NInt, R: Read>(
     out_ints.push(base_value);
 
     // Always signed since can be decreasing sequence
-    let delta_base = read_abs_varint_zigzagged::<N, _>(reader)?;
+    let delta_base = read_varint_zigzagged::<i64, _>(reader)?;
+    // TODO: does this get inlined?
+    let op: fn(N, u64) -> Option<N> = if delta_base.is_positive() {
+        |acc, delta| acc.add_u64(delta)
+    } else {
+        |acc, delta| acc.sub_u64(delta)
+    };
+    let delta_base = delta_base.unsigned_abs();
 
-    match (delta_bit_width, delta_base) {
+    if delta_bit_width == 0 {
         // If width is 0 then all values have fixed delta of delta_base
-        (0, AbsVarint::Negative(delta)) => {
-            fixed_delta::<N, SubOp>(out_ints, length, base_value, delta)?;
-        }
-        (0, AbsVarint::Positive(delta)) => {
-            fixed_delta::<N, AddOp>(out_ints, length, base_value, delta)?;
-        }
-        (delta_bit_width, AbsVarint::Negative(delta)) => {
-            varied_deltas::<N, R, SubOp>(
-                reader,
-                out_ints,
-                length,
-                base_value,
-                delta,
-                delta_bit_width,
-            )?;
-        }
-        (delta_bit_width, AbsVarint::Positive(delta)) => {
-            varied_deltas::<N, R, AddOp>(
-                reader,
-                out_ints,
-                length,
-                base_value,
-                delta,
-                delta_bit_width,
-            )?;
+        // Skip first value since that's base_value
+        (1..length).try_fold(base_value, |acc, _| {
+            let acc = op(acc, delta_base).context(OutOfSpecSnafu {
+                msg: "over/underflow when decoding delta integer",
+            })?;
+            out_ints.push(acc);
+            Ok::<_, OrcError>(acc)
+        })?;
+    } else {
+        deltas.clear();
+        // Add delta base and first value
+        let second_value = op(base_value, delta_base).context(OutOfSpecSnafu {
+            msg: "over/underflow when decoding delta integer",
+        })?;
+        out_ints.push(second_value);
+        // Run length includes base value and first delta, so skip them
+        let length = length - 2;
+
+        // Unpack the delta values
+        read_ints(deltas, length, delta_bit_width, reader)?;
+        let mut acc = second_value;
+        // Each element is the delta, so find actual value using running accumulator
+        for delta in deltas {
+            acc = op(acc, *delta).context(OutOfSpecSnafu {
+                msg: "over/underflow when decoding delta integer",
+            })?;
+            out_ints.push(acc);
         }
     }
     Ok(())
@@ -130,15 +92,15 @@ pub fn read_delta_values<N: NInt, R: Read>(
 pub fn write_varying_delta_values<N: NInt, W: Write>(
     writer: &mut W,
     base_value: N,
-    first_delta: AbsVarint<N>,
-    max_delta: N,
-    subsequent_deltas: &[N],
+    first_delta: i64,
+    max_delta: u64,
+    subsequent_deltas: &[u64],
 ) -> Result<()> {
     debug_assert!(
-        max_delta > N::zero(),
+        max_delta > 0,
         "varying deltas must have at least one non-zero delta"
     );
-    let bit_width = get_closest_aligned_bit_width(max_delta.bits_used());
+    let bit_width = get_closest_aligned_bit_width(64 - max_delta.leading_zeros() as usize);
     // We can't have bit width of 1 for delta as that would get decoded as
     // 0 bit width on reader, which indicates fixed delta, so bump 1 to 2
     // in this case.
@@ -147,11 +109,8 @@ pub fn write_varying_delta_values<N: NInt, W: Write>(
     let header = derive_delta_header(bit_width, subsequent_deltas.len() + 2);
     writer.write_all(&header).context(IoSnafu)?;
 
-    // Encoding base
     write_varint_zigzagged(writer, base_value)?;
-
-    // Encoding base delta as signed varint
-    write_abs_varint_zigzagged(writer, first_delta)?;
+    write_varint_zigzagged(writer, first_delta)?;
 
     // Bitpacked deltas
     write_aligned_packed_ints(writer, bit_width, subsequent_deltas)?;
@@ -162,18 +121,15 @@ pub fn write_varying_delta_values<N: NInt, W: Write>(
 pub fn write_fixed_delta_values<N: NInt, W: Write>(
     writer: &mut W,
     base_value: N,
-    delta: AbsVarint<N>,
+    delta: i64,
     len: usize,
 ) -> Result<()> {
     // Assuming len includes base_value and first delta
     let header = derive_delta_header(0, len);
     writer.write_all(&header).context(IoSnafu)?;
 
-    // Encoding base
     write_varint_zigzagged(writer, base_value)?;
-
-    // Encoding base delta as signed varint
-    write_abs_varint_zigzagged(writer, delta)?;
+    write_varint_zigzagged(writer, delta)?;
 
     Ok(())
 }
@@ -213,9 +169,11 @@ mod tests {
     fn test_fixed_delta_positive() {
         let mut buf = vec![];
         let mut out = vec![];
-        write_fixed_delta_values(&mut buf, 0_u64, AbsVarint::Positive(10), 100).unwrap();
+        let mut deltas = vec![];
+        write_fixed_delta_values(&mut buf, 0_u64, 10, 100).unwrap();
         let header = buf[0];
-        read_delta_values::<u64, _>(&mut Cursor::new(&buf[1..]), &mut out, header).unwrap();
+        read_delta_values::<u64, _>(&mut Cursor::new(&buf[1..]), &mut out, &mut deltas, header)
+            .unwrap();
 
         let expected = (0..100).map(|i| i * 10).collect::<Vec<u64>>();
         assert_eq!(expected, out);
@@ -225,9 +183,11 @@ mod tests {
     fn test_fixed_delta_negative() {
         let mut buf = vec![];
         let mut out = vec![];
-        write_fixed_delta_values(&mut buf, 10_000_u64, AbsVarint::Negative(63), 150).unwrap();
+        let mut deltas = vec![];
+        write_fixed_delta_values(&mut buf, 10_000_u64, -63, 150).unwrap();
         let header = buf[0];
-        read_delta_values::<u64, _>(&mut Cursor::new(&buf[1..]), &mut out, header).unwrap();
+        read_delta_values::<u64, _>(&mut Cursor::new(&buf[1..]), &mut out, &mut deltas, header)
+            .unwrap();
 
         let expected = (0..150).map(|i| 10_000_u64 - i * 63).collect::<Vec<u64>>();
         assert_eq!(expected, out);
@@ -242,9 +202,11 @@ mod tests {
 
         let mut buf = vec![];
         let mut out = vec![];
-        write_varying_delta_values(&mut buf, 0_u64, AbsVarint::Positive(10), max, &deltas).unwrap();
+        let mut deltas = vec![];
+        write_varying_delta_values(&mut buf, 0_u64, 10, max, &deltas).unwrap();
         let header = buf[0];
-        read_delta_values::<u64, _>(&mut Cursor::new(&buf[1..]), &mut out, header).unwrap();
+        read_delta_values::<u64, _>(&mut Cursor::new(&buf[1..]), &mut out, &mut deltas, header)
+            .unwrap();
 
         let mut expected = vec![0, 10];
         let mut i = 1;
@@ -264,10 +226,11 @@ mod tests {
 
         let mut buf = vec![];
         let mut out = vec![];
-        write_varying_delta_values(&mut buf, 10_000_u64, AbsVarint::Negative(1), max, &deltas)
-            .unwrap();
+        let mut deltas = vec![];
+        write_varying_delta_values(&mut buf, 10_000_u64, -1, max, &deltas).unwrap();
         let header = buf[0];
-        read_delta_values::<u64, _>(&mut Cursor::new(&buf[1..]), &mut out, header).unwrap();
+        read_delta_values::<u64, _>(&mut Cursor::new(&buf[1..]), &mut out, &mut deltas, header)
+            .unwrap();
 
         let mut expected = vec![10_000, 9_999];
         let mut i = 1;

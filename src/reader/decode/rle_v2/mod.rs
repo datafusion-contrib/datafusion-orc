@@ -23,6 +23,7 @@ pub struct RleReaderV2<N: NInt, R: Read> {
     decoded_ints: Vec<N>,
     /// Indexes into decoded_ints to make it act like a queue
     current_head: usize,
+    deltas: Vec<u64>,
 }
 
 impl<N: NInt, R: Read> RleReaderV2<N, R> {
@@ -31,6 +32,7 @@ impl<N: NInt, R: Read> RleReaderV2<N, R> {
             reader,
             decoded_ints: Vec::with_capacity(MAX_RUN_LENGTH),
             current_head: 0,
+            deltas: Vec::with_capacity(MAX_RUN_LENGTH),
         }
     }
 
@@ -51,9 +53,12 @@ impl<N: NInt, R: Read> RleReaderV2<N, R> {
             EncodingType::PatchedBase => {
                 read_patched_base(&mut self.reader, &mut self.decoded_ints, header)?
             }
-            EncodingType::Delta => {
-                read_delta_values(&mut self.reader, &mut self.decoded_ints, header)?
-            }
+            EncodingType::Delta => read_delta_values(
+                &mut self.reader,
+                &mut self.decoded_ints,
+                &mut self.deltas,
+                header,
+            )?,
         }
 
         Ok(true)
