@@ -3,7 +3,7 @@ use std::sync::Arc;
 use arrow::{
     array::{ArrayRef, StructArray},
     buffer::NullBuffer,
-    datatypes::{Field, Fields},
+    datatypes::Fields,
 };
 use snafu::ResultExt;
 
@@ -20,23 +20,18 @@ pub struct StructArrayDecoder {
 }
 
 impl StructArrayDecoder {
-    pub fn new(column: &Column, stripe: &Stripe) -> Result<Self> {
+    pub fn new(column: &Column, fields: Fields, stripe: &Stripe) -> Result<Self> {
+        println!("StructArrayDecoder column: {:#?}", column);
+        println!("StructArrayDecoder fields: {:#?}", fields);
         let present = get_present_vec(column, stripe)?
             .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
 
         let decoders = column
             .children()
             .iter()
-            .map(|child| array_decoder_factory(child, stripe))
+            .zip(fields.iter().cloned())
+            .map(|(child, field)| array_decoder_factory(child, field, stripe))
             .collect::<Result<Vec<_>>>()?;
-
-        let fields = column
-            .children()
-            .into_iter()
-            .map(Field::from)
-            .map(Arc::new)
-            .collect::<Vec<_>>();
-        let fields = Fields::from(fields);
 
         Ok(Self {
             decoders,
