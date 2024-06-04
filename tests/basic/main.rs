@@ -419,6 +419,30 @@ pub fn overflowing_timestamps_test() {
     assert!(reader.collect::<Result<Vec<_>, _>>().is_err());
 }
 
+#[test]
+pub fn custom_precision_timestamps_test() {
+    let path = basic_path("overflowing_timestamps.orc");
+    let f = File::open(path).expect("no file found");
+    let reader = ArrowReaderBuilder::try_new(f)
+        .unwrap()
+        .with_schema(Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int32, true),
+            Field::new("ts", DataType::Timestamp(TimeUnit::Second, None), true),
+        ])))
+        .build();
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
+    let expected = [
+        "+----+---------------------+",
+        "| id | ts                  |",
+        "+----+---------------------+",
+        "| 1  | 1970-05-23T21:21:18 |",
+        "| 2  | 0001-01-01T00:00:00 |",
+        "| 3  | 1970-05-23T21:21:18 |",
+        "+----+---------------------+",
+    ];
+    assert_batches_eq(&batch, &expected);
+}
+
 // From https://github.com/apache/arrow-rs/blob/7705acad845e8b2a366a08640f7acb4033ed7049/arrow-flight/src/sql/metadata/mod.rs#L67-L75
 pub fn assert_batches_eq(batches: &[RecordBatch], expected_lines: &[&str]) {
     let formatted = pretty::pretty_format_batches(batches).unwrap().to_string();
