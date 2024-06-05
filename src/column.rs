@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use arrow::datatypes::Field;
 use bytes::Bytes;
 use snafu::ResultExt;
 
@@ -12,26 +11,12 @@ use crate::reader::ChunkReader;
 use crate::schema::DataType;
 use crate::stripe::Stripe;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Column {
     number_of_rows: u64,
     footer: Arc<StripeFooter>,
     name: String,
     data_type: DataType,
-}
-
-impl From<Column> for Field {
-    fn from(value: Column) -> Self {
-        let dt = value.data_type.to_arrow_data_type();
-        Field::new(value.name, dt, true)
-    }
-}
-
-impl From<&Column> for Field {
-    fn from(value: &Column) -> Self {
-        let dt = value.data_type.to_arrow_data_type();
-        Field::new(value.name.clone(), dt, true)
-    }
 }
 
 impl Column {
