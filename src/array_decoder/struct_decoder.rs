@@ -21,8 +21,6 @@ pub struct StructArrayDecoder {
 
 impl StructArrayDecoder {
     pub fn new(column: &Column, fields: Fields, stripe: &Stripe) -> Result<Self> {
-        println!("StructArrayDecoder column: {:#?}", column);
-        println!("StructArrayDecoder fields: {:#?}", fields);
         let present = get_present_vec(column, stripe)?
             .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
 
