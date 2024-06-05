@@ -9,6 +9,7 @@ use crate::reader::decode::util::{
     read_varint_zigzagged, rle_v2_decode_bit_width, rle_v2_encode_bit_width,
     write_aligned_packed_ints, write_varint_zigzagged,
 };
+use crate::reader::decode::VarintSerde;
 
 use super::NInt;
 
@@ -100,7 +101,7 @@ pub fn write_varying_delta_values<N: NInt, W: Write>(
         max_delta > 0,
         "varying deltas must have at least one non-zero delta"
     );
-    let bit_width = get_closest_aligned_bit_width(64 - max_delta.leading_zeros() as usize);
+    let bit_width = get_closest_aligned_bit_width(max_delta.bits_used());
     // We can't have bit width of 1 for delta as that would get decoded as
     // 0 bit width on reader, which indicates fixed delta, so bump 1 to 2
     // in this case.

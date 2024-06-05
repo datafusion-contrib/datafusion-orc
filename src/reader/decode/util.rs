@@ -362,7 +362,7 @@ pub fn rle_v2_encode_bit_width(width: usize) -> u8 {
 pub fn get_closest_aligned_bit_width(width: usize) -> usize {
     debug_assert!(width <= 64, "bit width cannot exceed 64");
     match width {
-        1 => 1,
+        0..=1 => 1,
         2 => 2,
         3..=4 => 4,
         5..=8 => 8,
@@ -477,13 +477,12 @@ pub fn signed_msb_decode<N: NInt + Signed>(encoded: N, encoded_byte_size: usize)
 /// Inverse of [`signed_msb_decode`].
 #[inline]
 pub fn signed_msb_encode<N: NInt + Signed>(value: N, encoded_byte_size: usize) -> N {
-    let msb_mask = !(N::max_value() >> 1);
-    let sign_bit = (value & msb_mask) != N::zero();
+    let is_signed = value.is_negative();
     // 0 if unsigned, 1 if signed
-    let sign_bit = N::from_u8(sign_bit as u8);
+    let sign_bit = N::from_u8(is_signed as u8);
     let value = value.abs();
     let encoded_msb = sign_bit << (encoded_byte_size * 8 - 1);
-    value | encoded_msb
+    encoded_msb | value
 }
 
 #[cfg(test)]
