@@ -1,12 +1,14 @@
 use std::io;
 use std::string::FromUtf8Error;
 
+use arrow::datatypes::DataType as ArrowDataType;
 use arrow::error::ArrowError;
 use snafu::prelude::*;
 use snafu::Location;
 
 use crate::proto;
 use crate::proto::r#type::Kind;
+use crate::schema::DataType;
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
@@ -73,11 +75,28 @@ pub enum OrcError {
     #[snafu(display("unsupported type: {:?}", kind))]
     UnsupportedType { location: Location, kind: Kind },
 
+    #[snafu(display("unsupported type variant: {}", msg))]
+    UnsupportedTypeVariant {
+        location: Location,
+        msg: &'static str,
+    },
+
     #[snafu(display("Field not found: {:?}", name))]
     FieldNotFound { location: Location, name: String },
 
     #[snafu(display("Invalid column : {:?}", name))]
     InvalidColumn { location: Location, name: String },
+
+    #[snafu(display(
+        "Cannot decode ORC type {:?} into Arrow type {:?}",
+        orc_type,
+        arrow_type,
+    ))]
+    MismatchedSchema {
+        location: Location,
+        orc_type: DataType,
+        arrow_type: ArrowDataType,
+    },
 
     #[snafu(display("Invalid encoding for column '{}': {:?}", name, encoding))]
     InvalidColumnEncoding {
