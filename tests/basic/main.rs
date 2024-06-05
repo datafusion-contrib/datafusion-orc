@@ -420,14 +420,28 @@ pub fn overflowing_timestamps_test() {
 }
 
 #[test]
-pub fn custom_precision_timestamps_test() {
+pub fn second_timestamps_test() {
+    custom_precision_timestamps_test(TimeUnit::Second)
+}
+
+#[test]
+pub fn millisecond_timestamps_test() {
+    custom_precision_timestamps_test(TimeUnit::Millisecond)
+}
+
+#[test]
+pub fn microsecond_timestamps_test() {
+    custom_precision_timestamps_test(TimeUnit::Microsecond)
+}
+
+fn custom_precision_timestamps_test(time_unit: TimeUnit) {
     let path = basic_path("overflowing_timestamps.orc");
     let f = File::open(path).expect("no file found");
     let reader = ArrowReaderBuilder::try_new(f)
         .unwrap()
         .with_schema(Arc::new(Schema::new(vec![
             Field::new("id", DataType::Int32, true),
-            Field::new("ts", DataType::Timestamp(TimeUnit::Second, None), true),
+            Field::new("ts", DataType::Timestamp(time_unit, None), true),
         ])))
         .build();
     let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
