@@ -23,29 +23,23 @@ pub struct MapArrayDecoder {
 }
 
 impl MapArrayDecoder {
-    pub fn new(column: &Column, stripe: &Stripe) -> Result<Self> {
+    pub fn new(
+        column: &Column,
+        keys_field: Arc<Field>,
+        values_field: Arc<Field>,
+        stripe: &Stripe,
+    ) -> Result<Self> {
         let present = get_present_vec(column, stripe)?
             .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
 
         let keys_column = &column.children()[0];
-        let keys = array_decoder_factory(keys_column, stripe)?;
+        let keys = array_decoder_factory(keys_column, keys_field.clone(), stripe)?;
 
         let values_column = &column.children()[1];
-        let values = array_decoder_factory(values_column, stripe)?;
+        let values = array_decoder_factory(values_column, values_field.clone(), stripe)?;
 
         let reader = stripe.stream_map().get(column, Kind::Length);
         let lengths = get_rle_reader(column, reader)?;
-
-        // TODO: should it be "keys" and "values" (like arrow-rs)
-        //       or "key" and "value" like PyArrow and in Schema.fbs?
-        let keys_field = Field::new("keys", keys_column.data_type().to_arrow_data_type(), false);
-        let keys_field = Arc::new(keys_field);
-        let values_field = Field::new(
-            "values",
-            values_column.data_type().to_arrow_data_type(),
-            true,
-        );
-        let values_field = Arc::new(values_field);
 
         let fields = Fields::from(vec![keys_field, values_field]);
 

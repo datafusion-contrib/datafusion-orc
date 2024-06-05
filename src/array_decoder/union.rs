@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use arrow::array::{ArrayRef, UnionArray};
 use arrow::buffer::Buffer;
-use arrow::datatypes::Field;
+use arrow::datatypes::UnionFields;
 use snafu::ResultExt;
 
 use crate::column::{get_present_vec, Column};
@@ -18,14 +18,14 @@ use super::{array_decoder_factory, derive_present_vec, ArrayBatchDecoder};
 pub struct UnionArrayDecoder {
     // fields and variants should have same length
     // TODO: encode this assumption into types
-    fields: Vec<Field>,
+    fields: UnionFields,
     variants: Vec<Box<dyn ArrayBatchDecoder>>,
     tags: Box<dyn Iterator<Item = Result<u8>> + Send>,
     present: Option<Box<dyn Iterator<Item = bool> + Send>>,
 }
 
 impl UnionArrayDecoder {
-    pub fn new(column: &Column, stripe: &Stripe) -> Result<Self> {
+    pub fn new(column: &Column, fields: UnionFields, stripe: &Stripe) -> Result<Self> {
         let present = get_present_vec(column, stripe)?
             .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
 
@@ -35,20 +35,9 @@ impl UnionArrayDecoder {
         let variants = column
             .children()
             .iter()
-            .map(|child| array_decoder_factory(child, stripe))
+            .zip(fields.iter())
+            .map(|(child, (_id, field))| array_decoder_factory(child, field.clone(), stripe))
             .collect::<Result<Vec<_>>>()?;
-
-        let fields = column
-            .children()
-            .into_iter()
-            .enumerate()
-            .map(|(idx, col)| {
-                let dt = col.data_type().to_arrow_data_type();
-                // Naming matching what's set in schema.rs
-                // TODO: unify this across the files
-                Field::new(format!("_union_{idx}"), dt, true)
-            })
-            .collect::<Vec<_>>();
 
         Ok(Self {
             fields,
@@ -134,8 +123,8 @@ impl ArrayBatchDecoder for UnionArrayDecoder {
         let type_ids = Buffer::from_vec(tags);
         let child_arrays = self
             .fields
-            .clone()
-            .into_iter()
+            .iter()
+            .map(|(_id, field)| field.as_ref().clone())
             .zip(child_arrays)
             .collect::<Vec<_>>();
         let array = UnionArray::try_new(&field_type_ids, type_ids, None, child_arrays)

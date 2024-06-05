@@ -3,14 +3,18 @@ use std::sync::Arc;
 use arrow::array::{ArrayRef, BooleanArray, BooleanBuilder, PrimitiveArray, PrimitiveBuilder};
 use arrow::buffer::NullBuffer;
 use arrow::datatypes::{ArrowPrimitiveType, Decimal128Type, UInt64Type};
+use arrow::datatypes::{DataType as ArrowDataType, Field};
 use arrow::datatypes::{
     Date32Type, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, SchemaRef,
+    TimeUnit,
 };
 use arrow::record_batch::RecordBatch;
-use snafu::ResultExt;
+use snafu::{ensure, ResultExt};
 
 use crate::column::{get_present_vec, Column};
-use crate::error::{self, ArrowSnafu, Result};
+use crate::error::{
+    self, ArrowSnafu, MismatchedSchemaSnafu, Result, UnexpectedSnafu, UnsupportedTypeVariantSnafu,
+};
 use crate::proto::stream::Kind;
 use crate::reader::decode::boolean_rle::BooleanIter;
 use crate::reader::decode::byte_rle::ByteRleReader;
@@ -316,11 +320,20 @@ pub trait ArrayBatchDecoder: Send {
 
 pub fn array_decoder_factory(
     column: &Column,
+    field: Arc<Field>,
     stripe: &Stripe,
 ) -> Result<Box<dyn ArrayBatchDecoder>> {
+    let field_type = field.data_type().clone();
     let decoder: Box<dyn ArrayBatchDecoder> = match column.data_type() {
         // TODO: try make branches more generic, reduce duplication
         DataType::Boolean { .. } => {
+            ensure!(
+                field_type == ArrowDataType::Boolean,
+                MismatchedSchemaSnafu {
+                    orc_type: column.data_type().clone(),
+                    arrow_type: field_type
+                }
+            );
             let iter = stripe.stream_map().get(column, Kind::Data);
             let iter = Box::new(BooleanIter::new(iter));
             let present = get_present_vec(column, stripe)?
@@ -328,6 +341,13 @@ pub fn array_decoder_factory(
             Box::new(BooleanArrayDecoder::new(iter, present))
         }
         DataType::Byte { .. } => {
+            ensure!(
+                field_type == ArrowDataType::Int8,
+                MismatchedSchemaSnafu {
+                    orc_type: column.data_type().clone(),
+                    arrow_type: field_type
+                }
+            );
             let iter = stripe.stream_map().get(column, Kind::Data);
             let iter =
                 Box::new(ByteRleReader::new(iter).map(|value| value.map(|value| value as i8)));
@@ -336,6 +356,13 @@ pub fn array_decoder_factory(
             Box::new(Int8ArrayDecoder::new(iter, present))
         }
         DataType::Short { .. } => {
+            ensure!(
+                field_type == ArrowDataType::Int16,
+                MismatchedSchemaSnafu {
+                    orc_type: column.data_type().clone(),
+                    arrow_type: field_type
+                }
+            );
             let iter = stripe.stream_map().get(column, Kind::Data);
             let iter = get_rle_reader(column, iter)?;
             let present = get_present_vec(column, stripe)?
@@ -343,6 +370,13 @@ pub fn array_decoder_factory(
             Box::new(Int16ArrayDecoder::new(iter, present))
         }
         DataType::Int { .. } => {
+            ensure!(
+                field_type == ArrowDataType::Int32,
+                MismatchedSchemaSnafu {
+                    orc_type: column.data_type().clone(),
+                    arrow_type: field_type
+                }
+            );
             let iter = stripe.stream_map().get(column, Kind::Data);
             let iter = get_rle_reader(column, iter)?;
             let present = get_present_vec(column, stripe)?
@@ -350,6 +384,13 @@ pub fn array_decoder_factory(
             Box::new(Int32ArrayDecoder::new(iter, present))
         }
         DataType::Long { .. } => {
+            ensure!(
+                field_type == ArrowDataType::Int64,
+                MismatchedSchemaSnafu {
+                    orc_type: column.data_type().clone(),
+                    arrow_type: field_type
+                }
+            );
             let iter = stripe.stream_map().get(column, Kind::Data);
             let iter = get_rle_reader(column, iter)?;
             let present = get_present_vec(column, stripe)?
@@ -357,6 +398,13 @@ pub fn array_decoder_factory(
             Box::new(Int64ArrayDecoder::new(iter, present))
         }
         DataType::Float { .. } => {
+            ensure!(
+                field_type == ArrowDataType::Float32,
+                MismatchedSchemaSnafu {
+                    orc_type: column.data_type().clone(),
+                    arrow_type: field_type
+                }
+            );
             let iter = stripe.stream_map().get(column, Kind::Data);
             let iter = Box::new(FloatIter::new(iter, stripe.number_of_rows()));
             let present = get_present_vec(column, stripe)?
@@ -364,6 +412,13 @@ pub fn array_decoder_factory(
             Box::new(Float32ArrayDecoder::new(iter, present))
         }
         DataType::Double { .. } => {
+            ensure!(
+                field_type == ArrowDataType::Float64,
+                MismatchedSchemaSnafu {
+                    orc_type: column.data_type().clone(),
+                    arrow_type: field_type
+                }
+            );
             let iter = stripe.stream_map().get(column, Kind::Data);
             let iter = Box::new(FloatIter::new(iter, stripe.number_of_rows()));
             let present = get_present_vec(column, stripe)?
@@ -371,28 +426,142 @@ pub fn array_decoder_factory(
             Box::new(Float64ArrayDecoder::new(iter, present))
         }
         DataType::String { .. } | DataType::Varchar { .. } | DataType::Char { .. } => {
+            ensure!(
+                field_type == ArrowDataType::Utf8,
+                MismatchedSchemaSnafu {
+                    orc_type: column.data_type().clone(),
+                    arrow_type: field_type
+                }
+            );
             new_string_decoder(column, stripe)?
         }
-        DataType::Binary { .. } => new_binary_decoder(column, stripe)?,
+        DataType::Binary { .. } => {
+            ensure!(
+                field_type == ArrowDataType::Binary,
+                MismatchedSchemaSnafu {
+                    orc_type: column.data_type().clone(),
+                    arrow_type: field_type
+                }
+            );
+            new_binary_decoder(column, stripe)?
+        }
         DataType::Decimal {
             precision, scale, ..
-        } => new_decimal_decoder(column, stripe, *precision, *scale)?,
-        DataType::Timestamp { .. } => new_timestamp_decoder(column, stripe)?,
+        } => {
+            ensure!(
+                field_type == ArrowDataType::Decimal128(*precision as u8, *scale as i8),
+                MismatchedSchemaSnafu {
+                    orc_type: column.data_type().clone(),
+                    arrow_type: field_type
+                }
+            );
+            new_decimal_decoder(column, stripe, *precision, *scale)?
+        }
+        DataType::Timestamp { .. } => {
+            // TODO: add support for any precision
+            ensure!(
+                field_type == ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
+                MismatchedSchemaSnafu {
+                    orc_type: column.data_type().clone(),
+                    arrow_type: field_type
+                }
+            );
+            new_timestamp_decoder(column, stripe)?
+        }
         DataType::TimestampWithLocalTimezone { .. } => {
+            // TODO: add support for any precision and for arbitrary timezones
+            ensure!(
+                field_type == ArrowDataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into())),
+                MismatchedSchemaSnafu {
+                    orc_type: column.data_type().clone(),
+                    arrow_type: field_type
+                }
+            );
             new_timestamp_instant_decoder(column, stripe)?
         }
 
         DataType::Date { .. } => {
+            // TODO: allow Date64
+            ensure!(
+                field_type == ArrowDataType::Date32,
+                MismatchedSchemaSnafu {
+                    orc_type: column.data_type().clone(),
+                    arrow_type: field_type
+                }
+            );
             let iter = stripe.stream_map().get(column, Kind::Data);
             let iter = get_rle_reader(column, iter)?;
             let present = get_present_vec(column, stripe)?
                 .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
             Box::new(DateArrayDecoder::new(iter, present))
         }
-        DataType::Struct { .. } => Box::new(StructArrayDecoder::new(column, stripe)?),
-        DataType::List { .. } => Box::new(ListArrayDecoder::new(column, stripe)?),
-        DataType::Map { .. } => Box::new(MapArrayDecoder::new(column, stripe)?),
-        DataType::Union { .. } => Box::new(UnionArrayDecoder::new(column, stripe)?),
+        DataType::Struct { .. } => match field_type {
+            ArrowDataType::Struct(fields) => {
+                Box::new(StructArrayDecoder::new(column, fields, stripe)?)
+            }
+            _ => MismatchedSchemaSnafu {
+                orc_type: column.data_type().clone(),
+                arrow_type: field_type,
+            }
+            .fail()?,
+        },
+        DataType::List { .. } => {
+            match field_type {
+                ArrowDataType::List(field) => {
+                    Box::new(ListArrayDecoder::new(column, field, stripe)?)
+                }
+                // TODO: add support for ArrowDataType::LargeList
+                _ => MismatchedSchemaSnafu {
+                    orc_type: column.data_type().clone(),
+                    arrow_type: field_type,
+                }
+                .fail()?,
+            }
+        }
+        DataType::Map { .. } => {
+            let ArrowDataType::Map(entries, sorted) = field_type else {
+                MismatchedSchemaSnafu {
+                    orc_type: column.data_type().clone(),
+                    arrow_type: field_type,
+                }
+                .fail()?
+            };
+            ensure!(!sorted, UnsupportedTypeVariantSnafu { msg: "Sorted map" });
+            let ArrowDataType::Struct(entries) = entries.data_type() else {
+                UnexpectedSnafu {
+                    msg: "arrow Map with non-Struct entry type".to_owned(),
+                }
+                .fail()?
+            };
+            ensure!(
+                entries.len() == 2,
+                UnexpectedSnafu {
+                    msg: format!(
+                        "arrow Map with {} columns per entry (expected 2)",
+                        entries.len()
+                    )
+                }
+            );
+            let keys_field = entries[0].clone();
+            let values_field = entries[1].clone();
+
+            Box::new(MapArrayDecoder::new(
+                column,
+                keys_field,
+                values_field,
+                stripe,
+            )?)
+        }
+        DataType::Union { .. } => match field_type {
+            ArrowDataType::Union(fields, _) => {
+                Box::new(UnionArrayDecoder::new(column, fields, stripe)?)
+            }
+            _ => MismatchedSchemaSnafu {
+                orc_type: column.data_type().clone(),
+                arrow_type: field_type,
+            }
+            .fail()?,
+        },
     };
 
     Ok(decoder)
@@ -441,8 +610,12 @@ impl NaiveStripeDecoder {
         let mut decoders = Vec::with_capacity(stripe.columns().len());
         let number_of_rows = stripe.number_of_rows();
 
-        for col in stripe.columns() {
-            let decoder = array_decoder_factory(col, &stripe)?;
+        for (col, field) in stripe
+            .columns()
+            .iter()
+            .zip(schema_ref.fields.iter().cloned())
+        {
+            let decoder = array_decoder_factory(col, field, &stripe)?;
             decoders.push(decoder);
         }
 
