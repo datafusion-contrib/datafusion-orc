@@ -1,5 +1,6 @@
-use std::io::{Read, Write};
+use std::io::Read;
 
+use bytes::{BufMut, BytesMut};
 use snafu::ResultExt;
 
 use crate::{
@@ -50,11 +51,7 @@ pub fn read_short_repeat_values<N: NInt, R: Read>(
     Ok(())
 }
 
-pub fn write_short_repeat_values<N: NInt, W: Write>(
-    writer: &mut W,
-    value: N,
-    count: usize,
-) -> Result<()> {
+pub fn write_short_repeat<N: NInt>(writer: &mut BytesMut, value: N, count: usize) {
     debug_assert!((SHORT_REPEAT_MIN_LENGTH..=10).contains(&count));
 
     let value = value.zigzag_encode();
@@ -68,10 +65,8 @@ pub fn write_short_repeat_values<N: NInt, W: Write>(
     let bytes = value.to_be_bytes();
     let bytes = &bytes.as_ref()[N::BYTE_SIZE - byte_size as usize..];
 
-    writer.write_all(&[header]).context(IoSnafu)?;
-    writer.write_all(bytes).context(IoSnafu)?;
-
-    Ok(())
+    writer.put_u8(header);
+    writer.put_slice(bytes);
 }
 
 #[cfg(test)]
@@ -83,10 +78,10 @@ mod tests {
     use super::*;
 
     fn roundtrip_short_repeat_helper<N: NInt>(value: N, count: usize) -> Result<Vec<N>> {
-        let mut buf = vec![];
+        let mut buf = BytesMut::new();
         let mut out = vec![];
 
-        write_short_repeat_values(&mut buf, value, count)?;
+        write_short_repeat(&mut buf, value, count);
         let header = buf[0];
         read_short_repeat_values(&mut Cursor::new(&buf[1..]), &mut out, header)?;
 

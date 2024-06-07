@@ -1,13 +1,20 @@
-use std::io::{Read, Write};
+use std::io::Read;
+
+use bytes::BytesMut;
 
 use crate::error::Result;
 
 use self::{
-    delta::read_delta_values, direct::read_direct_values, patched_base::read_patched_base,
-    short_repeat::read_short_repeat_values,
+    delta::{read_delta_values, write_fixed_delta, write_varying_delta},
+    direct::{read_direct_values, write_direct},
+    patched_base::{read_patched_base, write_patched_base},
+    short_repeat::{read_short_repeat_values, write_short_repeat},
 };
 
-use super::{util::try_read_u8, NInt};
+use super::{
+    util::{try_read_u8, PercentileBitCalculator},
+    NInt, VarintSerde,
+};
 
 pub mod delta;
 pub mod direct;
@@ -17,7 +24,10 @@ pub mod short_repeat;
 const MAX_RUN_LENGTH: usize = 512;
 /// Minimum number of repeated values required to use Short Repeat sub-encoding
 const SHORT_REPEAT_MIN_LENGTH: usize = 3;
+const SHORT_REPEAT_MAX_LENGTH: usize = 10;
+const BASE_VALUE_LIMIT: i64 = 1 << 56;
 
+// TODO: switch to read from Bytes directly?
 pub struct RleReaderV2<N: NInt, R: Read> {
     reader: R,
     decoded_ints: Vec<N>,
@@ -86,6 +96,351 @@ impl<N: NInt, R: Read> Iterator for RleReaderV2<N, R> {
         let result = self.decoded_ints[self.current_head];
         self.current_head += 1;
         Some(Ok(result))
+    }
+}
+
+struct DeltaEncodingCheckResult<N: NInt> {
+    base_value: N,
+    min: N,
+    max: N,
+    first_delta: i64,
+    max_delta: i64,
+    is_monotonic: bool,
+    is_fixed_delta: bool,
+    adjacent_deltas: Vec<i64>,
+}
+
+// TODO: some comments
+fn delta_encoding_check<N: NInt>(literals: &[N]) -> DeltaEncodingCheckResult<N> {
+    let base_value = literals[0];
+    let mut min = base_value.min(literals[1]);
+    let mut max = base_value.max(literals[1]);
+    let first_delta = literals[1].as_i64() - base_value.as_i64();
+    let mut current_delta;
+    let mut max_delta = 0;
+
+    let mut is_increasing = first_delta.is_positive();
+    let mut is_decreasing = first_delta.is_negative();
+    let mut is_fixed_delta = true;
+
+    let mut adjacent_deltas = vec![];
+
+    // We've already preprocessed the first step above
+    for i in 2..literals.len() {
+        let l1 = literals[i];
+        let l0 = literals[i - 1];
+
+        min = min.min(l1);
+        max = max.max(l1);
+
+        current_delta = l1.as_i64() - l0.as_i64();
+
+        is_increasing &= current_delta >= 0;
+        is_decreasing &= current_delta <= 0;
+
+        is_fixed_delta &= current_delta == first_delta;
+        let current_delta = current_delta.abs();
+        adjacent_deltas.push(current_delta);
+        max_delta = max_delta.max(current_delta);
+    }
+    let is_monotonic = is_increasing || is_decreasing;
+
+    DeltaEncodingCheckResult {
+        base_value,
+        min,
+        max,
+        first_delta,
+        max_delta,
+        is_monotonic,
+        is_fixed_delta,
+        adjacent_deltas,
+    }
+}
+
+/// Runs are guaranteed to have length > 1.
+#[derive(Debug, Clone, Eq, PartialEq)]
+enum RleV2EncodingState<N: NInt> {
+    /// When buffer is empty and no values to encode.
+    Empty,
+    /// Special state for first value as we determine after the first
+    /// value whether to go fixed or variable run.
+    One(N),
+    /// Run of identical value of specified count.
+    FixedRun { value: N, count: usize },
+    /// Run of variable values.
+    VariableRun { literals: Vec<N> },
+}
+
+impl<N: NInt> Default for RleV2EncodingState<N> {
+    fn default() -> Self {
+        Self::Empty
+    }
+}
+
+// TODO: fix unsigned support
+pub struct RleWriterV2<N: NInt> {
+    /// Stores the run length encoded sequences.
+    data: BytesMut,
+    /// Used in state machine for determining which sub-encoding
+    /// for a sequence to use.
+    state: RleV2EncodingState<N>,
+}
+
+impl<N: NInt> RleWriterV2<N> {
+    pub fn new() -> Self {
+        Self {
+            data: BytesMut::new(),
+            state: RleV2EncodingState::Empty,
+        }
+    }
+
+    pub fn write(&mut self, values: &[N]) {
+        for &value in values {
+            self.process_value(value);
+        }
+    }
+
+    pub fn write_one(&mut self, value: N) {
+        self.process_value(value);
+    }
+
+    // Algorithm adapted from:
+    // https://github.com/apache/orc/blob/main/java/core/src/java/org/apache/orc/impl/RunLengthIntegerWriterV2.java
+
+    /// Process each value to build up knowledge to determine which encoding to use. We attempt
+    /// to identify runs of identical values (fixed runs), otherwise falling back to variable
+    /// runs (varying values).
+    ///
+    /// When in a fixed run state, as long as identical values are found, we keep incrementing
+    /// the run length up to a maximum of 512, flushing to fixed delta run if so. If we encounter
+    /// a differing value, we flush to short repeat or fixed delta depending on the length and
+    /// reset the state (if the current run is small enough, we switch direct to variable run).
+    ///
+    /// When in a variable run state, if we find 3 identical values in a row as the latest values,
+    /// we flush the variable run to a sub-encoding then switch to fixed run, otherwise continue
+    /// incrementing the run length up to a max length of 512, before flushing and resetting the
+    /// state. For a variable run, extra logic must take place to determine which sub-encoding to
+    /// use when flushing, see [`Self::determine_variable_run_encoding`] for more details.
+    fn process_value(&mut self, value: N) {
+        match &mut self.state {
+            // When we start, or when a run was flushed to a sub-encoding
+            RleV2EncodingState::Empty => {
+                self.state = RleV2EncodingState::One(value);
+            }
+            // Here we determine if we look like we're in a fixed run or variable run
+            RleV2EncodingState::One(one_value) => {
+                if value == *one_value {
+                    self.state = RleV2EncodingState::FixedRun { value, count: 2 };
+                } else {
+                    // TODO: alloc here
+                    let mut literals = Vec::with_capacity(MAX_RUN_LENGTH);
+                    literals.push(*one_value);
+                    literals.push(value);
+                    self.state = RleV2EncodingState::VariableRun { literals };
+                }
+            }
+            // When we're in a run of identical values
+            RleV2EncodingState::FixedRun {
+                value: fixed_value,
+                count,
+            } => {
+                if value == *fixed_value {
+                    // Continue fixed run, flushing to delta when max length reached
+                    *count += 1;
+                    if *count == MAX_RUN_LENGTH {
+                        write_fixed_delta(&mut self.data, value, 0, *count - 2);
+                        self.state = RleV2EncodingState::Empty;
+                    }
+                } else {
+                    // If fixed run is broken by a different value.
+                    match count {
+                        // Note that count cannot be 0 or 1 here as that is encoded
+                        // by Empty and One states in self.state
+                        2 => {
+                            // If fixed run is smaller than short repeat then just include
+                            // it at the start of the variable run we're switching to.
+                            // TODO: alloc here
+                            let mut literals = Vec::with_capacity(MAX_RUN_LENGTH);
+                            literals.push(*fixed_value);
+                            literals.push(*fixed_value);
+                            literals.push(value);
+                            self.state = RleV2EncodingState::VariableRun { literals };
+                        }
+                        SHORT_REPEAT_MIN_LENGTH..=SHORT_REPEAT_MAX_LENGTH => {
+                            // If we have enough values for a Short Repeat, then encode as
+                            // such.
+                            write_short_repeat(&mut self.data, *fixed_value, *count);
+                            self.state = RleV2EncodingState::One(value);
+                        }
+                        _ => {
+                            // Otherwise if too large, use Delta encoding.
+                            write_fixed_delta(&mut self.data, *fixed_value, 0, *count - 2);
+                            self.state = RleV2EncodingState::One(value);
+                        }
+                    }
+                }
+            }
+            // When we're in a run of varying values
+            RleV2EncodingState::VariableRun { literals } => {
+                let length = literals.len();
+                let last_value = literals[length - 1];
+                let second_last_value = literals[length - 2];
+                if value == last_value && value == second_last_value {
+                    // Last 3 values (including current new one) are identical. Break the current
+                    // variable run, flushing it to a sub-encoding, then switch to a fixed run
+                    // state.
+
+                    // Pop off the last two values (which are identical to value) and flush
+                    // the variable run to writer
+                    literals.truncate(literals.len() - 2);
+                    determine_variable_run_encoding(&mut self.data, literals);
+
+                    self.state = RleV2EncodingState::FixedRun { value, count: 3 };
+                } else {
+                    // Continue variable run, flushing sub-encoding if max length reached
+                    literals.push(value);
+                    if literals.len() == MAX_RUN_LENGTH {
+                        determine_variable_run_encoding(&mut self.data, literals);
+                        self.state = RleV2EncodingState::Empty;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Flush any buffered values to the writer.
+    fn flush(&mut self) {
+        let state = std::mem::take(&mut self.state);
+        match state {
+            RleV2EncodingState::Empty => {}
+            RleV2EncodingState::One(value) => {
+                let value = value.zigzag_encode();
+                write_direct(&mut self.data, &[value], Some(value));
+            }
+            RleV2EncodingState::FixedRun { value, count: 2 } => {
+                // Direct has smallest overhead
+                let value = value.zigzag_encode();
+                write_direct(&mut self.data, &[value, value], Some(value));
+            }
+            RleV2EncodingState::FixedRun { value, count } if count <= SHORT_REPEAT_MAX_LENGTH => {
+                // Short repeat must have length [3, 10]
+                write_short_repeat(&mut self.data, value, count);
+            }
+            RleV2EncodingState::FixedRun { value, count } => {
+                write_fixed_delta(&mut self.data, value, 0, count - 2);
+            }
+            RleV2EncodingState::VariableRun { mut literals } => {
+                determine_variable_run_encoding(&mut self.data, &mut literals);
+            }
+        }
+    }
+}
+
+fn determine_variable_run_encoding<N: NInt>(writer: &mut BytesMut, literals: &mut [N]) {
+    // Direct will have smallest overhead for tiny runs
+    if literals.len() <= SHORT_REPEAT_MIN_LENGTH {
+        for v in literals.iter_mut() {
+            *v = v.zigzag_encode();
+        }
+        write_direct(writer, literals, None);
+        return;
+    }
+
+    // Invariant: literals.len() > 3
+    let DeltaEncodingCheckResult {
+        base_value,
+        min,
+        max,
+        first_delta,
+        max_delta,
+        is_monotonic,
+        is_fixed_delta,
+        adjacent_deltas,
+    } = delta_encoding_check(literals);
+
+    // Quick check for delta overflow, if so just move to Direct as it has less
+    // overhead than Patched Base.
+    // TODO: should min/max be N or i64 here?
+    if max.checked_sub(&min).is_none() {
+        for v in literals.iter_mut() {
+            *v = v.zigzag_encode();
+        }
+        write_direct(writer, literals, None);
+        return;
+    }
+
+    // Any subtractions here on are safe due to above check
+
+    if is_fixed_delta {
+        write_fixed_delta(writer, literals[0], first_delta, literals.len() - 2);
+        return;
+    }
+
+    // First delta used to indicate if increasing or decreasing, so must be non-zero
+    if first_delta != 0 && is_monotonic {
+        write_varying_delta(writer, base_value, first_delta, max_delta, &adjacent_deltas);
+        return;
+    }
+
+    // In Java implementation, Patched Base encoding base value cannot exceed 56
+    // bits in value otherwise it can overflow the maximum 8 bytes used to encode
+    // the value when signed MSB encoding is used (adds an extra bit).
+    let min = min.as_i64();
+    if min.abs() >= BASE_VALUE_LIMIT && min != i64::MIN {
+        for v in literals.iter_mut() {
+            *v = v.zigzag_encode();
+        }
+        write_direct(writer, literals, None);
+        return;
+    }
+
+    // TODO: can derive from min/max above?
+    let mut max_zigzag = literals[0].zigzag_encode();
+    let mut c = PercentileBitCalculator::new();
+    for l in literals.iter() {
+        let zz = l.zigzag_encode();
+        max_zigzag = zz.max(max_zigzag);
+        c.add_value(zz);
+    }
+    let zigzagged_90_percentile_bit_width = c.calculate_percentile(0.90);
+    // If variation of bit width between largest value and lower 90% of values isn't
+    // significant enough, just use direct encoding as patched base wouldn't be as
+    // efficient.
+    if (max_zigzag.closest_aligned_bit_width() - zigzagged_90_percentile_bit_width) <= 1 {
+        for v in literals.iter_mut() {
+            *v = v.zigzag_encode();
+        }
+        write_direct(writer, literals, Some(max_zigzag));
+        return;
+    }
+
+    // Base value for patched base is the minimum value
+    // Patch data values are the literals with the base value subtracted
+    // We use long_buffer to store these base reduced literals
+    let mut max_data_value = 0;
+    let mut c = PercentileBitCalculator::new();
+    let mut base_reduced_literals = vec![];
+    for l in literals.iter() {
+        // All base reduced literals become positive here
+        let base_reduced_literal = l.as_i64() - min;
+        base_reduced_literals.push(base_reduced_literal);
+        max_data_value = max_data_value.max(base_reduced_literal);
+        c.add_value(base_reduced_literal);
+    }
+
+    // Aka 100th percentile
+    let base_reduced_literals_max_bit_width = max_data_value.closest_aligned_bit_width();
+    // 95th percentile width is used to find the 5% of values to encode with patches
+    let base_reduced_literals_95th_percentile_bit_width = c.calculate_percentile(0.95);
+
+    // Patch only if we have outliers, based on bit width
+    if base_reduced_literals_max_bit_width != base_reduced_literals_95th_percentile_bit_width {
+        for v in literals.iter_mut() {
+            *v = v.zigzag_encode();
+        }
+        write_direct(writer, literals, Some(max_zigzag));
+    } else {
+        write_patched_base(writer);
     }
 }
 

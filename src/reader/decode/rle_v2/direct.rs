@@ -1,12 +1,12 @@
-use std::io::{Read, Write};
+use std::io::Read;
 
-use snafu::ResultExt;
+use bytes::{BufMut, BytesMut};
 
-use crate::error::{IoSnafu, OutOfSpecSnafu, Result};
+use crate::error::{OutOfSpecSnafu, Result};
 use crate::reader::decode::rle_v2::{EncodingType, MAX_RUN_LENGTH};
 use crate::reader::decode::util::{
-    extract_run_length_from_header, get_closest_aligned_bit_width, read_ints, read_u8,
-    rle_v2_decode_bit_width, rle_v2_encode_bit_width, write_aligned_packed_ints,
+    extract_run_length_from_header, read_ints, read_u8, rle_v2_decode_bit_width,
+    rle_v2_encode_bit_width, write_aligned_packed_ints,
 };
 
 use super::NInt;
@@ -39,18 +39,20 @@ pub fn read_direct_values<N: NInt, R: Read>(
     Ok(())
 }
 
-/// We assume `values` are already zigzag encoded.
-pub fn write_direct_values<N: NInt, W: Write>(
-    writer: &mut W,
-    values: &[N],
-    bit_width: usize,
-) -> Result<()> {
+/// `values` and `max` must be zigzag encoded. If `max` is not provided, it is derived
+/// by iterating over `values`.
+pub fn write_direct<N: NInt>(writer: &mut BytesMut, values: &[N], max: Option<N>) {
     debug_assert!(
         (1..=MAX_RUN_LENGTH).contains(&values.len()),
         "direct run length cannot exceed 512 values"
     );
 
-    let bit_width = get_closest_aligned_bit_width(bit_width);
+    let max = max.unwrap_or_else(|| {
+        // Assert guards that values is non-empty
+        *values.iter().max().unwrap()
+    });
+
+    let bit_width = max.closest_aligned_bit_width();
     let encoded_bit_width = rle_v2_encode_bit_width(bit_width);
     // From [1, 512] to [0, 511]
     let encoded_length = values.len() as u16 - 1;
@@ -62,10 +64,9 @@ pub fn write_direct_values<N: NInt, W: Write>(
         EncodingType::Direct.to_header() | (encoded_bit_width << 1) | encoded_length_high_bit;
     let header2 = encoded_length_low_bits;
 
-    writer.write_all(&[header1, header2]).context(IoSnafu)?;
-    write_aligned_packed_ints(writer, bit_width, values)?;
-
-    Ok(())
+    writer.put_u8(header1);
+    writer.put_u8(header2);
+    write_aligned_packed_ints(writer, bit_width, values);
 }
 
 #[cfg(test)]
@@ -78,11 +79,11 @@ mod tests {
 
     use super::*;
 
-    fn roundtrip_direct_helper<N: NInt>(values: &[N], bit_width: usize) -> Result<Vec<N>> {
-        let mut buf = vec![];
+    fn roundtrip_direct_helper<N: NInt>(values: &[N]) -> Result<Vec<N>> {
+        let mut buf = BytesMut::new();
         let mut out = vec![];
 
-        write_direct_values(&mut buf, values, bit_width)?;
+        write_direct(&mut buf, values, None);
         let header = buf[0];
         read_direct_values(&mut Cursor::new(&buf[1..]), &mut out, header)?;
 
@@ -91,35 +92,24 @@ mod tests {
 
     proptest! {
         #[test]
-        fn roundtrip_direct_i16(values in prop::collection::vec(any::<u16>(), 1..512), bit_width in 1..=16_usize) {
-            let zigzag_encoded_values = values.into_iter().map(|v| (v & bit_width as u16) as i16).collect::<Vec<_>>();
-            let zigzag_decoded_values = zigzag_encoded_values.iter().map(|v| v.zigzag_decode()).collect::<Vec<_>>();
-            let out = roundtrip_direct_helper(&zigzag_encoded_values, bit_width)?;
-            prop_assert_eq!(out, zigzag_decoded_values);
+        fn roundtrip_direct_i16(values in prop::collection::vec(any::<i16>(), 1..512)) {
+            let encoded= values.iter().map(|v| v.zigzag_encode()).collect::<Vec<_>>();
+            let out = roundtrip_direct_helper(&encoded)?;
+            prop_assert_eq!(out, values);
         }
 
         #[test]
-        fn roundtrip_direct_i32(values in prop::collection::vec(any::<u32>(), 1..512), bit_width in 1..=32_usize) {
-            let zigzag_encoded_values = values.into_iter().map(|v| (v & bit_width as u32) as i32).collect::<Vec<_>>();
-            let zigzag_decoded_values = zigzag_encoded_values.iter().map(|v| v.zigzag_decode()).collect::<Vec<_>>();
-            let out = roundtrip_direct_helper(&zigzag_encoded_values, bit_width)?;
-            prop_assert_eq!(out, zigzag_decoded_values);
+        fn roundtrip_direct_i32(values in prop::collection::vec(any::<i32>(), 1..512)) {
+            let encoded= values.iter().map(|v| v.zigzag_encode()).collect::<Vec<_>>();
+            let out = roundtrip_direct_helper(&encoded)?;
+            prop_assert_eq!(out, values);
         }
 
         #[test]
-        fn roundtrip_direct_i64(values in prop::collection::vec(any::<u64>(), 1..512), bit_width in 1..=64_usize) {
-            let zigzag_encoded_values = values.into_iter().map(|v| (v & bit_width as u64) as i64).collect::<Vec<_>>();
-            let zigzag_decoded_values = zigzag_encoded_values.iter().map(|v| v.zigzag_decode()).collect::<Vec<_>>();
-            let out = roundtrip_direct_helper(&zigzag_encoded_values, bit_width)?;
-            prop_assert_eq!(out, zigzag_decoded_values);
-        }
-
-        #[test]
-        fn roundtrip_direct_u64(values in prop::collection::vec(any::<u64>(), 1..512), bit_width in 1..=64_usize) {
-            let zigzag_encoded_values = values.into_iter().map(|v| v & bit_width as u64).collect::<Vec<_>>();
-            let zigzag_decoded_values = zigzag_encoded_values.iter().map(|v| v.zigzag_decode()).collect::<Vec<_>>();
-            let out = roundtrip_direct_helper(&zigzag_encoded_values, bit_width)?;
-            prop_assert_eq!(out, zigzag_decoded_values);
+        fn roundtrip_direct_i64(values in prop::collection::vec(any::<i64>(), 1..512)) {
+            let encoded= values.iter().map(|v| v.zigzag_encode()).collect::<Vec<_>>();
+            let out = roundtrip_direct_helper(&encoded)?;
+            prop_assert_eq!(out, values);
         }
     }
 }

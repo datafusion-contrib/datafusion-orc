@@ -1,5 +1,6 @@
-use std::io::{Read, Write};
+use std::{io::Read, marker::PhantomData};
 
+use bytes::{BufMut, BytesMut};
 use num::Signed;
 use snafu::{OptionExt, ResultExt};
 
@@ -218,11 +219,7 @@ fn unrolled_unpack_byte_aligned<N: NInt>(
 
 /// Write bit packed integers, where we expect the `bit_width` to be aligned
 /// by [`get_closest_aligned_bit_width`], and we write the bytes as big endian.
-pub fn write_aligned_packed_ints<N: NInt, W: Write>(
-    writer: &mut W,
-    bit_width: usize,
-    values: &[N],
-) -> Result<()> {
+pub fn write_aligned_packed_ints<N: NInt>(writer: &mut BytesMut, bit_width: usize, values: &[N]) {
     debug_assert!(
         bit_width == 1 || bit_width == 2 || bit_width == 4 || bit_width % 8 == 0,
         "bit_width must be 1, 2, 4 or a multiple of 8"
@@ -235,7 +232,7 @@ pub fn write_aligned_packed_ints<N: NInt, W: Write>(
     }
 }
 
-fn unrolled_pack_1<N: NInt, W: Write>(writer: &mut W, values: &[N]) -> Result<()> {
+fn unrolled_pack_1<N: NInt>(writer: &mut BytesMut, values: &[N]) {
     let mut iter = values.chunks_exact(8);
     for chunk in &mut iter {
         let n1 = chunk[0].to_u8().unwrap() & 0x01;
@@ -248,7 +245,7 @@ fn unrolled_pack_1<N: NInt, W: Write>(writer: &mut W, values: &[N]) -> Result<()
         let n8 = chunk[7].to_u8().unwrap() & 0x01;
         let byte =
             (n1 << 7) | (n2 << 6) | (n3 << 5) | (n4 << 4) | (n5 << 3) | (n6 << 2) | (n7 << 1) | n8;
-        writer.write_all(&[byte]).context(IoSnafu)?;
+        writer.put_u8(byte);
     }
     let remainder = iter.remainder();
     if !remainder.is_empty() {
@@ -257,12 +254,11 @@ fn unrolled_pack_1<N: NInt, W: Write>(writer: &mut W, values: &[N]) -> Result<()
             let n = n.to_u8().unwrap();
             byte |= (n & 0x03) << (7 - i);
         }
-        writer.write_all(&[byte]).context(IoSnafu)?;
+        writer.put_u8(byte);
     }
-    Ok(())
 }
 
-fn unrolled_pack_2<N: NInt, W: Write>(writer: &mut W, values: &[N]) -> Result<()> {
+fn unrolled_pack_2<N: NInt>(writer: &mut BytesMut, values: &[N]) {
     let mut iter = values.chunks_exact(4);
     for chunk in &mut iter {
         let n1 = chunk[0].to_u8().unwrap() & 0x03;
@@ -270,7 +266,7 @@ fn unrolled_pack_2<N: NInt, W: Write>(writer: &mut W, values: &[N]) -> Result<()
         let n3 = chunk[2].to_u8().unwrap() & 0x03;
         let n4 = chunk[3].to_u8().unwrap() & 0x03;
         let byte = (n1 << 6) | (n2 << 4) | (n3 << 2) | n4;
-        writer.write_all(&[byte]).context(IoSnafu)?;
+        writer.put_u8(byte);
     }
     let remainder = iter.remainder();
     if !remainder.is_empty() {
@@ -279,39 +275,32 @@ fn unrolled_pack_2<N: NInt, W: Write>(writer: &mut W, values: &[N]) -> Result<()
             let n = n.to_u8().unwrap();
             byte |= (n & 0x03) << (6 - i * 2);
         }
-        writer.write_all(&[byte]).context(IoSnafu)?;
+        writer.put_u8(byte);
     }
-    Ok(())
 }
 
-fn unrolled_pack_4<N: NInt, W: Write>(writer: &mut W, values: &[N]) -> Result<()> {
+fn unrolled_pack_4<N: NInt>(writer: &mut BytesMut, values: &[N]) {
     let mut iter = values.chunks_exact(2);
     for chunk in &mut iter {
         let n1 = chunk[0].to_u8().unwrap() & 0x0F;
         let n2 = chunk[1].to_u8().unwrap() & 0x0F;
         let byte = (n1 << 4) | n2;
-        writer.write_all(&[byte]).context(IoSnafu)?;
+        writer.put_u8(byte);
     }
     let remainder = iter.remainder();
     if !remainder.is_empty() {
         let byte = remainder[0].to_u8().unwrap() & 0x0F;
         let byte = byte << 4;
-        writer.write_all(&[byte]).context(IoSnafu)?;
+        writer.put_u8(byte);
     }
-    Ok(())
 }
 
-fn unrolled_pack_bytes<N: NInt, W: Write>(
-    writer: &mut W,
-    byte_size: usize,
-    values: &[N],
-) -> Result<()> {
+fn unrolled_pack_bytes<N: NInt>(writer: &mut BytesMut, byte_size: usize, values: &[N]) {
     for num in values {
         let bytes = num.to_be_bytes();
         let bytes = &bytes.as_ref()[N::BYTE_SIZE - byte_size..];
-        writer.write_all(bytes).context(IoSnafu)?;
+        writer.put_slice(bytes);
     }
-    Ok(())
 }
 
 /// Decoding table for RLEv2 sub-encodings bit width.
@@ -404,7 +393,7 @@ fn read_varint<N: VarintSerde, R: Read>(reader: &mut R) -> Result<N> {
 }
 
 /// Encode Base 128 Unsigned Varint
-fn write_varint<N: VarintSerde, W: Write>(writer: &mut W, value: N) -> Result<()> {
+fn write_varint<N: VarintSerde>(writer: &mut BytesMut, value: N) {
     // Take max in case value = 0.
     // Divide by 7 as high bit is always used as continuation flag.
     let byte_size = value.bits_used().div_ceil(7).max(1);
@@ -422,9 +411,7 @@ fn write_varint<N: VarintSerde, W: Write>(writer: &mut W, value: N) -> Result<()
         *b |= ((value >> shift) & mask).to_u8().unwrap();
     }
 
-    writer.write_all(&bytes).context(IoSnafu)?;
-
-    Ok(())
+    writer.put_slice(&bytes);
 }
 
 pub fn read_varint_zigzagged<N: VarintSerde, R: Read>(reader: &mut R) -> Result<N> {
@@ -432,7 +419,7 @@ pub fn read_varint_zigzagged<N: VarintSerde, R: Read>(reader: &mut R) -> Result<
     Ok(unsigned.zigzag_decode())
 }
 
-pub fn write_varint_zigzagged<N: VarintSerde, W: Write>(writer: &mut W, value: N) -> Result<()> {
+pub fn write_varint_zigzagged<N: VarintSerde>(writer: &mut BytesMut, value: N) {
     let value = value.zigzag_encode();
     write_varint(writer, value)
 }
@@ -476,6 +463,7 @@ pub fn signed_msb_decode<N: NInt + Signed>(encoded: N, encoded_byte_size: usize)
 
 /// Inverse of [`signed_msb_decode`].
 #[inline]
+// TODO: bound this to only allow i64 input? might mess up for i32::MIN?
 pub fn signed_msb_encode<N: NInt + Signed>(value: N, encoded_byte_size: usize) -> N {
     let is_signed = value.is_negative();
     // 0 if unsigned, 1 if signed
@@ -483,6 +471,53 @@ pub fn signed_msb_encode<N: NInt + Signed>(value: N, encoded_byte_size: usize) -
     let value = value.abs();
     let encoded_msb = sign_bit << (encoded_byte_size * 8 - 1);
     encoded_msb | value
+}
+
+/// Calculate nth percentile based on aligned bit width,
+/// able to be incrementally built up (e.g. as part of
+/// an existing for loop).
+pub struct PercentileBitCalculator<N: VarintSerde> {
+    histogram: [usize; 32],
+    count: usize,
+    phantom: PhantomData<N>,
+}
+
+impl<N: VarintSerde> PercentileBitCalculator<N> {
+    pub fn new() -> Self {
+        Self {
+            histogram: [0; 32],
+            count: 0,
+            phantom: Default::default(),
+        }
+    }
+
+    pub fn add_value(&mut self, value: N) {
+        let bit_width = value.closest_aligned_bit_width();
+        // Now in range [0, 31]
+        let encoded_bit_width = rle_v2_encode_bit_width(bit_width) as usize;
+        self.histogram[encoded_bit_width] += 1;
+        self.count += 1;
+    }
+
+    /// Get the nth percentile, where input percentile must be in range (0.0, 1.0].
+    pub fn calculate_percentile(&self, percentile: f32) -> usize {
+        debug_assert!(
+            percentile > 0.0 && percentile <= 1.0,
+            "percentile must be in range (0.0, 1.0]"
+        );
+
+        let mut per_len = ((1.0 - percentile) * (self.count as f32)) as usize;
+        for i in (0..32).rev() {
+            if let Some(a) = per_len.checked_sub(self.histogram[i]) {
+                per_len = a;
+            } else {
+                return rle_v2_decode_bit_width(i as u8);
+            }
+        }
+
+        // If percentile is in correct input range then we should always return above
+        unreachable!()
+    }
 }
 
 #[cfg(test)]
@@ -682,8 +717,8 @@ mod tests {
     }
 
     fn roundtrip_varint<N: VarintSerde>(value: N) -> N {
-        let mut buf = vec![];
-        write_varint_zigzagged(&mut buf, value).unwrap();
+        let mut buf = BytesMut::new();
+        write_varint_zigzagged(&mut buf, value);
         read_varint_zigzagged::<N, _>(&mut Cursor::new(&buf)).unwrap()
     }
 

@@ -12,7 +12,8 @@ use crate::proto::column_encoding::Kind as ProtoColumnKind;
 use self::rle_v1::RleReaderV1;
 use self::rle_v2::RleReaderV2;
 use self::util::{
-    signed_msb_decode, signed_msb_encode, signed_zigzag_decode, signed_zigzag_encode,
+    get_closest_aligned_bit_width, signed_msb_decode, signed_msb_encode, signed_zigzag_decode,
+    signed_zigzag_encode,
 };
 
 // TODO: rename mod to encoding
@@ -80,6 +81,11 @@ pub trait VarintSerde: PrimInt + CheckedShl + BitOrAssign {
         Self::BYTE_SIZE * 8 - self.leading_zeros() as usize
     }
 
+    /// Feeds [`Self::bits_used`] into a mapping to get an aligned bit width.
+    fn closest_aligned_bit_width(self) -> usize {
+        get_closest_aligned_bit_width(self.bits_used())
+    }
+
     fn from_u8(b: u8) -> Self;
 
     // TODO: have separate type/trait to represent Zigzag encoded NInt?
@@ -133,6 +139,9 @@ pub trait NInt:
     fn add_u64(self, u: u64) -> Option<Self>;
 
     fn sub_u64(self, u: u64) -> Option<Self>;
+
+    // TODO: use Into<i64> instead?
+    fn as_i64(self) -> i64;
 }
 
 impl VarintSerde for i16 {
@@ -262,6 +271,10 @@ impl NInt for i16 {
     fn sub_u64(self, u: u64) -> Option<Self> {
         u.try_into().ok().and_then(|u| self.checked_sub_unsigned(u))
     }
+
+    fn as_i64(self) -> i64 {
+        self as i64
+    }
 }
 
 impl NInt for i32 {
@@ -300,6 +313,10 @@ impl NInt for i32 {
     #[inline]
     fn sub_u64(self, u: u64) -> Option<Self> {
         u.try_into().ok().and_then(|u| self.checked_sub_unsigned(u))
+    }
+
+    fn as_i64(self) -> i64 {
+        self as i64
     }
 }
 
@@ -340,8 +357,13 @@ impl NInt for i64 {
     fn sub_u64(self, u: u64) -> Option<Self> {
         self.checked_sub_unsigned(u)
     }
+
+    fn as_i64(self) -> i64 {
+        self
+    }
 }
 
+// TODO: remove this implementation
 impl NInt for u64 {
     type Bytes = [u8; 8];
 
@@ -368,5 +390,9 @@ impl NInt for u64 {
     #[inline]
     fn sub_u64(self, u: u64) -> Option<Self> {
         self.checked_sub(u)
+    }
+
+    fn as_i64(self) -> i64 {
+        todo!()
     }
 }

@@ -1,5 +1,6 @@
 use std::io::Read;
 
+use bytes::BytesMut;
 use snafu::{OptionExt, ResultExt};
 
 use super::NInt;
@@ -9,8 +10,6 @@ use crate::reader::decode::util::{
 };
 
 /// Patches (gap + actual patch bits) width are ceil'd here.
-///
-/// Not mentioned in ORC specification, but happens in their implementation.
 fn get_closest_fixed_bits(width: usize) -> usize {
     match width {
         1..=24 => width,
@@ -73,6 +72,9 @@ pub fn read_patched_base<N: NInt, R: Read>(
     let base = N::from_be_bytes(buffer).decode_signed_msb(base_byte_width);
 
     // Get data values
+    // TODO: this should read into Vec<u64>
+    //       as base reduced values can exceed N::max()
+    //       (e.g. if base is N::min() and this is signed type)
     read_ints(out_ints, length, value_bit_width, reader)?;
 
     // Get patches that will be applied to base values.
@@ -137,4 +139,8 @@ pub fn read_patched_base<N: NInt, R: Read>(
     }
 
     Ok(())
+}
+
+pub fn write_patched_base(writer: &mut BytesMut) {
+    todo!()
 }
