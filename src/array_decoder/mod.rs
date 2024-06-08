@@ -244,7 +244,7 @@ fn derive_present_vec(
 
 /// Fix the lengths to account for nulls (represented as 0 length)
 fn populate_lengths_with_nulls(
-    lengths: Vec<u64>,
+    lengths: Vec<i64>,
     batch_size: usize,
     present: &Option<Vec<bool>>,
 ) -> Vec<usize> {

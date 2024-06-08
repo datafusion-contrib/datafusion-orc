@@ -8,10 +8,11 @@ use crate::reader::decode::util::{
     extract_run_length_from_header, read_ints, read_u8, rle_v2_decode_bit_width,
     rle_v2_encode_bit_width, write_aligned_packed_ints,
 };
+use crate::reader::decode::EncodingSign;
 
 use super::NInt;
 
-pub fn read_direct_values<N: NInt, R: Read>(
+pub fn read_direct_values<N: NInt, R: Read, S: EncodingSign>(
     reader: &mut R,
     out_ints: &mut Vec<N>,
     header: u8,
@@ -33,7 +34,7 @@ pub fn read_direct_values<N: NInt, R: Read>(
     read_ints(out_ints, length, bit_width, reader)?;
 
     for lit in out_ints.iter_mut() {
-        *lit = lit.zigzag_decode();
+        *lit = S::zigzag_decode(*lit);
     }
 
     Ok(())
@@ -75,17 +76,17 @@ mod tests {
 
     use proptest::prelude::*;
 
-    use crate::reader::decode::VarintSerde;
+    use crate::reader::decode::{SignedEncoding, UnsignedEncoding};
 
     use super::*;
 
-    fn roundtrip_direct_helper<N: NInt>(values: &[N]) -> Result<Vec<N>> {
+    fn roundtrip_direct_helper<N: NInt, S: EncodingSign>(values: &[N]) -> Result<Vec<N>> {
         let mut buf = BytesMut::new();
         let mut out = vec![];
 
         write_direct(&mut buf, values, None);
         let header = buf[0];
-        read_direct_values(&mut Cursor::new(&buf[1..]), &mut out, header)?;
+        read_direct_values::<_, _, S>(&mut Cursor::new(&buf[1..]), &mut out, header)?;
 
         Ok(out)
     }
@@ -93,22 +94,29 @@ mod tests {
     proptest! {
         #[test]
         fn roundtrip_direct_i16(values in prop::collection::vec(any::<i16>(), 1..512)) {
-            let encoded= values.iter().map(|v| v.zigzag_encode()).collect::<Vec<_>>();
-            let out = roundtrip_direct_helper(&encoded)?;
+            let encoded = values.iter().map(|v| SignedEncoding::zigzag_encode(*v)).collect::<Vec<_>>();
+            let out = roundtrip_direct_helper::<_, SignedEncoding>(&encoded)?;
             prop_assert_eq!(out, values);
         }
 
         #[test]
         fn roundtrip_direct_i32(values in prop::collection::vec(any::<i32>(), 1..512)) {
-            let encoded= values.iter().map(|v| v.zigzag_encode()).collect::<Vec<_>>();
-            let out = roundtrip_direct_helper(&encoded)?;
+            let encoded = values.iter().map(|v| SignedEncoding::zigzag_encode(*v)).collect::<Vec<_>>();
+            let out = roundtrip_direct_helper::<_, SignedEncoding>(&encoded)?;
             prop_assert_eq!(out, values);
         }
 
         #[test]
         fn roundtrip_direct_i64(values in prop::collection::vec(any::<i64>(), 1..512)) {
-            let encoded= values.iter().map(|v| v.zigzag_encode()).collect::<Vec<_>>();
-            let out = roundtrip_direct_helper(&encoded)?;
+            let encoded = values.iter().map(|v| SignedEncoding::zigzag_encode(*v)).collect::<Vec<_>>();
+            let out = roundtrip_direct_helper::<_, SignedEncoding>(&encoded)?;
+            prop_assert_eq!(out, values);
+        }
+
+        #[test]
+        fn roundtrip_direct_i64_unsigned(values in prop::collection::vec(0..=i64::MAX, 1..512)) {
+            let encoded = values.iter().map(|v| UnsignedEncoding::zigzag_encode(*v)).collect::<Vec<_>>();
+            let out = roundtrip_direct_helper::<_, UnsignedEncoding>(&encoded)?;
             prop_assert_eq!(out, values);
         }
     }

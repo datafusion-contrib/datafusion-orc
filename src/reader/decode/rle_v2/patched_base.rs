@@ -8,6 +8,7 @@ use crate::error::{IoSnafu, OutOfSpecSnafu, Result};
 use crate::reader::decode::util::{
     extract_run_length_from_header, read_ints, read_u8, rle_v2_decode_bit_width,
 };
+use crate::reader::decode::EncodingSign;
 
 /// Patches (gap + actual patch bits) width are ceil'd here.
 fn get_closest_fixed_bits(width: usize) -> usize {
@@ -25,7 +26,7 @@ fn get_closest_fixed_bits(width: usize) -> usize {
     }
 }
 
-pub fn read_patched_base<N: NInt, R: Read>(
+pub fn read_patched_base<N: NInt, R: Read, S: EncodingSign>(
     reader: &mut R,
     out_ints: &mut Vec<N>,
     header: u8,
@@ -69,7 +70,8 @@ pub fn read_patched_base<N: NInt, R: Read>(
     reader
         .read_exact(&mut buffer.as_mut()[N::BYTE_SIZE - base_byte_width..])
         .context(IoSnafu)?;
-    let base = N::from_be_bytes(buffer).decode_signed_msb(base_byte_width);
+    let base = N::from_be_bytes(buffer);
+    let base = S::decode_signed_msb(base, base_byte_width);
 
     // Get data values
     // TODO: this should read into Vec<u64>
@@ -80,7 +82,7 @@ pub fn read_patched_base<N: NInt, R: Read>(
     // Get patches that will be applied to base values.
     // At most they might be u64 in width (because of check above).
     let ceil_patch_total_bit_width = get_closest_fixed_bits(patch_total_bit_width);
-    let mut patches: Vec<u64> = Vec::with_capacity(patch_list_length);
+    let mut patches: Vec<i64> = Vec::with_capacity(patch_list_length);
     read_ints(
         &mut patches,
         patch_list_length,
@@ -107,7 +109,7 @@ pub fn read_patched_base<N: NInt, R: Read>(
         if idx == actual_gap as usize {
             let patch_bits = current_patch << value_bit_width;
             // Safe conversion without loss as we check the bit width prior
-            let patch_bits = N::from_u64(patch_bits);
+            let patch_bits = N::from_i64(patch_bits);
             let patched_value = *value | patch_bits;
 
             *value = patched_value.checked_add(&base).context(OutOfSpecSnafu {
@@ -129,7 +131,7 @@ pub fn read_patched_base<N: NInt, R: Read>(
                 }
 
                 actual_gap += current_gap;
-                actual_gap += idx as u64;
+                actual_gap += idx as i64;
             }
         } else {
             *value = value.checked_add(&base).context(OutOfSpecSnafu {

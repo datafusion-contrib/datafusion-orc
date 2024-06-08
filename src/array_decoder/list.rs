@@ -8,7 +8,7 @@ use snafu::ResultExt;
 use crate::array_decoder::{derive_present_vec, populate_lengths_with_nulls};
 use crate::column::{get_present_vec, Column};
 use crate::proto::stream::Kind;
-use crate::reader::decode::get_rle_reader;
+use crate::reader::decode::RleVersion;
 
 use crate::error::{ArrowSnafu, Result};
 use crate::stripe::Stripe;
@@ -18,7 +18,7 @@ use super::{array_decoder_factory, ArrayBatchDecoder};
 pub struct ListArrayDecoder {
     inner: Box<dyn ArrayBatchDecoder>,
     present: Option<Box<dyn Iterator<Item = bool> + Send>>,
-    lengths: Box<dyn Iterator<Item = Result<u64>> + Send>,
+    lengths: Box<dyn Iterator<Item = Result<i64>> + Send>,
     field: FieldRef,
 }
 
@@ -31,7 +31,10 @@ impl ListArrayDecoder {
         let inner = array_decoder_factory(child, field.clone(), stripe)?;
 
         let reader = stripe.stream_map().get(column, Kind::Length);
-        let lengths = get_rle_reader(column, reader)?;
+
+        let kind = column.encoding().kind();
+        let rle_version = RleVersion::from(kind);
+        let lengths = rle_version.get_unsigned_rle_reader(reader);
 
         Ok(Self {
             inner,
@@ -66,7 +69,7 @@ impl ArrayBatchDecoder for ListArrayDecoder {
             elements_to_fetch,
             "less lengths than expected in ListArray"
         );
-        let total_length: u64 = lengths.iter().sum();
+        let total_length: i64 = lengths.iter().sum();
         // Fetch child array as one Array with total_length elements
         let child_array = self.inner.next_batch(total_length as usize, None)?;
         let lengths = populate_lengths_with_nulls(lengths, batch_size, &present);

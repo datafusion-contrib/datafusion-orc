@@ -9,7 +9,7 @@ use crate::array_decoder::{derive_present_vec, populate_lengths_with_nulls};
 use crate::column::{get_present_vec, Column};
 use crate::error::{ArrowSnafu, Result};
 use crate::proto::stream::Kind;
-use crate::reader::decode::get_rle_reader;
+use crate::reader::decode::RleVersion;
 use crate::stripe::Stripe;
 
 use super::{array_decoder_factory, ArrayBatchDecoder};
@@ -18,7 +18,7 @@ pub struct MapArrayDecoder {
     keys: Box<dyn ArrayBatchDecoder>,
     values: Box<dyn ArrayBatchDecoder>,
     present: Option<Box<dyn Iterator<Item = bool> + Send>>,
-    lengths: Box<dyn Iterator<Item = Result<u64>> + Send>,
+    lengths: Box<dyn Iterator<Item = Result<i64>> + Send>,
     fields: Fields,
 }
 
@@ -39,7 +39,9 @@ impl MapArrayDecoder {
         let values = array_decoder_factory(values_column, values_field.clone(), stripe)?;
 
         let reader = stripe.stream_map().get(column, Kind::Length);
-        let lengths = get_rle_reader(column, reader)?;
+        let kind = column.encoding().kind();
+        let rle_version = RleVersion::from(kind);
+        let lengths = rle_version.get_unsigned_rle_reader(reader);
 
         let fields = Fields::from(vec![keys_field, values_field]);
 
@@ -77,7 +79,7 @@ impl ArrayBatchDecoder for MapArrayDecoder {
             elements_to_fetch,
             "less lengths than expected in MapArray"
         );
-        let total_length: u64 = lengths.iter().sum();
+        let total_length: i64 = lengths.iter().sum();
         // Fetch key and value arrays, each with total_length elements
         // Fetch child array as one Array with total_length elements
         let keys_array = self.keys.next_batch(total_length as usize, None)?;

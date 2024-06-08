@@ -10,17 +10,17 @@ use crate::reader::decode::util::{
     rle_v2_decode_bit_width, rle_v2_encode_bit_width, write_aligned_packed_ints,
     write_varint_zigzagged,
 };
-use crate::reader::decode::VarintSerde;
+use crate::reader::decode::{EncodingSign, SignedEncoding, VarintSerde};
 
 use super::NInt;
 
 /// We use i64 and u64 for delta to make things easier and to avoid edge cases,
 /// as for example for i16, the delta may be too large to represent in an i16.
 // TODO: expand on the above
-pub fn read_delta_values<N: NInt, R: Read>(
+pub fn read_delta_values<N: NInt, R: Read, S: EncodingSign>(
     reader: &mut R,
     out_ints: &mut Vec<N>,
-    deltas: &mut Vec<u64>,
+    deltas: &mut Vec<i64>,
     header: u8,
 ) -> Result<()> {
     // Encoding format:
@@ -44,18 +44,18 @@ pub fn read_delta_values<N: NInt, R: Read>(
     let second_byte = read_u8(reader)?;
     let length = extract_run_length_from_header(header, second_byte);
 
-    let base_value = read_varint_zigzagged::<N, _>(reader)?;
+    let base_value = read_varint_zigzagged::<N, _, S>(reader)?;
     out_ints.push(base_value);
 
     // Always signed since can be decreasing sequence
-    let delta_base = read_varint_zigzagged::<i64, _>(reader)?;
+    let delta_base = read_varint_zigzagged::<i64, _, SignedEncoding>(reader)?;
     // TODO: does this get inlined?
-    let op: fn(N, u64) -> Option<N> = if delta_base.is_positive() {
-        |acc, delta| acc.add_u64(delta)
+    let op: fn(N, i64) -> Option<N> = if delta_base.is_positive() {
+        |acc, delta| acc.add_i64(delta)
     } else {
-        |acc, delta| acc.sub_u64(delta)
+        |acc, delta| acc.sub_i64(delta)
     };
-    let delta_base = delta_base.unsigned_abs();
+    let delta_base = delta_base.abs(); // TODO: i64::MIN?
 
     if delta_bit_width == 0 {
         // If width is 0 then all values have fixed delta of delta_base
@@ -91,7 +91,7 @@ pub fn read_delta_values<N: NInt, R: Read>(
     Ok(())
 }
 
-pub fn write_varying_delta<N: NInt>(
+pub fn write_varying_delta<N: NInt, S: EncodingSign>(
     writer: &mut BytesMut,
     base_value: N,
     first_delta: i64,
@@ -111,14 +111,15 @@ pub fn write_varying_delta<N: NInt>(
     let header = derive_delta_header(bit_width, subsequent_deltas.len() + 2);
     writer.put_slice(&header);
 
-    write_varint_zigzagged(writer, base_value);
-    write_varint_zigzagged(writer, first_delta);
+    write_varint_zigzagged::<_, S>(writer, base_value);
+    // First delta always signed to indicate increasing/decreasing sequence
+    write_varint_zigzagged::<_, SignedEncoding>(writer, first_delta);
 
     // Bitpacked deltas
     write_aligned_packed_ints(writer, bit_width, subsequent_deltas);
 }
 
-pub fn write_fixed_delta<N: NInt>(
+pub fn write_fixed_delta<N: NInt, S: EncodingSign>(
     writer: &mut BytesMut,
     base_value: N,
     fixed_delta: i64,
@@ -128,8 +129,9 @@ pub fn write_fixed_delta<N: NInt>(
     let header = derive_delta_header(0, subsequent_deltas_len + 2);
     writer.put_slice(&header);
 
-    write_varint_zigzagged(writer, base_value);
-    write_varint_zigzagged(writer, fixed_delta);
+    write_varint_zigzagged::<_, S>(writer, base_value);
+    // First delta always signed to indicate increasing/decreasing sequence
+    write_varint_zigzagged::<_, SignedEncoding>(writer, fixed_delta);
 }
 
 fn derive_delta_header(delta_width: usize, run_length: usize) -> [u8; 2] {
@@ -159,6 +161,8 @@ fn derive_delta_header(delta_width: usize, run_length: usize) -> [u8; 2] {
 mod tests {
     use std::io::Cursor;
 
+    use crate::reader::decode::UnsignedEncoding;
+
     use super::*;
 
     // TODO: figure out how to write proptests for these
@@ -168,12 +172,17 @@ mod tests {
         let mut buf = BytesMut::new();
         let mut out = vec![];
         let mut deltas = vec![];
-        write_fixed_delta(&mut buf, 0_u64, 10, 100 - 2);
+        write_fixed_delta::<i64, UnsignedEncoding>(&mut buf, 0, 10, 100 - 2);
         let header = buf[0];
-        read_delta_values::<u64, _>(&mut Cursor::new(&buf[1..]), &mut out, &mut deltas, header)
-            .unwrap();
+        read_delta_values::<i64, _, UnsignedEncoding>(
+            &mut Cursor::new(&buf[1..]),
+            &mut out,
+            &mut deltas,
+            header,
+        )
+        .unwrap();
 
-        let expected = (0..100).map(|i| i * 10).collect::<Vec<u64>>();
+        let expected = (0..100).map(|i| i * 10).collect::<Vec<i64>>();
         assert_eq!(expected, out);
     }
 
@@ -182,12 +191,17 @@ mod tests {
         let mut buf = BytesMut::new();
         let mut out = vec![];
         let mut deltas = vec![];
-        write_fixed_delta(&mut buf, 10_000_u64, -63, 150 - 2);
+        write_fixed_delta::<i64, UnsignedEncoding>(&mut buf, 10_000, -63, 150 - 2);
         let header = buf[0];
-        read_delta_values::<u64, _>(&mut Cursor::new(&buf[1..]), &mut out, &mut deltas, header)
-            .unwrap();
+        read_delta_values::<i64, _, UnsignedEncoding>(
+            &mut Cursor::new(&buf[1..]),
+            &mut out,
+            &mut deltas,
+            header,
+        )
+        .unwrap();
 
-        let expected = (0..150).map(|i| 10_000_u64 - i * 63).collect::<Vec<u64>>();
+        let expected = (0..150).map(|i| 10_000 - i * 63).collect::<Vec<i64>>();
         assert_eq!(expected, out);
     }
 
@@ -199,21 +213,25 @@ mod tests {
         let max = *deltas.iter().max().unwrap();
 
         let mut buf = BytesMut::new();
-        // let mut out = vec![];
+        let mut out = vec![];
         let mut deltas = vec![];
-        write_varying_delta(&mut buf, 0_u64, 10, max, &deltas);
+        write_varying_delta::<i64, UnsignedEncoding>(&mut buf, 0, 10, max, &deltas);
         let header = buf[0];
-        // TODO
-        // read_delta_values::<u64, _>(&mut Cursor::new(&buf[1..]), &mut out, &mut deltas, header)
-        //     .unwrap();
+        read_delta_values::<i64, _, UnsignedEncoding>(
+            &mut Cursor::new(&buf[1..]),
+            &mut out,
+            &mut deltas,
+            header,
+        )
+        .unwrap();
 
-        // let mut expected = vec![0, 10];
-        // let mut i = 1;
-        // for d in deltas {
-        //     expected.push(d + expected[i]);
-        //     i += 1;
-        // }
-        // assert_eq!(expected, out);
+        let mut expected = vec![0, 10];
+        let mut i = 1;
+        for d in deltas {
+            expected.push(d + expected[i]);
+            i += 1;
+        }
+        assert_eq!(expected, out);
     }
 
     #[test]
@@ -224,20 +242,24 @@ mod tests {
         let max = *deltas.iter().max().unwrap();
 
         let mut buf = BytesMut::new();
-        // let mut out = vec![];
+        let mut out = vec![];
         let mut deltas = vec![];
-        write_varying_delta(&mut buf, 10_000_u64, -1, max, &deltas);
+        write_varying_delta::<i64, UnsignedEncoding>(&mut buf, 10_000, -1, max, &deltas);
         let header = buf[0];
-        // TODO
-        // read_delta_values::<u64, _>(&mut Cursor::new(&buf[1..]), &mut out, &mut deltas, header)
-        //     .unwrap();
+        read_delta_values::<i64, _, UnsignedEncoding>(
+            &mut Cursor::new(&buf[1..]),
+            &mut out,
+            &mut deltas,
+            header,
+        )
+        .unwrap();
 
-        // let mut expected = vec![10_000, 9_999];
-        // let mut i = 1;
-        // for d in deltas {
-        //     expected.push(expected[i] - d);
-        //     i += 1;
-        // }
-        // assert_eq!(expected, out);
+        let mut expected = vec![10_000, 9_999];
+        let mut i = 1;
+        for d in deltas {
+            expected.push(expected[i] - d);
+            i += 1;
+        }
+        assert_eq!(expected, out);
     }
 }

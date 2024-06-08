@@ -6,7 +6,7 @@ use snafu::{OptionExt, ResultExt};
 
 use crate::error::{self, IoSnafu, Result, VarintTooLargeSnafu};
 
-use super::{NInt, VarintSerde};
+use super::{EncodingSign, NInt, VarintSerde};
 
 /// Read single byte
 #[inline]
@@ -414,13 +414,15 @@ fn write_varint<N: VarintSerde>(writer: &mut BytesMut, value: N) {
     writer.put_slice(&bytes);
 }
 
-pub fn read_varint_zigzagged<N: VarintSerde, R: Read>(reader: &mut R) -> Result<N> {
+pub fn read_varint_zigzagged<N: VarintSerde, R: Read, S: EncodingSign>(
+    reader: &mut R,
+) -> Result<N> {
     let unsigned = read_varint::<N, _>(reader)?;
-    Ok(unsigned.zigzag_decode())
+    Ok(S::zigzag_decode(unsigned))
 }
 
-pub fn write_varint_zigzagged<N: VarintSerde>(writer: &mut BytesMut, value: N) {
-    let value = value.zigzag_encode();
+pub fn write_varint_zigzagged<N: VarintSerde, S: EncodingSign>(writer: &mut BytesMut, value: N) {
+    let value = S::zigzag_encode(value);
     write_varint(writer, value)
 }
 
@@ -523,7 +525,10 @@ impl<N: VarintSerde> PercentileBitCalculator<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::Result;
+    use crate::{
+        error::Result,
+        reader::decode::{SignedEncoding, UnsignedEncoding},
+    };
     use proptest::prelude::*;
     use std::io::Cursor;
 
@@ -676,9 +681,12 @@ mod tests {
 
     #[test]
     fn test_read_varint() -> Result<()> {
-        fn test_assert(serialized: &[u8], expected: u64) -> Result<()> {
+        fn test_assert(serialized: &[u8], expected: i64) -> Result<()> {
             let mut reader = Cursor::new(serialized);
-            assert_eq!(expected, read_varint_zigzagged::<u64, _>(&mut reader)?);
+            assert_eq!(
+                expected,
+                read_varint_zigzagged::<i64, _, UnsignedEncoding>(&mut reader)?
+            );
             Ok(())
         }
 
@@ -690,13 +698,9 @@ mod tests {
         test_assert(&[0xff, 0x7f], 16_383)?;
         test_assert(&[0x80, 0x80, 0x01], 16_384)?;
         test_assert(&[0x81, 0x80, 0x01], 16_385)?;
-        test_assert(
-            &[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01],
-            u64::MAX,
-        )?;
 
         // when too large
-        let err = read_varint_zigzagged::<u64, _>(&mut Cursor::new(&[
+        let err = read_varint_zigzagged::<i64, _, UnsignedEncoding>(&mut Cursor::new(&[
             0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01,
         ]));
         assert!(err.is_err());
@@ -706,7 +710,8 @@ mod tests {
         );
 
         // when unexpected end to stream
-        let err = read_varint_zigzagged::<u64, _>(&mut Cursor::new(&[0x80, 0x80]));
+        let err =
+            read_varint_zigzagged::<i64, _, UnsignedEncoding>(&mut Cursor::new(&[0x80, 0x80]));
         assert!(err.is_err());
         assert_eq!(
             "Failed to read, source: failed to fill whole buffer",
@@ -716,40 +721,40 @@ mod tests {
         Ok(())
     }
 
-    fn roundtrip_varint<N: VarintSerde>(value: N) -> N {
+    fn roundtrip_varint<N: VarintSerde, S: EncodingSign>(value: N) -> N {
         let mut buf = BytesMut::new();
-        write_varint_zigzagged(&mut buf, value);
-        read_varint_zigzagged::<N, _>(&mut Cursor::new(&buf)).unwrap()
+        write_varint_zigzagged::<N, S>(&mut buf, value);
+        read_varint_zigzagged::<N, _, S>(&mut Cursor::new(&buf)).unwrap()
     }
 
     proptest! {
         #[test]
         fn roundtrip_varint_i16(value: i16) {
-            let out = roundtrip_varint(value);
+            let out = roundtrip_varint::<_, SignedEncoding>(value);
             prop_assert_eq!(out, value);
         }
 
         #[test]
         fn roundtrip_varint_i32(value: i32) {
-            let out = roundtrip_varint(value);
+            let out = roundtrip_varint::<_, SignedEncoding>(value);
             prop_assert_eq!(out, value);
         }
 
         #[test]
         fn roundtrip_varint_i64(value: i64) {
-            let out = roundtrip_varint(value);
+            let out = roundtrip_varint::<_, SignedEncoding>(value);
             prop_assert_eq!(out, value);
         }
 
         #[test]
         fn roundtrip_varint_i128(value: i128) {
-            let out = roundtrip_varint(value);
+            let out = roundtrip_varint::<_, SignedEncoding>(value);
             prop_assert_eq!(out, value);
         }
 
         #[test]
-        fn roundtrip_varint_u64(value: u64) {
-            let out = roundtrip_varint(value);
+        fn roundtrip_varint_u64(value in 0..=i64::MAX) {
+            let out = roundtrip_varint::<_, UnsignedEncoding>(value);
             prop_assert_eq!(out, value);
         }
     }
@@ -757,38 +762,31 @@ mod tests {
     #[test]
     fn roundtrip_varint_edge_cases() {
         let value = 0_i16;
-        assert_eq!(roundtrip_varint(value), value);
+        assert_eq!(roundtrip_varint::<_, SignedEncoding>(value), value);
         let value = i16::MIN;
-        assert_eq!(roundtrip_varint(value), value);
+        assert_eq!(roundtrip_varint::<_, SignedEncoding>(value), value);
         let value = i16::MAX;
-        assert_eq!(roundtrip_varint(value), value);
+        assert_eq!(roundtrip_varint::<_, SignedEncoding>(value), value);
 
         let value = 0_i32;
-        assert_eq!(roundtrip_varint(value), value);
+        assert_eq!(roundtrip_varint::<_, SignedEncoding>(value), value);
         let value = i32::MIN;
-        assert_eq!(roundtrip_varint(value), value);
+        assert_eq!(roundtrip_varint::<_, SignedEncoding>(value), value);
         let value = i32::MAX;
-        assert_eq!(roundtrip_varint(value), value);
+        assert_eq!(roundtrip_varint::<_, SignedEncoding>(value), value);
 
         let value = 0_i64;
-        assert_eq!(roundtrip_varint(value), value);
+        assert_eq!(roundtrip_varint::<_, SignedEncoding>(value), value);
         let value = i64::MIN;
-        assert_eq!(roundtrip_varint(value), value);
+        assert_eq!(roundtrip_varint::<_, SignedEncoding>(value), value);
         let value = i64::MAX;
-        assert_eq!(roundtrip_varint(value), value);
+        assert_eq!(roundtrip_varint::<_, SignedEncoding>(value), value);
 
         let value = 0_i128;
-        assert_eq!(roundtrip_varint(value), value);
+        assert_eq!(roundtrip_varint::<_, SignedEncoding>(value), value);
         let value = i128::MIN;
-        assert_eq!(roundtrip_varint(value), value);
+        assert_eq!(roundtrip_varint::<_, SignedEncoding>(value), value);
         let value = i128::MAX;
-        assert_eq!(roundtrip_varint(value), value);
-
-        let value = 0_u64;
-        assert_eq!(roundtrip_varint(value), value);
-        let value = u64::MIN;
-        assert_eq!(roundtrip_varint(value), value);
-        let value = u64::MAX;
-        assert_eq!(roundtrip_varint(value), value);
+        assert_eq!(roundtrip_varint::<_, SignedEncoding>(value), value);
     }
 }

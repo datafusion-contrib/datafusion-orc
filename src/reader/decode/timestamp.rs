@@ -5,14 +5,14 @@ const NANOSECONDS_IN_SECOND: i64 = 1_000_000_000;
 pub struct TimestampIterator {
     base_from_epoch: i64,
     data: Box<dyn Iterator<Item = Result<i64>> + Send>,
-    secondary: Box<dyn Iterator<Item = Result<u64>> + Send>,
+    secondary: Box<dyn Iterator<Item = Result<i64>> + Send>,
 }
 
 impl TimestampIterator {
     pub fn new(
         base_from_epoch: i64,
         data: Box<dyn Iterator<Item = Result<i64>> + Send>,
-        secondary: Box<dyn Iterator<Item = Result<u64>> + Send>,
+        secondary: Box<dyn Iterator<Item = Result<i64>> + Send>,
     ) -> Self {
         Self {
             base_from_epoch,
@@ -36,10 +36,11 @@ impl Iterator for TimestampIterator {
 fn decode_timestamp(
     base: i64,
     seconds_since_orc_base: Result<i64>,
-    nanoseconds: Result<u64>,
+    nanoseconds: Result<i64>,
 ) -> Result<Option<i64>> {
     let data = seconds_since_orc_base?;
-    let mut nanoseconds = nanoseconds?;
+    // TODO
+    let mut nanoseconds = nanoseconds? as u64;
     // Last 3 bits indicate how many trailing zeros were truncated
     let zeros = nanoseconds & 0x7;
     nanoseconds >>= 3;

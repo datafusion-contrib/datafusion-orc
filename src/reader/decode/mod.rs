@@ -3,7 +3,7 @@ use std::io::Read;
 use std::ops::{BitOrAssign, ShlAssign};
 
 use num::traits::CheckedShl;
-use num::PrimInt;
+use num::{PrimInt, Signed};
 
 use crate::column::Column;
 use crate::error::{InvalidColumnEncodingSnafu, Result};
@@ -37,10 +37,10 @@ impl RleVersion {
     pub fn get_unsigned_rle_reader<R: Read + Send + 'static>(
         &self,
         reader: R,
-    ) -> Box<dyn Iterator<Item = Result<u64>> + Send> {
+    ) -> Box<dyn Iterator<Item = Result<i64>> + Send> {
         match self {
-            RleVersion::V1 => Box::new(RleReaderV1::new(reader)),
-            RleVersion::V2 => Box::new(RleReaderV2::new(reader)),
+            RleVersion::V1 => Box::new(RleReaderV1::<_, _, UnsignedEncoding>::new(reader)),
+            RleVersion::V2 => Box::new(RleReaderV2::<_, _, UnsignedEncoding>::new(reader)),
         }
     }
 }
@@ -59,8 +59,8 @@ pub fn get_rle_reader<N: NInt, R: Read + Send + 'static>(
     reader: R,
 ) -> Result<Box<dyn Iterator<Item = Result<N>> + Send>> {
     match column.encoding().kind() {
-        ProtoColumnKind::Direct => Ok(Box::new(RleReaderV1::<N, _>::new(reader))),
-        ProtoColumnKind::DirectV2 => Ok(Box::new(RleReaderV2::<N, _>::new(reader))),
+        ProtoColumnKind::Direct => Ok(Box::new(RleReaderV1::<N, _, SignedEncoding>::new(reader))),
+        ProtoColumnKind::DirectV2 => Ok(Box::new(RleReaderV2::<N, _, SignedEncoding>::new(reader))),
         k => InvalidColumnEncodingSnafu {
             name: column.name(),
             encoding: k,
@@ -69,9 +69,64 @@ pub fn get_rle_reader<N: NInt, R: Read + Send + 'static>(
     }
 }
 
-/// Used for varint encoding & decoding, with methods for zigzag encoding
-/// and decoding.
-pub trait VarintSerde: PrimInt + CheckedShl + BitOrAssign {
+pub trait EncodingSign: Send + 'static {
+    // TODO: have separate type/trait to represent Zigzag encoded NInt?
+    fn zigzag_decode<N: VarintSerde>(v: N) -> N;
+    fn zigzag_encode<N: VarintSerde>(v: N) -> N;
+
+    fn decode_signed_msb<N: NInt>(v: N, encoded_byte_size: usize) -> N;
+    fn encode_signed_msb<N: NInt>(v: N, encoded_byte_size: usize) -> N;
+}
+
+pub struct SignedEncoding;
+
+impl EncodingSign for SignedEncoding {
+    #[inline]
+    fn zigzag_decode<N: VarintSerde>(v: N) -> N {
+        signed_zigzag_decode(v)
+    }
+
+    #[inline]
+    fn zigzag_encode<N: VarintSerde>(v: N) -> N {
+        signed_zigzag_encode(v)
+    }
+
+    #[inline]
+    fn decode_signed_msb<N: NInt>(v: N, encoded_byte_size: usize) -> N {
+        signed_msb_decode(v, encoded_byte_size)
+    }
+
+    #[inline]
+    fn encode_signed_msb<N: NInt>(v: N, encoded_byte_size: usize) -> N {
+        signed_msb_encode(v, encoded_byte_size)
+    }
+}
+
+pub struct UnsignedEncoding;
+
+impl EncodingSign for UnsignedEncoding {
+    #[inline]
+    fn zigzag_decode<N: VarintSerde>(v: N) -> N {
+        v
+    }
+
+    #[inline]
+    fn zigzag_encode<N: VarintSerde>(v: N) -> N {
+        v
+    }
+
+    #[inline]
+    fn decode_signed_msb<N: NInt>(v: N, _encoded_byte_size: usize) -> N {
+        v
+    }
+
+    #[inline]
+    fn encode_signed_msb<N: NInt>(v: N, _encoded_byte_size: usize) -> N {
+        v
+    }
+}
+
+pub trait VarintSerde: PrimInt + CheckedShl + BitOrAssign + Signed {
     const BYTE_SIZE: usize;
 
     /// Calculate the minimum bit size required to represent this value, by truncating
@@ -87,19 +142,6 @@ pub trait VarintSerde: PrimInt + CheckedShl + BitOrAssign {
     }
 
     fn from_u8(b: u8) -> Self;
-
-    // TODO: have separate type/trait to represent Zigzag encoded NInt?
-    #[inline]
-    fn zigzag_decode(self) -> Self {
-        // Default noop for unsigned (signed should override this)
-        self
-    }
-
-    #[inline]
-    fn zigzag_encode(self) -> Self {
-        // Default noop for unsigned (signed should override this)
-        self
-    }
 }
 
 /// Helps generalise the decoder efforts to be specific to supported integers.
@@ -115,30 +157,16 @@ pub trait NInt:
     }
 
     /// Should truncate any extra bits.
-    fn from_u64(u: u64) -> Self;
+    fn from_i64(u: i64) -> Self;
 
     fn from_be_bytes(b: Self::Bytes) -> Self;
 
     // TODO: use num_traits::ToBytes instead
     fn to_be_bytes(self) -> Self::Bytes;
 
-    #[inline]
-    fn decode_signed_msb(self, _encoded_byte_size: usize) -> Self {
-        // Default noop for unsigned (signed should override this)
-        // Used when decoding Patched Base in RLEv2
-        self
-    }
+    fn add_i64(self, i: i64) -> Option<Self>;
 
-    #[inline]
-    fn encode_signed_msb(self, _encoded_byte_size: usize) -> Self {
-        // Default noop for unsigned (signed should override this)
-        // Used when encoding Patched Base in RLEv2
-        self
-    }
-
-    fn add_u64(self, u: u64) -> Option<Self>;
-
-    fn sub_u64(self, u: u64) -> Option<Self>;
+    fn sub_i64(self, i: i64) -> Option<Self>;
 
     // TODO: use Into<i64> instead?
     fn as_i64(self) -> i64;
@@ -151,16 +179,6 @@ impl VarintSerde for i16 {
     fn from_u8(b: u8) -> Self {
         b as Self
     }
-
-    #[inline]
-    fn zigzag_decode(self) -> Self {
-        signed_zigzag_decode(self)
-    }
-
-    #[inline]
-    fn zigzag_encode(self) -> Self {
-        signed_zigzag_encode(self)
-    }
 }
 
 impl VarintSerde for i32 {
@@ -170,38 +188,9 @@ impl VarintSerde for i32 {
     fn from_u8(b: u8) -> Self {
         b as Self
     }
-
-    #[inline]
-    fn zigzag_decode(self) -> Self {
-        signed_zigzag_decode(self)
-    }
-
-    #[inline]
-    fn zigzag_encode(self) -> Self {
-        signed_zigzag_encode(self)
-    }
 }
 
 impl VarintSerde for i64 {
-    const BYTE_SIZE: usize = 8;
-
-    #[inline]
-    fn from_u8(b: u8) -> Self {
-        b as Self
-    }
-
-    #[inline]
-    fn zigzag_decode(self) -> Self {
-        signed_zigzag_decode(self)
-    }
-
-    #[inline]
-    fn zigzag_encode(self) -> Self {
-        signed_zigzag_encode(self)
-    }
-}
-
-impl VarintSerde for u64 {
     const BYTE_SIZE: usize = 8;
 
     #[inline]
@@ -217,16 +206,6 @@ impl VarintSerde for i128 {
     fn from_u8(b: u8) -> Self {
         b as Self
     }
-
-    #[inline]
-    fn zigzag_decode(self) -> Self {
-        signed_zigzag_decode(self)
-    }
-
-    #[inline]
-    fn zigzag_encode(self) -> Self {
-        signed_zigzag_encode(self)
-    }
 }
 
 // We only implement for i16, i32, i64 and u64.
@@ -238,8 +217,8 @@ impl NInt for i16 {
     type Bytes = [u8; 2];
 
     #[inline]
-    fn from_u64(u: u64) -> Self {
-        u as Self
+    fn from_i64(i: i64) -> Self {
+        i as Self
     }
 
     #[inline]
@@ -253,25 +232,16 @@ impl NInt for i16 {
     }
 
     #[inline]
-    fn decode_signed_msb(self, encoded_byte_size: usize) -> Self {
-        signed_msb_decode(self, encoded_byte_size)
+    fn add_i64(self, i: i64) -> Option<Self> {
+        i.try_into().ok().and_then(|i| self.checked_add(i))
     }
 
     #[inline]
-    fn encode_signed_msb(self, encoded_byte_size: usize) -> Self {
-        signed_msb_encode(self, encoded_byte_size)
+    fn sub_i64(self, i: i64) -> Option<Self> {
+        i.try_into().ok().and_then(|i| self.checked_sub(i))
     }
 
     #[inline]
-    fn add_u64(self, u: u64) -> Option<Self> {
-        u.try_into().ok().and_then(|u| self.checked_add_unsigned(u))
-    }
-
-    #[inline]
-    fn sub_u64(self, u: u64) -> Option<Self> {
-        u.try_into().ok().and_then(|u| self.checked_sub_unsigned(u))
-    }
-
     fn as_i64(self) -> i64 {
         self as i64
     }
@@ -281,8 +251,8 @@ impl NInt for i32 {
     type Bytes = [u8; 4];
 
     #[inline]
-    fn from_u64(u: u64) -> Self {
-        u as Self
+    fn from_i64(i: i64) -> Self {
+        i as Self
     }
 
     #[inline]
@@ -296,25 +266,16 @@ impl NInt for i32 {
     }
 
     #[inline]
-    fn decode_signed_msb(self, encoded_byte_size: usize) -> Self {
-        signed_msb_decode(self, encoded_byte_size)
+    fn add_i64(self, i: i64) -> Option<Self> {
+        i.try_into().ok().and_then(|i| self.checked_add(i))
     }
 
     #[inline]
-    fn encode_signed_msb(self, encoded_byte_size: usize) -> Self {
-        signed_msb_encode(self, encoded_byte_size)
+    fn sub_i64(self, i: i64) -> Option<Self> {
+        i.try_into().ok().and_then(|i| self.checked_sub(i))
     }
 
     #[inline]
-    fn add_u64(self, u: u64) -> Option<Self> {
-        u.try_into().ok().and_then(|u| self.checked_add_unsigned(u))
-    }
-
-    #[inline]
-    fn sub_u64(self, u: u64) -> Option<Self> {
-        u.try_into().ok().and_then(|u| self.checked_sub_unsigned(u))
-    }
-
     fn as_i64(self) -> i64 {
         self as i64
     }
@@ -324,8 +285,8 @@ impl NInt for i64 {
     type Bytes = [u8; 8];
 
     #[inline]
-    fn from_u64(u: u64) -> Self {
-        u as Self
+    fn from_i64(i: i64) -> Self {
+        i as Self
     }
 
     #[inline]
@@ -339,60 +300,17 @@ impl NInt for i64 {
     }
 
     #[inline]
-    fn decode_signed_msb(self, encoded_byte_size: usize) -> Self {
-        signed_msb_decode(self, encoded_byte_size)
+    fn add_i64(self, i: i64) -> Option<Self> {
+        self.checked_add(i)
     }
 
     #[inline]
-    fn encode_signed_msb(self, encoded_byte_size: usize) -> Self {
-        signed_msb_encode(self, encoded_byte_size)
+    fn sub_i64(self, i: i64) -> Option<Self> {
+        self.checked_sub(i)
     }
 
     #[inline]
-    fn add_u64(self, u: u64) -> Option<Self> {
-        self.checked_add_unsigned(u)
-    }
-
-    #[inline]
-    fn sub_u64(self, u: u64) -> Option<Self> {
-        self.checked_sub_unsigned(u)
-    }
-
     fn as_i64(self) -> i64 {
         self
-    }
-}
-
-// TODO: remove this implementation
-impl NInt for u64 {
-    type Bytes = [u8; 8];
-
-    #[inline]
-    fn from_u64(u: u64) -> Self {
-        u as Self
-    }
-
-    #[inline]
-    fn from_be_bytes(b: Self::Bytes) -> Self {
-        Self::from_be_bytes(b)
-    }
-
-    #[inline]
-    fn to_be_bytes(self) -> Self::Bytes {
-        self.to_be_bytes()
-    }
-
-    #[inline]
-    fn add_u64(self, u: u64) -> Option<Self> {
-        self.checked_add(u)
-    }
-
-    #[inline]
-    fn sub_u64(self, u: u64) -> Option<Self> {
-        self.checked_sub(u)
-    }
-
-    fn as_i64(self) -> i64 {
-        todo!()
     }
 }

@@ -5,12 +5,12 @@ use snafu::ResultExt;
 
 use crate::{
     error::{IoSnafu, OutOfSpecSnafu, Result},
-    reader::decode::rle_v2::EncodingType,
+    reader::decode::{rle_v2::EncodingType, EncodingSign},
 };
 
 use super::{NInt, SHORT_REPEAT_MIN_LENGTH};
 
-pub fn read_short_repeat_values<N: NInt, R: Read>(
+pub fn read_short_repeat_values<N: NInt, R: Read, S: EncodingSign>(
     reader: &mut R,
     out_ints: &mut Vec<N>,
     header: u8,
@@ -44,17 +44,18 @@ pub fn read_short_repeat_values<N: NInt, R: Read>(
     reader
         .read_exact(&mut buffer.as_mut()[N::BYTE_SIZE - byte_width..])
         .context(IoSnafu)?;
-    let val = N::from_be_bytes(buffer).zigzag_decode();
+    let val = N::from_be_bytes(buffer);
+    let val = S::zigzag_decode(val);
 
     out_ints.extend(std::iter::repeat(val).take(run_length));
 
     Ok(())
 }
 
-pub fn write_short_repeat<N: NInt>(writer: &mut BytesMut, value: N, count: usize) {
+pub fn write_short_repeat<N: NInt, S: EncodingSign>(writer: &mut BytesMut, value: N, count: usize) {
     debug_assert!((SHORT_REPEAT_MIN_LENGTH..=10).contains(&count));
 
-    let value = value.zigzag_encode();
+    let value = S::zigzag_encode(value);
 
     // Take max in case value = 0
     let byte_size = value.bits_used().div_ceil(8).max(1) as u8;
@@ -75,15 +76,20 @@ mod tests {
 
     use proptest::prelude::*;
 
+    use crate::reader::decode::{SignedEncoding, UnsignedEncoding};
+
     use super::*;
 
-    fn roundtrip_short_repeat_helper<N: NInt>(value: N, count: usize) -> Result<Vec<N>> {
+    fn roundtrip_short_repeat_helper<N: NInt, S: EncodingSign>(
+        value: N,
+        count: usize,
+    ) -> Result<Vec<N>> {
         let mut buf = BytesMut::new();
         let mut out = vec![];
 
-        write_short_repeat(&mut buf, value, count);
+        write_short_repeat::<_, S>(&mut buf, value, count);
         let header = buf[0];
-        read_short_repeat_values(&mut Cursor::new(&buf[1..]), &mut out, header)?;
+        read_short_repeat_values::<_, _, S>(&mut Cursor::new(&buf[1..]), &mut out, header)?;
 
         Ok(out)
     }
@@ -91,25 +97,25 @@ mod tests {
     proptest! {
         #[test]
         fn roundtrip_short_repeat_i16(value: i16, count in 3_usize..=10) {
-            let out = roundtrip_short_repeat_helper(value, count)?;
+            let out = roundtrip_short_repeat_helper::<_, SignedEncoding>(value, count)?;
             prop_assert_eq!(out, vec![value; count]);
         }
 
         #[test]
         fn roundtrip_short_repeat_i32(value: i32, count in 3_usize..=10) {
-            let out = roundtrip_short_repeat_helper(value, count)?;
+            let out = roundtrip_short_repeat_helper::<_, SignedEncoding>(value, count)?;
             prop_assert_eq!(out, vec![value; count]);
         }
 
         #[test]
         fn roundtrip_short_repeat_i64(value: i64, count in 3_usize..=10) {
-            let out = roundtrip_short_repeat_helper(value, count)?;
+            let out = roundtrip_short_repeat_helper::<_, SignedEncoding>(value, count)?;
             prop_assert_eq!(out, vec![value; count]);
         }
 
         #[test]
-        fn roundtrip_short_repeat_u64(value: u64, count in 3_usize..=10) {
-            let out = roundtrip_short_repeat_helper(value, count)?;
+        fn roundtrip_short_repeat_i64_unsigned(value in 0..=i64::MAX, count in 3_usize..=10) {
+            let out = roundtrip_short_repeat_helper::<_, UnsignedEncoding>(value, count)?;
             prop_assert_eq!(out, vec![value; count]);
         }
     }
