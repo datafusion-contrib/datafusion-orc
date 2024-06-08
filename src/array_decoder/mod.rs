@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use arrow::array::{ArrayRef, BooleanArray, BooleanBuilder, PrimitiveArray, PrimitiveBuilder};
 use arrow::buffer::NullBuffer;
-use arrow::datatypes::{ArrowPrimitiveType, Decimal128Type, UInt64Type};
+use arrow::datatypes::{ArrowPrimitiveType, Decimal128Type};
 use arrow::datatypes::{DataType as ArrowDataType, Field};
 use arrow::datatypes::{
     Date32Type, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, SchemaRef,
@@ -103,7 +103,6 @@ impl<T: ArrowPrimitiveType> ArrayBatchDecoder for PrimitiveArrayDecoder<T> {
     }
 }
 
-type UInt64ArrayDecoder = PrimitiveArrayDecoder<UInt64Type>;
 type Int64ArrayDecoder = PrimitiveArrayDecoder<Int64Type>;
 type Int32ArrayDecoder = PrimitiveArrayDecoder<Int32Type>;
 type Int16ArrayDecoder = PrimitiveArrayDecoder<Int16Type>;

@@ -4,7 +4,7 @@ use crate::{
     column::{get_present_vec, Column},
     error::Result,
     proto::stream::Kind,
-    reader::decode::{get_rle_reader, timestamp::TimestampIterator, RleVersion},
+    reader::decode::{get_rle_reader, get_unsigned_rle_reader, timestamp::TimestampIterator},
     stripe::Stripe,
 };
 use arrow::{array::ArrayRef, datatypes::TimestampNanosecondType};
@@ -27,9 +27,7 @@ pub fn new_timestamp_decoder(
     let data = get_rle_reader(column, data)?;
 
     let secondary = stripe.stream_map().get(column, Kind::Secondary);
-    let kind = column.encoding().kind();
-    let rle_version = RleVersion::from(kind);
-    let secondary = rle_version.get_unsigned_rle_reader(secondary);
+    let secondary = get_unsigned_rle_reader(column, secondary);
 
     let present = get_present_vec(column, stripe)?
         .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
@@ -77,9 +75,7 @@ pub fn new_timestamp_instant_decoder(
     let data = get_rle_reader(column, data)?;
 
     let secondary = stripe.stream_map().get(column, Kind::Secondary);
-    let kind = column.encoding().kind();
-    let rle_version = RleVersion::from(kind);
-    let secondary = rle_version.get_unsigned_rle_reader(secondary);
+    let secondary = get_unsigned_rle_reader(column, secondary);
 
     let present = get_present_vec(column, stripe)?
         .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);

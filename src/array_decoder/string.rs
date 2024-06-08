@@ -13,7 +13,7 @@ use crate::column::{get_present_vec, Column};
 use crate::error::{ArrowSnafu, IoSnafu, Result};
 use crate::proto::column_encoding::Kind as ColumnEncodingKind;
 use crate::proto::stream::Kind;
-use crate::reader::decode::RleVersion;
+use crate::reader::decode::get_unsigned_rle_reader;
 use crate::reader::decompress::Decompressor;
 use crate::stripe::Stripe;
 
@@ -25,9 +25,7 @@ pub fn new_binary_decoder(column: &Column, stripe: &Stripe) -> Result<Box<dyn Ar
         .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
 
     let lengths = stripe.stream_map().get(column, Kind::Length);
-    let kind = column.encoding().kind();
-    let rle_version = RleVersion::from(kind);
-    let lengths = rle_version.get_unsigned_rle_reader(lengths);
+    let lengths = get_unsigned_rle_reader(column, lengths);
 
     let bytes = Box::new(stripe.stream_map().get(column, Kind::Data));
     Ok(Box::new(BinaryArrayDecoder::new(bytes, lengths, present)))
@@ -35,12 +33,11 @@ pub fn new_binary_decoder(column: &Column, stripe: &Stripe) -> Result<Box<dyn Ar
 
 pub fn new_string_decoder(column: &Column, stripe: &Stripe) -> Result<Box<dyn ArrayBatchDecoder>> {
     let kind = column.encoding().kind();
-    let rle_version = RleVersion::from(kind);
     let present = get_present_vec(column, stripe)?
         .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
 
     let lengths = stripe.stream_map().get(column, Kind::Length);
-    let lengths = rle_version.get_unsigned_rle_reader(lengths);
+    let lengths = get_unsigned_rle_reader(column, lengths);
 
     match kind {
         ColumnEncodingKind::Direct | ColumnEncodingKind::DirectV2 => {
@@ -59,7 +56,7 @@ pub fn new_string_decoder(column: &Column, stripe: &Stripe) -> Result<Box<dyn Ar
             let dictionary_strings = Arc::new(dictionary_strings);
 
             let indexes = stripe.stream_map().get(column, Kind::Data);
-            let indexes = rle_version.get_unsigned_rle_reader(indexes);
+            let indexes = get_unsigned_rle_reader(column, indexes);
             let indexes = Int64ArrayDecoder::new(indexes, present);
 
             Ok(Box::new(DictionaryStringArrayDecoder::new(

@@ -9,7 +9,7 @@ use crate::array_decoder::{derive_present_vec, populate_lengths_with_nulls};
 use crate::column::{get_present_vec, Column};
 use crate::error::{ArrowSnafu, Result};
 use crate::proto::stream::Kind;
-use crate::reader::decode::RleVersion;
+use crate::reader::decode::get_unsigned_rle_reader;
 use crate::stripe::Stripe;
 
 use super::{array_decoder_factory, ArrayBatchDecoder};
@@ -39,9 +39,7 @@ impl MapArrayDecoder {
         let values = array_decoder_factory(values_column, values_field.clone(), stripe)?;
 
         let reader = stripe.stream_map().get(column, Kind::Length);
-        let kind = column.encoding().kind();
-        let rle_version = RleVersion::from(kind);
-        let lengths = rle_version.get_unsigned_rle_reader(reader);
+        let lengths = get_unsigned_rle_reader(column, reader);
 
         let fields = Fields::from(vec![keys_field, values_field]);
 

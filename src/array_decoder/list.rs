@@ -8,9 +8,9 @@ use snafu::ResultExt;
 use crate::array_decoder::{derive_present_vec, populate_lengths_with_nulls};
 use crate::column::{get_present_vec, Column};
 use crate::proto::stream::Kind;
-use crate::reader::decode::RleVersion;
 
 use crate::error::{ArrowSnafu, Result};
+use crate::reader::decode::get_unsigned_rle_reader;
 use crate::stripe::Stripe;
 
 use super::{array_decoder_factory, ArrayBatchDecoder};
@@ -31,10 +31,7 @@ impl ListArrayDecoder {
         let inner = array_decoder_factory(child, field.clone(), stripe)?;
 
         let reader = stripe.stream_map().get(column, Kind::Length);
-
-        let kind = column.encoding().kind();
-        let rle_version = RleVersion::from(kind);
-        let lengths = rle_version.get_unsigned_rle_reader(reader);
+        let lengths = get_unsigned_rle_reader(column, reader);
 
         Ok(Self {
             inner,

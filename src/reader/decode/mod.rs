@@ -22,34 +22,21 @@ pub mod boolean_rle;
 pub mod byte_rle;
 pub mod decimal;
 pub mod float;
-pub mod rle_v1;
-pub mod rle_v2;
+mod rle_v1;
+mod rle_v2;
 pub mod timestamp;
 mod util;
 
-#[derive(Clone, Copy, Debug)]
-pub enum RleVersion {
-    V1,
-    V2,
-}
-
-impl RleVersion {
-    pub fn get_unsigned_rle_reader<R: Read + Send + 'static>(
-        &self,
-        reader: R,
-    ) -> Box<dyn Iterator<Item = Result<i64>> + Send> {
-        match self {
-            RleVersion::V1 => Box::new(RleReaderV1::<_, _, UnsignedEncoding>::new(reader)),
-            RleVersion::V2 => Box::new(RleReaderV2::<_, _, UnsignedEncoding>::new(reader)),
+pub fn get_unsigned_rle_reader<R: Read + Send + 'static>(
+    column: &Column,
+    reader: R,
+) -> Box<dyn Iterator<Item = Result<i64>> + Send> {
+    match column.encoding().kind() {
+        ProtoColumnKind::Direct | ProtoColumnKind::Dictionary => {
+            Box::new(RleReaderV1::<i64, _, UnsignedEncoding>::new(reader))
         }
-    }
-}
-
-impl From<ProtoColumnKind> for RleVersion {
-    fn from(value: ProtoColumnKind) -> Self {
-        match value {
-            ProtoColumnKind::Direct | ProtoColumnKind::Dictionary => Self::V1,
-            ProtoColumnKind::DirectV2 | ProtoColumnKind::DictionaryV2 => Self::V2,
+        ProtoColumnKind::DirectV2 | ProtoColumnKind::DictionaryV2 => {
+            Box::new(RleReaderV2::<i64, _, UnsignedEncoding>::new(reader))
         }
     }
 }
@@ -69,7 +56,7 @@ pub fn get_rle_reader<N: NInt, R: Read + Send + 'static>(
     }
 }
 
-pub trait EncodingSign: Send + 'static {
+trait EncodingSign: Send + 'static {
     // TODO: have separate type/trait to represent Zigzag encoded NInt?
     fn zigzag_decode<N: VarintSerde>(v: N) -> N;
     fn zigzag_encode<N: VarintSerde>(v: N) -> N;
@@ -78,7 +65,7 @@ pub trait EncodingSign: Send + 'static {
     fn encode_signed_msb<N: NInt>(v: N, encoded_byte_size: usize) -> N;
 }
 
-pub struct SignedEncoding;
+struct SignedEncoding;
 
 impl EncodingSign for SignedEncoding {
     #[inline]
@@ -102,7 +89,7 @@ impl EncodingSign for SignedEncoding {
     }
 }
 
-pub struct UnsignedEncoding;
+struct UnsignedEncoding;
 
 impl EncodingSign for UnsignedEncoding {
     #[inline]
