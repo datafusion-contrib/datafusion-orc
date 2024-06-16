@@ -1,14 +1,20 @@
+use std::marker::PhantomData;
+
+use arrow::datatypes::{ArrowTimestampType, TimeUnit};
+use snafu::ensure;
+
 use crate::error::{DecodeTimestampSnafu, Result};
 
 const NANOSECONDS_IN_SECOND: i64 = 1_000_000_000;
 
-pub struct TimestampIterator {
+pub struct TimestampIterator<T: ArrowTimestampType> {
     base_from_epoch: i64,
     data: Box<dyn Iterator<Item = Result<i64>> + Send>,
     secondary: Box<dyn Iterator<Item = Result<u64>> + Send>,
+    _marker: PhantomData<T>,
 }
 
-impl TimestampIterator {
+impl<T: ArrowTimestampType> TimestampIterator<T> {
     pub fn new(
         base_from_epoch: i64,
         data: Box<dyn Iterator<Item = Result<i64>> + Send>,
@@ -18,22 +24,23 @@ impl TimestampIterator {
             base_from_epoch,
             data,
             secondary,
+            _marker: PhantomData,
         }
     }
 }
 
-impl Iterator for TimestampIterator {
+impl<T: ArrowTimestampType> Iterator for TimestampIterator<T> {
     type Item = Result<i64>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // TODO: throw error for mismatched stream lengths?
         let (seconds_since_orc_base, nanoseconds) =
             self.data.by_ref().zip(self.secondary.by_ref()).next()?;
-        decode_timestamp(self.base_from_epoch, seconds_since_orc_base, nanoseconds).transpose()
+        decode_timestamp::<T>(self.base_from_epoch, seconds_since_orc_base, nanoseconds).transpose()
     }
 }
 
-fn decode_timestamp(
+fn decode_timestamp<T: ArrowTimestampType>(
     base: i64,
     seconds_since_orc_base: Result<i64>,
     nanoseconds: Result<u64>,
@@ -58,18 +65,37 @@ fn decode_timestamp(
     };
     // Convert into nanoseconds since epoch, which Arrow uses as native representation
     // of timestamps
-    // The timestamp may overflow as ORC encodes them as a pair of (seconds, nanoseconds)
+    // The timestamp may overflow i64 as ORC encodes them as a pair of (seconds, nanoseconds)
     // while we encode them as a single i64 of nanoseconds in Arrow.
-    let nanoseconds_since_epoch = seconds
-        .checked_mul(NANOSECONDS_IN_SECOND)
-        .and_then(|seconds_in_ns| seconds_in_ns.checked_add(nanoseconds as i64))
-        .ok_or(())
-        .or_else(|()| {
+    let nanoseconds_since_epoch =
+        (seconds as i128 * NANOSECONDS_IN_SECOND as i128) + (nanoseconds as i128);
+
+    let nanoseconds_in_timeunit = match T::UNIT {
+        TimeUnit::Second => 1_000_000_000,
+        TimeUnit::Millisecond => 1_000_000,
+        TimeUnit::Microsecond => 1_000,
+        TimeUnit::Nanosecond => 1,
+    };
+
+    // Error if loss of precision
+    ensure!(
+        nanoseconds_since_epoch % nanoseconds_in_timeunit == 0,
+        DecodeTimestampSnafu {
+            seconds,
+            nanoseconds,
+        }
+    );
+
+    // Convert to i64 and error if overflow
+    let num_since_epoch = (nanoseconds_since_epoch / nanoseconds_in_timeunit)
+        .try_into()
+        .or_else(|_| {
             DecodeTimestampSnafu {
                 seconds,
                 nanoseconds,
             }
             .fail()
         })?;
-    Ok(Some(nanoseconds_since_epoch))
+
+    Ok(Some(num_since_epoch))
 }

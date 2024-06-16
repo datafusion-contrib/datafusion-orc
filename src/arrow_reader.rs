@@ -20,6 +20,7 @@ pub struct ArrowReaderBuilder<R> {
     pub(crate) file_metadata: Arc<FileMetadata>,
     pub(crate) batch_size: usize,
     pub(crate) projection: ProjectionMask,
+    pub(crate) schema_ref: Option<SchemaRef>,
 }
 
 impl<R> ArrowReaderBuilder<R> {
@@ -29,6 +30,7 @@ impl<R> ArrowReaderBuilder<R> {
             file_metadata,
             batch_size: DEFAULT_BATCH_SIZE,
             projection: ProjectionMask::all(),
+            schema_ref: None,
         }
     }
 
@@ -43,6 +45,11 @@ impl<R> ArrowReaderBuilder<R> {
 
     pub fn with_projection(mut self, projection: ProjectionMask) -> Self {
         self.projection = projection;
+        self
+    }
+
+    pub fn with_schema(mut self, schema: SchemaRef) -> Self {
+        self.schema_ref = Some(schema);
         self
     }
 }
@@ -64,7 +71,9 @@ impl<R: ChunkReader> ArrowReaderBuilder<R> {
             projected_data_type,
             stripe_index: 0,
         };
-        let schema_ref = Arc::new(create_arrow_schema(&cursor));
+        let schema_ref = self
+            .schema_ref
+            .unwrap_or_else(|| Arc::new(create_arrow_schema(&cursor)));
         ArrowReader {
             cursor,
             schema_ref,
