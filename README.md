@@ -68,8 +68,8 @@ The following table lists how ORC data types are read into Arrow data types:
 | Binary            | Binary                      |       |
 | Decimal           | Decimal128                  |       |
 | Date              | Date32                      |       |
-| Timestamp         | Timestamp(Nanosecond, None) | Timestamps before 1677-09-21 or after 2261-04-12 return `OrcError` because they cannot be represented as an i64 of nanoseconds |
-| Timestamp instant | Timestamp(Nanosecond, UTC)  | Timestamps before 1677-09-21 or after 2261-04-12 return `OrcError` because they cannot be represented as an i64 of nanoseconds |
+| Timestamp         | Timestamp(Nanosecond, None) | `ArrowReaderBuilder::with_schema` allows configuring different time units. Overflows or loss of precision while decoding results in `OrcError` |
+| Timestamp instant | Timestamp(Nanosecond, UTC)  | `ArrowReaderBuilder::with_schema` allows configuring different time units. Overflows or loss of precision while decoding results in `OrcError` |
 | Struct            | Struct                      |       |
 | List              | List                        |       |
 | Map               | Map                         |       |

@@ -6,7 +6,6 @@ use arrow::datatypes::{ArrowPrimitiveType, Decimal128Type, UInt64Type};
 use arrow::datatypes::{DataType as ArrowDataType, Field};
 use arrow::datatypes::{
     Date32Type, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, SchemaRef,
-    TimeUnit,
 };
 use arrow::record_batch::RecordBatch;
 use snafu::{ensure, ResultExt};
@@ -456,27 +455,9 @@ pub fn array_decoder_factory(
             );
             new_decimal_decoder(column, stripe, *precision, *scale)?
         }
-        DataType::Timestamp { .. } => {
-            // TODO: add support for any precision
-            ensure!(
-                field_type == ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
-                MismatchedSchemaSnafu {
-                    orc_type: column.data_type().clone(),
-                    arrow_type: field_type
-                }
-            );
-            new_timestamp_decoder(column, stripe)?
-        }
+        DataType::Timestamp { .. } => new_timestamp_decoder(column, field_type, stripe)?,
         DataType::TimestampWithLocalTimezone { .. } => {
-            // TODO: add support for any precision and for arbitrary timezones
-            ensure!(
-                field_type == ArrowDataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into())),
-                MismatchedSchemaSnafu {
-                    orc_type: column.data_type().clone(),
-                    arrow_type: field_type
-                }
-            );
-            new_timestamp_instant_decoder(column, stripe)?
+            new_timestamp_instant_decoder(column, field_type, stripe)?
         }
 
         DataType::Date { .. } => {
