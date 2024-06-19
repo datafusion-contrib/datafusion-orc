@@ -11,7 +11,7 @@ use futures::{ready, Stream};
 use futures_util::FutureExt;
 
 use crate::array_decoder::NaiveStripeDecoder;
-use crate::arrow_reader::{create_arrow_schema, Cursor};
+use crate::arrow_reader::Cursor;
 use crate::error::Result;
 use crate::reader::metadata::read_metadata_async;
 use crate::reader::AsyncChunkReader;
@@ -191,13 +191,13 @@ impl<R: AsyncChunkReader + 'static> ArrowReaderBuilder<R> {
             .file_metadata()
             .root_data_type()
             .project(&self.projection);
+        let schema_ref = self.schema();
         let cursor = Cursor {
             reader: self.reader,
             file_metadata: self.file_metadata,
             projected_data_type,
             stripe_index: 0,
         };
-        let schema_ref = Arc::new(create_arrow_schema(&cursor));
         ArrowStreamReader::new(cursor, self.batch_size, schema_ref)
     }
 }
