@@ -2,6 +2,7 @@ use std::io;
 use std::string::FromUtf8Error;
 
 use arrow::datatypes::DataType as ArrowDataType;
+use arrow::datatypes::TimeUnit;
 use arrow::error::ArrowError;
 use snafu::prelude::*;
 use snafu::Location;
@@ -53,14 +54,16 @@ pub enum OrcError {
     },
 
     #[snafu(display(
-        "Overflow while decoding timestamp (seconds={}, nanoseconds={}) to nanoseconds",
+        "Overflow while decoding timestamp (seconds={}, nanoseconds={}) to {:?}",
         seconds,
-        nanoseconds
+        nanoseconds,
+        to_time_unit,
     ))]
     DecodeTimestamp {
         location: Location,
         seconds: i64,
         nanoseconds: u64,
+        to_time_unit: TimeUnit,
     },
 
     #[snafu(display("Failed to decode proto, source: {}", source))]
