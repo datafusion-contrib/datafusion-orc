@@ -68,14 +68,20 @@ The following table lists how ORC data types are read into Arrow data types:
 | Binary            | Binary                      |       |
 | Decimal           | Decimal128                  |       |
 | Date              | Date32                      |       |
-| Timestamp         | Timestamp(Nanosecond, None) | `ArrowReaderBuilder::with_schema` allows configuring different time units. Overflows or loss of precision while decoding results in `OrcError` |
-| Timestamp instant | Timestamp(Nanosecond, UTC)  | `ArrowReaderBuilder::with_schema` allows configuring different time units. Overflows or loss of precision while decoding results in `OrcError` |
+| Timestamp         | Timestamp(Nanosecond, None) | ¹     |
+| Timestamp instant | Timestamp(Nanosecond, UTC)  | ¹     |
 | Struct            | Struct                      |       |
 | List              | List                        |       |
 | Map               | Map                         |       |
-| Union             | Union(_, Sparse)*           |       |
+| Union             | Union(_, Sparse)            | ²     |
 
-*Currently only supports a maximum of 127 variants
+¹: `ArrowReaderBuilder::with_schema` allows configuring different time units or decoding to
+`Decimal128(38, 9)` (i128 of non-leap nanoseconds since UNIX epoch).
+Overflows may happen while decoding to a non-Seconds time unit, and results in `OrcError`.
+Loss of precision may happen while decoding to a non-Nanosecond time unit, and results in `OrcError`.
+`Decimal128(38, 9)` avoids both overflows and loss of precision.
+
+²: Currently only supports a maximum of 127 variants
 
 ## Contributing
 
