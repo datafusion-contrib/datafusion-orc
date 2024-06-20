@@ -15,7 +15,7 @@ use arrow::datatypes::{
 };
 use chrono::offset::TimeZone;
 use chrono::TimeDelta;
-use chrono_tz::Tz;
+use chrono_tz::{Tz, UTC};
 use snafu::ensure;
 
 use super::{ArrayBatchDecoder, DecimalArrayDecoder, PrimitiveArrayDecoder};
@@ -113,10 +113,14 @@ fn decimal128_decoder(
     );
 
     let iter: Box<dyn Iterator<Item = _> + Send> = match writer_tz {
+        Some(UTC) => Box::new(iter), // Avoid overflow-able operations below
         Some(writer_tz) => Box::new(iter.map(move |ts| {
             let ts = ts?;
             let seconds = ts.div_euclid(NANOSECONDS_IN_SECOND);
             let nanoseconds = ts.rem_euclid(NANOSECONDS_IN_SECOND);
+
+            // The addition panics in case of overflow, because chrono stores
+            // dates in an i32
             let dt = (writer_tz.timestamp_nanos(0)
                 + TimeDelta::new(seconds as i64, nanoseconds as u32)
                     .expect("TimeDelta duration out of bound"))
@@ -198,7 +202,6 @@ pub fn new_timestamp_decoder(
             }
         },
         ArrowDataType::Decimal128(Decimal128Type::MAX_PRECISION, NANOSECOND_DIGITS) => {
-            // TODO: add support for non-None writer TZ
             Ok(Box::new(decimal128_decoder(
                 column,
                 stripe,
