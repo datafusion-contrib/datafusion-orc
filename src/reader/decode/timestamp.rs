@@ -7,14 +7,14 @@ use crate::error::{DecodeTimestampSnafu, Result};
 
 const NANOSECONDS_IN_SECOND: i64 = 1_000_000_000;
 
-pub struct TimestampIterator<T: ArrowTimestampType> {
+pub struct TimestampIterator<T: ArrowTimestampType, Item: TryFrom<i128>> {
     base_from_epoch: i64,
     data: Box<dyn Iterator<Item = Result<i64>> + Send>,
     secondary: Box<dyn Iterator<Item = Result<u64>> + Send>,
-    _marker: PhantomData<T>,
+    _marker: PhantomData<(T, Item)>,
 }
 
-impl<T: ArrowTimestampType> TimestampIterator<T> {
+impl<T: ArrowTimestampType, Item: TryFrom<i128>> TimestampIterator<T, Item> {
     pub fn new(
         base_from_epoch: i64,
         data: Box<dyn Iterator<Item = Result<i64>> + Send>,
@@ -29,22 +29,23 @@ impl<T: ArrowTimestampType> TimestampIterator<T> {
     }
 }
 
-impl<T: ArrowTimestampType> Iterator for TimestampIterator<T> {
-    type Item = Result<i64>;
+impl<T: ArrowTimestampType, Item: TryFrom<i128>> Iterator for TimestampIterator<T, Item> {
+    type Item = Result<Item>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // TODO: throw error for mismatched stream lengths?
         let (seconds_since_orc_base, nanoseconds) =
             self.data.by_ref().zip(self.secondary.by_ref()).next()?;
-        decode_timestamp::<T>(self.base_from_epoch, seconds_since_orc_base, nanoseconds).transpose()
+        decode_timestamp::<T, _>(self.base_from_epoch, seconds_since_orc_base, nanoseconds)
+            .transpose()
     }
 }
 
-fn decode_timestamp<T: ArrowTimestampType>(
+fn decode_timestamp<T: ArrowTimestampType, Ret: TryFrom<i128>>(
     base: i64,
     seconds_since_orc_base: Result<i64>,
     nanoseconds: Result<u64>,
-) -> Result<Option<i64>> {
+) -> Result<Option<Ret>> {
     let data = seconds_since_orc_base?;
     let mut nanoseconds = nanoseconds?;
     // Last 3 bits indicate how many trailing zeros were truncated
