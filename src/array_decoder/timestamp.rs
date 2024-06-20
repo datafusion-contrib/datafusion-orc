@@ -119,8 +119,8 @@ fn decimal128_decoder(
             let seconds = ts.div_euclid(NANOSECONDS_IN_SECOND);
             let nanoseconds = ts.rem_euclid(NANOSECONDS_IN_SECOND);
 
-            // The addition panics in case of overflow, because chrono stores
-            // dates in an i32
+            // The addition may panic, because chrono stores dates in an i32,
+            // which can be overflowed with an i64 of seconds.
             let dt = (writer_tz.timestamp_nanos(0)
                 + TimeDelta::new(seconds as i64, nanoseconds as u32)
                     .expect("TimeDelta duration out of bound"))
