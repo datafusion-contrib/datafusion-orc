@@ -83,6 +83,7 @@ fn decode_timestamp<T: ArrowTimestampType>(
         DecodeTimestampSnafu {
             seconds,
             nanoseconds,
+            to_time_unit: T::UNIT,
         }
     );
 
@@ -93,6 +94,7 @@ fn decode_timestamp<T: ArrowTimestampType>(
             DecodeTimestampSnafu {
                 seconds,
                 nanoseconds,
+                to_time_unit: T::UNIT,
             }
             .fail()
         })?;
