@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::sync::Arc;
 
-use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
+use arrow::datatypes::{DataType, Decimal128Type, DecimalType, Field, Schema, TimeUnit};
 use arrow::record_batch::{RecordBatch, RecordBatchReader};
 use arrow::util::pretty;
 #[cfg(feature = "async")]
@@ -453,6 +453,35 @@ fn custom_precision_timestamps_test(time_unit: TimeUnit) {
         "| 2  | 0001-01-01T00:00:00 |",
         "| 3  | 1970-05-23T21:21:18 |",
         "+----+---------------------+",
+    ];
+    assert_batches_eq(&batch, &expected);
+}
+
+#[test]
+pub fn decimal128_timestamps_test() {
+    let path = basic_path("overflowing_timestamps.orc");
+    let f = File::open(path).expect("no file found");
+    let reader = ArrowReaderBuilder::try_new(f)
+        .unwrap()
+        .with_schema(Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int32, true),
+            Field::new(
+                "ts",
+                DataType::Decimal128(Decimal128Type::MAX_PRECISION, 9),
+                true,
+            ),
+        ])))
+        .build();
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
+    println!("{:?}", batch[0].column(1));
+    let expected = [
+        "+----+------------------------+",
+        "| id | ts                     |",
+        "+----+------------------------+",
+        "| 1  | 12345678.000000000     |",
+        "| 2  | -62135596800.000000000 |",
+        "| 3  | 12345678.000000000     |",
+        "+----+------------------------+",
     ];
     assert_batches_eq(&batch, &expected);
 }
