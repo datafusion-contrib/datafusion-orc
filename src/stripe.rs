@@ -88,7 +88,7 @@ impl TryFrom<(&proto::StripeInformation, &proto::StripeStatistics)> for StripeMe
 }
 
 #[derive(Debug)]
-pub(crate) struct Stripe {
+pub struct Stripe {
     columns: Vec<Column>,
     /// <(ColumnId, Kind), Bytes>
     stream_map: Arc<StreamMap>,
@@ -218,7 +218,7 @@ impl Stripe {
 }
 
 #[derive(Debug)]
-pub(crate) struct StreamMap {
+pub struct StreamMap {
     pub inner: HashMap<(u32, Kind), Bytes>,
     pub compression: Option<Compression>,
 }

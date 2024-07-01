@@ -92,7 +92,7 @@ fn print_column_stats(col_stats: &ColumnStatistics) {
 
     println!("* Num values: {}", col_stats.number_of_values());
     println!("* Has nulls: {}", col_stats.has_null());
-    println!("");
+    println!();
 }
 
 fn main() -> Result<()> {
