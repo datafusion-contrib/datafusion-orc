@@ -119,16 +119,9 @@ impl ArrayBatchDecoder for UnionArrayDecoder {
             .collect::<Result<Vec<_>>>()?;
 
         // Currently default to decoding as Sparse UnionArray so no value offsets
-        let field_type_ids = (0..self.variants.len() as i8).collect::<Vec<_>>();
-        let type_ids = Buffer::from_vec(tags);
-        let child_arrays = self
-            .fields
-            .iter()
-            .map(|(_id, field)| field.as_ref().clone())
-            .zip(child_arrays)
-            .collect::<Vec<_>>();
-        let array = UnionArray::try_new(&field_type_ids, type_ids, None, child_arrays)
-            .context(ArrowSnafu)?;
+        let type_ids = Buffer::from_vec(tags.clone()).into();
+        let array =
+            UnionArray::try_new( self.fields.clone(), type_ids, None, child_arrays).context(ArrowSnafu)?;
         let array = Arc::new(array);
         Ok(array)
     }
