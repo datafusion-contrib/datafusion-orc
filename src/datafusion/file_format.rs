@@ -6,7 +6,7 @@ use std::sync::Arc;
 use crate::reader::metadata::read_metadata_async;
 use arrow::datatypes::Schema;
 use datafusion::arrow::datatypes::SchemaRef;
-use datafusion::common::{FileType, Statistics};
+use datafusion::common::Statistics;
 use datafusion::datasource::file_format::FileFormat;
 use datafusion::datasource::physical_plan::FileScanConfig;
 use datafusion::error::Result;
@@ -96,11 +96,5 @@ impl FileFormat for OrcFormat {
         _filters: Option<&Arc<dyn PhysicalExpr>>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         Ok(Arc::new(OrcExec::new(conf)))
-    }
-
-    // TODO: Doesn't seem important for now, but maybe change in DataFusion itself?
-    //       Add an Extension(name) variant maybe?
-    fn file_type(&self) -> FileType {
-        unimplemented!("Extension file type: ORC")
     }
 }
