@@ -34,6 +34,7 @@ enum FileFormat {
     Json,
 }
 
+#[allow(clippy::large_enum_variant)]
 enum OutputWriter<W: io::Write, F: JsonFormat> {
     Csv(csv::Writer<W>),
     Json(json::Writer<W, F>),
@@ -121,7 +122,7 @@ fn main() -> Result<()> {
 
         // Have we reached limit on the number of rows?
         if num_rows > batch.num_rows() as u64 {
-            num_rows = num_rows - batch.num_rows() as u64;
+            num_rows -= batch.num_rows() as u64;
         } else {
             break;
         }
