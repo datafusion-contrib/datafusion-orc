@@ -41,7 +41,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                 &mut f,
                 &metadata,
                 metadata.root_data_type(),
-                i,
                 stripe_metadata,
             )?;
             println!("stripe index: {i}");
