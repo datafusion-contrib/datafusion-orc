@@ -120,8 +120,8 @@ impl ArrayBatchDecoder for UnionArrayDecoder {
 
         // Currently default to decoding as Sparse UnionArray so no value offsets
         let type_ids = Buffer::from_vec(tags.clone()).into();
-        let array =
-            UnionArray::try_new( self.fields.clone(), type_ids, None, child_arrays).context(ArrowSnafu)?;
+        let array = UnionArray::try_new(self.fields.clone(), type_ids, None, child_arrays)
+            .context(ArrowSnafu)?;
         let array = Arc::new(array);
         Ok(array)
     }
