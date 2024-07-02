@@ -98,6 +98,7 @@ nested_struct = {
 
 _write("struct<nest:struct<a:float,b:boolean>>", nested_struct, "nested_struct.orc")
 
+
 nested_array = {
     "value": [
         [1, None, 3, 43, 5],
@@ -110,6 +111,25 @@ nested_array = {
 
 _write("struct<value:array<int>>", nested_array, "nested_array.orc")
 
+
+nested_array_float = {
+    "value": [
+        [1.0, 3.0],
+        [None, 2.0],
+    ],
+}
+
+_write("struct<value:array<float>>", nested_array_float, "nested_array_float.orc")
+
+nested_array_struct = {
+    "value": [
+        [(1.0, 1, "01"), (2.0, 2, "02")],
+        [None, (3.0, 3, "03")],
+    ],
+}
+
+_write("struct<value:array<struct<a:float,b:int,c:string>>>", nested_array_struct, "nested_array_struct.orc")
+
 nested_map = {
     "map": [
             {"zero": 0, "one": 1},
@@ -120,6 +140,16 @@ nested_map = {
 }
 
 _write("struct<map:map<string,int>>", nested_map, "nested_map.orc")
+
+nested_map_struct = {
+    "map": [
+        {"01": (1.0, 1, "01"), "02": (2.0, 1, "02")},
+        None,
+        {"03": (3.0, 3, "03"), "04": (4.0, 4, "04")},
+    ],
+}
+
+_write("struct<value:map<string,struct<a:float,b:int,c:string>>>", nested_map_struct, "nested_map_struct.orc")
 
 
 _write(
