@@ -19,12 +19,12 @@ chrono-tz = "0.9"
 fallible-streaming-iterator = { version = "0.1" }
 flate2 = "1"
 lz4_flex = "0.11"
+lzokay-native = "0.1"
 num = "0.4.1"
 prost = { version = "0.12" }
 snafu = "0.8"
 snap = "1.1"
 zstd = "0.12"
-lzokay-native = "0.1"
 
 # async support
 async-trait = { version = "0.1.77", optional = true }
