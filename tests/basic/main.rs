@@ -253,6 +253,58 @@ pub fn basic_test_nested_array() {
 }
 
 #[test]
+pub fn basic_test_nested_array_float() {
+    let path = basic_path("nested_array_float.orc");
+    let reader = new_arrow_reader_root(&path);
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
+
+    let expected = [
+        "+------------+",
+        "| value      |",
+        "+------------+",
+        "| [1.0, 3.0] |",
+        "| [, 2.0]    |",
+        "+------------+",
+    ];
+    assert_batches_eq(&batch, &expected);
+}
+
+#[test]
+pub fn basic_test_nested_array_struct() {
+    let path = basic_path("nested_array_struct.orc");
+    let reader = new_arrow_reader_root(&path);
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
+
+    let expected = [
+        "+------------------------------------------------+",
+        "| value                                          |",
+        "+------------------------------------------------+",
+        "| [{a: 1.0, b: 1, c: 01}, {a: 2.0, b: 2, c: 02}] |",
+        "| [, {a: 3.0, b: 3, c: 03}]                      |",
+        "+------------------------------------------------+",
+    ];
+    assert_batches_eq(&batch, &expected);
+}
+
+#[test]
+pub fn basic_test_nested_map_struct() {
+    let path = basic_path("nested_map_struct.orc");
+    let reader = new_arrow_reader_root(&path);
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
+
+    let expected = [
+        "+--------------------------------------------------------+",
+        "| value                                                  |",
+        "+--------------------------------------------------------+",
+        "| {01: {a: 1.0, b: 1, c: 01}, 02: {a: 2.0, b: 1, c: 02}} |",
+        "|                                                        |",
+        "| {03: {a: 3.0, b: 3, c: 03}, 04: {a: 4.0, b: 4, c: 04}} |",
+        "+--------------------------------------------------------+",
+    ];
+    assert_batches_eq(&batch, &expected);
+}
+
+#[test]
 pub fn basic_test_nested_map() {
     let path = basic_path("nested_map.orc");
     let reader = new_arrow_reader_root(&path);
