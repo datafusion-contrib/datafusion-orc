@@ -346,6 +346,53 @@ pub fn rle_v2_encode_bit_width(width: usize) -> u8 {
     }
 }
 
+fn get_closest_fixed_bits(n: usize) -> usize {
+    match n {
+        0 => 1,
+        1..=24 => n,
+        25..=26 => 26,
+        27..=28 => 28,
+        29..=30 => 30,
+        31..=32 => 32,
+        33..=40 => 40,
+        41..=48 => 48,
+        49..=56 => 56,
+        57..=64 => 64,
+        _ => unreachable!(),
+    }
+}
+
+fn encode_bit_width(n: usize) -> usize {
+    let n = get_closest_fixed_bits(n);
+    match n {
+        1..=24 => n - 1,
+        25..=26 => 24,
+        27..=28 => 25,
+        29..=30 => 26,
+        31..=32 => 27,
+        33..=40 => 28,
+        41..=48 => 29,
+        49..=56 => 30,
+        57..=64 => 31,
+        _ => unreachable!(),
+    }
+}
+
+fn decode_bit_width(n: usize) -> usize {
+    match n {
+        0..=23 => n + 1,
+        24 => 26,
+        25 => 28,
+        26 => 30,
+        27 => 32,
+        28 => 40,
+        29 => 48,
+        30 => 56,
+        31 => 64,
+        _ => unreachable!(),
+    }
+}
+
 /// Converts width of 64 bits or less to an aligned width, either rounding
 /// up to the nearest multiple of 8, or rounding up to 1, 2 or 4.
 pub fn get_closest_aligned_bit_width(width: usize) -> usize {
@@ -494,9 +541,8 @@ impl<N: VarintSerde> PercentileBitCalculator<N> {
     }
 
     pub fn add_value(&mut self, value: N) {
-        let bit_width = value.closest_aligned_bit_width();
         // Now in range [0, 31]
-        let encoded_bit_width = rle_v2_encode_bit_width(bit_width) as usize;
+        let encoded_bit_width = encode_bit_width(value.bits_used());
         self.histogram[encoded_bit_width] += 1;
         self.count += 1;
     }
@@ -513,7 +559,7 @@ impl<N: VarintSerde> PercentileBitCalculator<N> {
             if let Some(a) = per_len.checked_sub(self.histogram[i]) {
                 per_len = a;
             } else {
-                return rle_v2_decode_bit_width(i as u8);
+                return decode_bit_width(i);
             }
         }
 

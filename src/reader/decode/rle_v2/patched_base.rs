@@ -74,7 +74,7 @@ pub fn read_patched_base<N: NInt, R: Read, S: EncodingSign>(
     let base = S::decode_signed_msb(base, base_byte_width);
 
     // Get data values
-    // TODO: this should read into Vec<u64>
+    // TODO: this should read into Vec<i64>
     //       as base reduced values can exceed N::max()
     //       (e.g. if base is N::min() and this is signed type)
     read_ints(out_ints, length, value_bit_width, reader)?;

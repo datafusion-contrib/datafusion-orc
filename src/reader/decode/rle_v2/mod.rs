@@ -114,7 +114,7 @@ struct DeltaEncodingCheckResult<N: NInt> {
     adjacent_deltas: Vec<i64>,
 }
 
-// TODO: some comments
+/// Calculate the necessary values to determine if sequence can be delta encoded.
 fn delta_encoding_check<N: NInt>(literals: &[N]) -> DeltaEncodingCheckResult<N> {
     let base_value = literals[0];
     let mut min = base_value.min(literals[1]);
@@ -181,7 +181,6 @@ impl<N: NInt> Default for RleV2EncodingState<N> {
     }
 }
 
-// TODO: fix unsigned support
 pub struct RleWriterV2<N: NInt, S: EncodingSign> {
     /// Stores the run length encoded sequences.
     data: BytesMut,
