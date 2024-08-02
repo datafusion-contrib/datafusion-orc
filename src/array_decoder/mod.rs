@@ -7,7 +7,7 @@ use arrow::datatypes::{DataType as ArrowDataType, Field};
 use arrow::datatypes::{
     Date32Type, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, SchemaRef,
 };
-use arrow::record_batch::RecordBatch;
+use arrow::record_batch::{RecordBatch, RecordBatchOptions};
 use snafu::{ensure, ResultExt};
 
 use crate::column::{get_present_vec, Column};
@@ -569,7 +569,19 @@ impl NaiveStripeDecoder {
         let fields = self.inner_decode_next_batch(remaining)?;
 
         if fields.is_empty() {
-            Ok(None)
+            if remaining == 0 {
+                Ok(None)
+            } else {
+                Ok(Some(
+                    RecordBatch::try_new_with_options(
+                        Arc::clone(&self.schema_ref),
+                        fields,
+                        &RecordBatchOptions::new()
+                            .with_row_count(Some(self.batch_size.min(remaining))),
+                    )
+                    .context(error::ConvertRecordBatchSnafu)?,
+                ))
+            }
         } else {
             //TODO(weny): any better way?
             let fields = self
