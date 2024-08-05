@@ -62,9 +62,11 @@ serde_json = { version = "1.0", default-features = false, features = ["std"] }
 [features]
 default = ["datafusion"]
 
-async = ["async-trait", "futures", "futures-util", "tokio", "opendal"]
+async = ["async-trait", "futures", "futures-util", "tokio"]
 cli = ["anyhow", "clap"]
 datafusion = ["async", "dep:datafusion", "datafusion-expr", "datafusion-physical-expr", "object_store"]
+# Enable opendal support.
+opendal = ["dep:opendal"]
 
 [[bench]]
 name = "arrow_reader"
