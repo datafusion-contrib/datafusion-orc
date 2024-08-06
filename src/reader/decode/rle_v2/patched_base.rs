@@ -30,6 +30,12 @@ impl<N: NInt, R: Read> RleReaderV2<N, R> {
     pub fn read_patched_base(&mut self, header: u8) -> Result<()> {
         let encoded_bit_width = (header >> 1) & 0x1F;
         let value_bit_width = rle_v2_decode_bit_width(encoded_bit_width);
+        let value_bit_width_u32 = u32::try_from(value_bit_width).or_else(|_| {
+            OutOfSpecSnafu {
+                msg: "value_bit_width overflows u32",
+            }
+            .fail()
+        })?;
 
         let second_byte = read_u8(&mut self.reader)?;
         let length = extract_run_length_from_header(header, second_byte);
@@ -49,12 +55,6 @@ impl<N: NInt, R: Read> RleReaderV2<N, R> {
         if patch_total_bit_width > 64 {
             return OutOfSpecSnafu {
                 msg: "combined patch width and patch gap width cannot be greater than 64 bits",
-            }
-            .fail();
-        }
-        if (patch_bit_width + value_bit_width) > (N::BYTE_SIZE * 8) {
-            return OutOfSpecSnafu {
-                msg: "combined patch width and value width cannot exceed the size of the integer type being decoded",
             }
             .fail();
         }
@@ -105,7 +105,12 @@ impl<N: NInt, R: Read> RleReaderV2<N, R> {
 
         for (idx, value) in self.decoded_ints.iter_mut().enumerate() {
             if idx == actual_gap as usize {
-                let patch_bits = current_patch << value_bit_width;
+                let patch_bits =
+                    current_patch
+                        .checked_shl(value_bit_width_u32)
+                        .context(OutOfSpecSnafu {
+                            msg: "Overflow while shifting patch bits by value_bit_width",
+                        })?;
                 // Safe conversion without loss as we check the bit width prior
                 let patch_bits = N::from_u64(patch_bits);
                 let patched_value = *value | patch_bits;
