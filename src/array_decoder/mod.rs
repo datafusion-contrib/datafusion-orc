@@ -572,6 +572,8 @@ impl NaiveStripeDecoder {
             if remaining == 0 {
                 Ok(None)
             } else {
+                // In case of empty projection, we need to create a RecordBatch with `row_count` only
+                // to reflect the row number
                 Ok(Some(
                     RecordBatch::try_new_with_options(
                         Arc::clone(&self.schema_ref),
