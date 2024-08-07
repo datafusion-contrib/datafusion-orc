@@ -20,6 +20,8 @@ async fn main() -> Result<()> {
         .show()
         .await?;
 
+    ctx.sql("select count(*) from table1").await?.show().await?;
+
     ctx.read_orc(
         "tests/basic/data/alltypes.snappy.orc",
         OrcReadOptions::default(),
