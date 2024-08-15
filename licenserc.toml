@@ -15,20 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Requires pyarrow to be installed
-import glob
-from pyarrow import orc, feather
+headerPath = "Apache-2.0-ASF.txt"
 
-files = glob.glob("data/expected/*")
-files = [file.removeprefix("data/expected/").removesuffix(".jsn.gz") for file in files]
-
-ignore_files = [
-    "TestOrcFile.testTimestamp" # Root data type isn't struct
+includes = [
+    "*.rs",
+    "*.py",
+    "*.ts",
 ]
-
-files = [file for file in files if file not in ignore_files]
-
-for file in files:
-    print(f"Converting {file} from ORC to feather")
-    table = orc.read_table(f"data/{file}.orc")
-    feather.write_feather(table, f"data/expected_arrow/{file}.feather")
