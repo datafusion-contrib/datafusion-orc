@@ -39,7 +39,7 @@ pub mod byte_rle;
 pub mod decimal;
 pub mod float;
 mod rle_v1;
-mod rle_v2;
+pub mod rle_v2;
 pub mod timestamp;
 mod util;
 
@@ -72,7 +72,7 @@ pub fn get_rle_reader<N: NInt, R: Read + Send + 'static>(
     }
 }
 
-trait EncodingSign: Send + 'static {
+pub trait EncodingSign: Send + 'static {
     // TODO: have separate type/trait to represent Zigzag encoded NInt?
     fn zigzag_decode<N: VarintSerde>(v: N) -> N;
     fn zigzag_encode<N: VarintSerde>(v: N) -> N;
@@ -80,7 +80,7 @@ trait EncodingSign: Send + 'static {
     fn decode_signed_msb<N: NInt>(v: N, encoded_byte_size: usize) -> N;
 }
 
-struct SignedEncoding;
+pub struct SignedEncoding;
 
 impl EncodingSign for SignedEncoding {
     #[inline]
@@ -99,7 +99,7 @@ impl EncodingSign for SignedEncoding {
     }
 }
 
-struct UnsignedEncoding;
+pub struct UnsignedEncoding;
 
 impl EncodingSign for UnsignedEncoding {
     #[inline]

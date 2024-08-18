@@ -17,7 +17,7 @@
 
 use std::{io::Read, marker::PhantomData};
 
-use bytes::{Bytes, BytesMut};
+use bytes::BytesMut;
 
 use crate::error::Result;
 
@@ -230,9 +230,14 @@ impl<N: NInt, S: EncodingSign> RleWriterV2<N, S> {
         self.process_value(value);
     }
 
-    pub fn close(mut self) -> Bytes {
+    pub fn take_inner(&mut self) -> BytesMut {
         self.flush();
-        self.data.into()
+        std::mem::take(&mut self.data)
+    }
+
+    /// Estimated current memory footprint of bytes being encoded.
+    pub fn estimate_memory_size(&self) -> usize {
+        self.data.len()
     }
 
     // Algorithm adapted from:
@@ -701,7 +706,7 @@ mod tests {
     fn roundtrip_helper<N: NInt, S: EncodingSign>(values: &[N]) -> Result<Vec<N>> {
         let mut writer = RleWriterV2::<N, S>::new();
         writer.write(values);
-        let data = writer.close();
+        let data = writer.take_inner();
 
         let cursor = Cursor::new(data);
         let reader = RleReaderV2::<N, _, S>::new(cursor);

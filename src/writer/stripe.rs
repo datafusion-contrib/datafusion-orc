@@ -8,7 +8,10 @@ use snafu::ResultExt;
 use crate::error::{IoSnafu, Result};
 use crate::proto;
 
-use super::column::{ByteStripeEncoder, ColumnStripeEncoder, FloatStripeEncoder};
+use super::column::{
+    ByteStripeEncoder, ColumnStripeEncoder, FloatStripeEncoder, Int16StripeEncoder,
+    Int32StripeEncoder, Int64StripeEncoder,
+};
 use super::{ColumnEncoding, StreamType};
 
 #[derive(Copy, Clone, Eq, Debug, PartialEq)]
@@ -143,6 +146,9 @@ fn create_encoder(field: &FieldRef) -> Box<dyn ColumnStripeEncoder> {
         ArrowDataType::Float32 => Box::new(FloatStripeEncoder::<Float32Type>::new()),
         ArrowDataType::Float64 => Box::new(FloatStripeEncoder::<Float64Type>::new()),
         ArrowDataType::Int8 => Box::new(ByteStripeEncoder::new()),
+        ArrowDataType::Int16 => Box::new(Int16StripeEncoder::new()),
+        ArrowDataType::Int32 => Box::new(Int32StripeEncoder::new()),
+        ArrowDataType::Int64 => Box::new(Int64StripeEncoder::new()),
         // TODO: support more datatypes
         _ => unimplemented!("unsupported datatype"),
     }

@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::{io::Read, marker::PhantomData};
+use std::io::Read;
 
 use bytes::{BufMut, BytesMut};
 use num::Signed;

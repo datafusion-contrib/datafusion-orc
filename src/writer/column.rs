@@ -2,13 +2,15 @@ use std::marker::PhantomData;
 
 use arrow::{
     array::{Array, ArrayRef, AsArray},
-    datatypes::{ArrowPrimitiveType, Int8Type, ToByteSlice},
+    datatypes::{ArrowPrimitiveType, Int16Type, Int32Type, Int64Type, Int8Type, ToByteSlice},
 };
 use bytes::BytesMut;
 
 use crate::{
     error::Result,
-    reader::decode::{byte_rle::ByteRleWriter, float::Float},
+    reader::decode::{
+        byte_rle::ByteRleWriter, float::Float, rle_v2::RleWriterV2, NInt, SignedEncoding,
+    },
     writer::StreamType,
 };
 
@@ -193,6 +195,110 @@ impl ColumnStripeEncoder for ByteStripeEncoder {
 
     fn column_encoding(&self) -> ColumnEncoding {
         ColumnEncoding::Direct
+    }
+
+    fn estimate_memory_size(&self) -> usize {
+        self.encoder.estimate_memory_size()
+            + self
+                .present
+                .as_ref()
+                .map(|p| p.estimate_memory_size())
+                .unwrap_or(0)
+    }
+
+    fn finish(&mut self) -> Vec<Stream> {
+        // TODO: Figure out how to retain the allocation instead of handing
+        //       it off each time.
+        let bytes = self.encoder.take_inner();
+        // Return mandatory Data stream and optional Present stream
+        let data = Stream {
+            s_type: StreamType::Data,
+            bytes: bytes.into(),
+        };
+        match &mut self.present {
+            Some(present) => {
+                let bytes = present.finish();
+                let present = Stream {
+                    s_type: StreamType::Present,
+                    bytes,
+                };
+                vec![data, present]
+            }
+            None => vec![data],
+        }
+    }
+}
+
+pub type Int16StripeEncoder = IntStripeEncoder<Int16Type>;
+pub type Int32StripeEncoder = IntStripeEncoder<Int32Type>;
+pub type Int64StripeEncoder = IntStripeEncoder<Int64Type>;
+
+// TODO: deduplicate this with ByteRLE, it is very similar
+/// ORC Int16/32/64 column encoder.
+pub struct IntStripeEncoder<T: ArrowPrimitiveType>
+where
+    T::Native: NInt,
+{
+    encoder: RleWriterV2<T::Native, SignedEncoding>,
+    /// Lazily initialized once we encounter an [`Array`] with a [`NullBuffer`].
+    present: Option<PresentStreamEncoder>,
+}
+
+impl<T: ArrowPrimitiveType> IntStripeEncoder<T>
+where
+    T::Native: NInt,
+{
+    pub fn new() -> Self {
+        Self {
+            encoder: RleWriterV2::new(),
+            present: None,
+        }
+    }
+}
+
+impl<T: ArrowPrimitiveType> ColumnStripeEncoder for IntStripeEncoder<T>
+where
+    T::Native: NInt,
+{
+    fn encode_array(&mut self, array: &ArrayRef) -> Result<()> {
+        let array = array.as_primitive::<T>();
+        // Handling case where if encoding across RecordBatch boundaries, arrays
+        // might introduce a NullBuffer
+        match (array.nulls(), &mut self.present) {
+            // Need to copy only the valid values as indicated by null_buffer
+            (Some(null_buffer), Some(present)) => {
+                present.extend(null_buffer);
+                for index in null_buffer.valid_indices() {
+                    let v = array.value(index);
+                    self.encoder.write_one(v);
+                }
+            }
+            (Some(null_buffer), None) => {
+                let mut present = PresentStreamEncoder::new();
+                present.extend(null_buffer);
+                self.present = Some(present);
+                for index in null_buffer.valid_indices() {
+                    let v = array.value(index);
+                    self.encoder.write_one(v);
+                }
+            }
+            // Simple direct copy from values buffer, extending present if needed
+            (None, Some(present)) => {
+                let values = array.values();
+                self.encoder.write(values);
+                present.extend_present(array.len());
+            }
+            (None, None) => {
+                let values = array.values();
+                self.encoder.write(values);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn column_encoding(&self) -> ColumnEncoding {
+        ColumnEncoding::DirectV2
     }
 
     fn estimate_memory_size(&self) -> usize {
