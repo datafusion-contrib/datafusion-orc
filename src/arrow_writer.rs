@@ -227,7 +227,11 @@ mod tests {
     use std::{fs::File, sync::Arc};
 
     use arrow::{
-        array::{Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, Int8Array},
+        array::{
+            Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, Int8Array,
+            RecordBatchReader,
+        },
+        compute::concat_batches,
         datatypes::{DataType as ArrowDataType, Field, Schema},
     };
 
@@ -276,5 +280,36 @@ mod tests {
         let reader = ArrowReaderBuilder::try_new(f).unwrap().build();
         let rows = reader.collect::<Result<Vec<_>, _>>().unwrap();
         assert_eq!(batch, rows[0]);
+    }
+
+    #[test]
+    fn test_roundtrip_write_small_stripes() {
+        // Set small stripe size to ensure writing across multiple stripes works
+        let data: Vec<i64> = (0..1_000_000).collect();
+        let int64_array = Arc::new(Int64Array::from(data));
+        let schema = Schema::new(vec![Field::new("int64", ArrowDataType::Int64, true)]);
+
+        let batch = RecordBatch::try_new(Arc::new(schema), vec![int64_array]).unwrap();
+
+        let f = File::create("/tmp/new.orc").unwrap();
+        let mut writer = ArrowWriterBuilder::new(f, batch.schema())
+            .with_stripe_byte_size(256)
+            .try_build()
+            .unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let f = File::open("/tmp/new.orc").unwrap();
+        let reader = ArrowReaderBuilder::try_new(f).unwrap().build();
+        let schema = reader.schema();
+        // Current reader doesn't read a batch across stripe boundaries, so we expect
+        // more than one batch to prove multiple stripes are being written here
+        let rows = reader.collect::<Result<Vec<_>, _>>().unwrap();
+        assert!(
+            rows.len() > 1,
+            "must have written more than 1 stripe (each stripe read as separate recordbatch)"
+        );
+        let actual = concat_batches(&schema, rows.iter()).unwrap();
+        assert_eq!(batch, actual);
     }
 }
