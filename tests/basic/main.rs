@@ -1,7 +1,24 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
 use std::fs::File;
 use std::sync::Arc;
 
-use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
+use arrow::datatypes::{DataType, Decimal128Type, DecimalType, Field, Schema, TimeUnit};
 use arrow::record_batch::{RecordBatch, RecordBatchReader};
 use arrow::util::pretty;
 #[cfg(feature = "async")]
@@ -253,6 +270,58 @@ pub fn basic_test_nested_array() {
 }
 
 #[test]
+pub fn basic_test_nested_array_float() {
+    let path = basic_path("nested_array_float.orc");
+    let reader = new_arrow_reader_root(&path);
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
+
+    let expected = [
+        "+------------+",
+        "| value      |",
+        "+------------+",
+        "| [1.0, 3.0] |",
+        "| [, 2.0]    |",
+        "+------------+",
+    ];
+    assert_batches_eq(&batch, &expected);
+}
+
+#[test]
+pub fn basic_test_nested_array_struct() {
+    let path = basic_path("nested_array_struct.orc");
+    let reader = new_arrow_reader_root(&path);
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
+
+    let expected = [
+        "+------------------------------------------------+",
+        "| value                                          |",
+        "+------------------------------------------------+",
+        "| [{a: 1.0, b: 1, c: 01}, {a: 2.0, b: 2, c: 02}] |",
+        "| [, {a: 3.0, b: 3, c: 03}]                      |",
+        "+------------------------------------------------+",
+    ];
+    assert_batches_eq(&batch, &expected);
+}
+
+#[test]
+pub fn basic_test_nested_map_struct() {
+    let path = basic_path("nested_map_struct.orc");
+    let reader = new_arrow_reader_root(&path);
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
+
+    let expected = [
+        "+--------------------------------------------------------+",
+        "| value                                                  |",
+        "+--------------------------------------------------------+",
+        "| {01: {a: 1.0, b: 1, c: 01}, 02: {a: 2.0, b: 1, c: 02}} |",
+        "|                                                        |",
+        "| {03: {a: 3.0, b: 3, c: 03}, 04: {a: 4.0, b: 4, c: 04}} |",
+        "+--------------------------------------------------------+",
+    ];
+    assert_batches_eq(&batch, &expected);
+}
+
+#[test]
 pub fn basic_test_nested_map() {
     let path = basic_path("nested_map.orc");
     let reader = new_arrow_reader_root(&path);
@@ -417,6 +486,73 @@ pub fn overflowing_timestamps_test() {
     let path = basic_path("overflowing_timestamps.orc");
     let reader = new_arrow_reader_root(&path);
     assert!(reader.collect::<Result<Vec<_>, _>>().is_err());
+}
+
+#[test]
+pub fn second_timestamps_test() {
+    custom_precision_timestamps_test(TimeUnit::Second)
+}
+
+#[test]
+pub fn millisecond_timestamps_test() {
+    custom_precision_timestamps_test(TimeUnit::Millisecond)
+}
+
+#[test]
+pub fn microsecond_timestamps_test() {
+    custom_precision_timestamps_test(TimeUnit::Microsecond)
+}
+
+fn custom_precision_timestamps_test(time_unit: TimeUnit) {
+    let path = basic_path("overflowing_timestamps.orc");
+    let f = File::open(path).expect("no file found");
+    let reader = ArrowReaderBuilder::try_new(f)
+        .unwrap()
+        .with_schema(Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int32, true),
+            Field::new("ts", DataType::Timestamp(time_unit, None), true),
+        ])))
+        .build();
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
+    let expected = [
+        "+----+---------------------+",
+        "| id | ts                  |",
+        "+----+---------------------+",
+        "| 1  | 1970-05-23T21:21:18 |",
+        "| 2  | 0001-01-01T00:00:00 |",
+        "| 3  | 1970-05-23T21:21:18 |",
+        "+----+---------------------+",
+    ];
+    assert_batches_eq(&batch, &expected);
+}
+
+#[test]
+pub fn decimal128_timestamps_test() {
+    let path = basic_path("overflowing_timestamps.orc");
+    let f = File::open(path).expect("no file found");
+    let reader = ArrowReaderBuilder::try_new(f)
+        .unwrap()
+        .with_schema(Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int32, true),
+            Field::new(
+                "ts",
+                DataType::Decimal128(Decimal128Type::MAX_PRECISION, 9),
+                true,
+            ),
+        ])))
+        .build();
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
+    println!("{:?}", batch[0].column(1));
+    let expected = [
+        "+----+------------------------+",
+        "| id | ts                     |",
+        "+----+------------------------+",
+        "| 1  | 12345678.000000000     |",
+        "| 2  | -62135596800.000000000 |",
+        "| 3  | 12345678.000000000     |",
+        "+----+------------------------+",
+    ];
+    assert_batches_eq(&batch, &expected);
 }
 
 // From https://github.com/apache/arrow-rs/blob/7705acad845e8b2a366a08640f7acb4033ed7049/arrow-flight/src/sql/metadata/mod.rs#L67-L75

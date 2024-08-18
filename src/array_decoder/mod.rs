@@ -1,3 +1,20 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
 use std::sync::Arc;
 
 use arrow::array::{ArrayRef, BooleanArray, BooleanBuilder, PrimitiveArray, PrimitiveBuilder};
@@ -6,9 +23,8 @@ use arrow::datatypes::{ArrowPrimitiveType, Decimal128Type};
 use arrow::datatypes::{DataType as ArrowDataType, Field};
 use arrow::datatypes::{
     Date32Type, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, SchemaRef,
-    TimeUnit,
 };
-use arrow::record_batch::RecordBatch;
+use arrow::record_batch::{RecordBatch, RecordBatchOptions};
 use snafu::{ensure, ResultExt};
 
 use crate::column::{get_present_vec, Column};
@@ -405,7 +421,7 @@ pub fn array_decoder_factory(
                 }
             );
             let iter = stripe.stream_map().get(column, Kind::Data);
-            let iter = Box::new(FloatIter::new(iter, stripe.number_of_rows()));
+            let iter = Box::new(FloatIter::new(iter));
             let present = get_present_vec(column, stripe)?
                 .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
             Box::new(Float32ArrayDecoder::new(iter, present))
@@ -419,7 +435,7 @@ pub fn array_decoder_factory(
                 }
             );
             let iter = stripe.stream_map().get(column, Kind::Data);
-            let iter = Box::new(FloatIter::new(iter, stripe.number_of_rows()));
+            let iter = Box::new(FloatIter::new(iter));
             let present = get_present_vec(column, stripe)?
                 .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
             Box::new(Float64ArrayDecoder::new(iter, present))
@@ -456,27 +472,9 @@ pub fn array_decoder_factory(
             );
             new_decimal_decoder(column, stripe, *precision, *scale)?
         }
-        DataType::Timestamp { .. } => {
-            // TODO: add support for any precision
-            ensure!(
-                field_type == ArrowDataType::Timestamp(TimeUnit::Nanosecond, None),
-                MismatchedSchemaSnafu {
-                    orc_type: column.data_type().clone(),
-                    arrow_type: field_type
-                }
-            );
-            new_timestamp_decoder(column, stripe)?
-        }
+        DataType::Timestamp { .. } => new_timestamp_decoder(column, field_type, stripe)?,
         DataType::TimestampWithLocalTimezone { .. } => {
-            // TODO: add support for any precision and for arbitrary timezones
-            ensure!(
-                field_type == ArrowDataType::Timestamp(TimeUnit::Nanosecond, Some("UTC".into())),
-                MismatchedSchemaSnafu {
-                    orc_type: column.data_type().clone(),
-                    arrow_type: field_type
-                }
-            );
-            new_timestamp_instant_decoder(column, stripe)?
+            new_timestamp_instant_decoder(column, field_type, stripe)?
         }
 
         DataType::Date { .. } => {
@@ -588,7 +586,21 @@ impl NaiveStripeDecoder {
         let fields = self.inner_decode_next_batch(remaining)?;
 
         if fields.is_empty() {
-            Ok(None)
+            if remaining == 0 {
+                Ok(None)
+            } else {
+                // In case of empty projection, we need to create a RecordBatch with `row_count` only
+                // to reflect the row number
+                Ok(Some(
+                    RecordBatch::try_new_with_options(
+                        Arc::clone(&self.schema_ref),
+                        fields,
+                        &RecordBatchOptions::new()
+                            .with_row_count(Some(self.batch_size.min(remaining))),
+                    )
+                    .context(error::ConvertRecordBatchSnafu)?,
+                ))
+            }
         } else {
             //TODO(weny): any better way?
             let fields = self

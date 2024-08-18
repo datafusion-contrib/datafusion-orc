@@ -1,7 +1,24 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use arrow::datatypes::{Schema, SchemaRef};
+use arrow::datatypes::SchemaRef;
 use arrow::error::ArrowError;
 use arrow::record_batch::{RecordBatch, RecordBatchReader};
 
@@ -20,6 +37,7 @@ pub struct ArrowReaderBuilder<R> {
     pub(crate) file_metadata: Arc<FileMetadata>,
     pub(crate) batch_size: usize,
     pub(crate) projection: ProjectionMask,
+    pub(crate) schema_ref: Option<SchemaRef>,
 }
 
 impl<R> ArrowReaderBuilder<R> {
@@ -29,6 +47,7 @@ impl<R> ArrowReaderBuilder<R> {
             file_metadata,
             batch_size: DEFAULT_BATCH_SIZE,
             projection: ProjectionMask::all(),
+            schema_ref: None,
         }
     }
 
@@ -45,6 +64,31 @@ impl<R> ArrowReaderBuilder<R> {
         self.projection = projection;
         self
     }
+
+    pub fn with_schema(mut self, schema: SchemaRef) -> Self {
+        self.schema_ref = Some(schema);
+        self
+    }
+
+    /// Returns the currently computed schema
+    ///
+    /// Unless [`with_schema`](Self::with_schema) was called, this is computed dynamically
+    /// based on the current projection and the underlying file format.
+    pub fn schema(&self) -> SchemaRef {
+        let projected_data_type = self
+            .file_metadata
+            .root_data_type()
+            .project(&self.projection);
+        let metadata = self
+            .file_metadata
+            .user_custom_metadata()
+            .iter()
+            .map(|(key, value)| (key.clone(), String::from_utf8_lossy(value).to_string()))
+            .collect::<HashMap<_, _>>();
+        self.schema_ref
+            .clone()
+            .unwrap_or_else(|| Arc::new(projected_data_type.create_arrow_schema(&metadata)))
+    }
 }
 
 impl<R: ChunkReader> ArrowReaderBuilder<R> {
@@ -54,6 +98,7 @@ impl<R: ChunkReader> ArrowReaderBuilder<R> {
     }
 
     pub fn build(self) -> ArrowReader<R> {
+        let schema_ref = self.schema();
         let projected_data_type = self
             .file_metadata
             .root_data_type()
@@ -64,7 +109,6 @@ impl<R: ChunkReader> ArrowReaderBuilder<R> {
             projected_data_type,
             stripe_index: 0,
         };
-        let schema_ref = Arc::new(create_arrow_schema(&cursor));
         ArrowReader {
             cursor,
             schema_ref,
@@ -100,16 +144,6 @@ impl<R: ChunkReader> ArrowReader<R> {
             None => Ok(None),
         }
     }
-}
-
-pub(crate) fn create_arrow_schema<R>(cursor: &Cursor<R>) -> Schema {
-    let metadata = cursor
-        .file_metadata
-        .user_custom_metadata()
-        .iter()
-        .map(|(key, value)| (key.clone(), String::from_utf8_lossy(value).to_string()))
-        .collect::<HashMap<_, _>>();
-    cursor.projected_data_type.create_arrow_schema(&metadata)
 }
 
 impl<R: ChunkReader> RecordBatchReader for ArrowReader<R> {
