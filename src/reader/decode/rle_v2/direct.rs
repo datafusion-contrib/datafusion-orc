@@ -67,7 +67,7 @@ pub fn write_direct<N: NInt>(writer: &mut BytesMut, values: &[N], max: Option<N>
 
     let max = max.unwrap_or_else(|| {
         // Assert guards that values is non-empty
-        *values.iter().max().unwrap()
+        *values.iter().max_by_key(|x| x.bits_used()).unwrap()
     });
 
     let bit_width = max.closest_aligned_bit_width();
@@ -108,30 +108,41 @@ mod tests {
         Ok(out)
     }
 
+    #[test]
+    fn test_direct_edge_case() {
+        let values: Vec<i16> = vec![109, -17809, -29946, -17285];
+        let encoded = values
+            .iter()
+            .map(|&v| SignedEncoding::zigzag_encode(v))
+            .collect::<Vec<_>>();
+        let out = roundtrip_direct_helper::<_, SignedEncoding>(&encoded).unwrap();
+        assert_eq!(out, values);
+    }
+
     proptest! {
         #[test]
-        fn roundtrip_direct_i16(values in prop::collection::vec(any::<i16>(), 1..512)) {
+        fn roundtrip_direct_i16(values in prop::collection::vec(any::<i16>(), 1..=512)) {
             let encoded = values.iter().map(|v| SignedEncoding::zigzag_encode(*v)).collect::<Vec<_>>();
             let out = roundtrip_direct_helper::<_, SignedEncoding>(&encoded)?;
             prop_assert_eq!(out, values);
         }
 
         #[test]
-        fn roundtrip_direct_i32(values in prop::collection::vec(any::<i32>(), 1..512)) {
+        fn roundtrip_direct_i32(values in prop::collection::vec(any::<i32>(), 1..=512)) {
             let encoded = values.iter().map(|v| SignedEncoding::zigzag_encode(*v)).collect::<Vec<_>>();
             let out = roundtrip_direct_helper::<_, SignedEncoding>(&encoded)?;
             prop_assert_eq!(out, values);
         }
 
         #[test]
-        fn roundtrip_direct_i64(values in prop::collection::vec(any::<i64>(), 1..512)) {
+        fn roundtrip_direct_i64(values in prop::collection::vec(any::<i64>(), 1..=512)) {
             let encoded = values.iter().map(|v| SignedEncoding::zigzag_encode(*v)).collect::<Vec<_>>();
             let out = roundtrip_direct_helper::<_, SignedEncoding>(&encoded)?;
             prop_assert_eq!(out, values);
         }
 
         #[test]
-        fn roundtrip_direct_i64_unsigned(values in prop::collection::vec(0..=i64::MAX, 1..512)) {
+        fn roundtrip_direct_i64_unsigned(values in prop::collection::vec(0..=i64::MAX, 1..=512)) {
             let encoded = values.iter().map(|v| UnsignedEncoding::zigzag_encode(*v)).collect::<Vec<_>>();
             let out = roundtrip_direct_helper::<_, UnsignedEncoding>(&encoded)?;
             prop_assert_eq!(out, values);

@@ -249,6 +249,64 @@ pub fn write_aligned_packed_ints<N: NInt>(writer: &mut BytesMut, bit_width: usiz
     }
 }
 
+/// Similar to [`write_aligned_packed_ints`] but the `bit_width` allows any value
+/// in the range `[1, 64]`.
+pub fn write_packed_ints<N: NInt>(writer: &mut BytesMut, bit_width: usize, values: &[N]) {
+    debug_assert!(
+        (1..=64).contains(&bit_width),
+        "bit_width must be in the range [1, 64]"
+    );
+    if bit_width == 1 || bit_width == 2 || bit_width == 4 || bit_width % 8 == 0 {
+        write_aligned_packed_ints(writer, bit_width, values);
+    } else {
+        write_unaligned_packed_ints(writer, bit_width, values)
+    }
+}
+
+fn write_unaligned_packed_ints<N: NInt>(writer: &mut BytesMut, bit_width: usize, values: &[N]) {
+    debug_assert!(
+        (1..=64).contains(&bit_width),
+        "bit_width must be in the range [1, 64]"
+    );
+    let mut bits_left = 8;
+    let mut current_byte = 0;
+    for &value in values {
+        let mut bits_to_write = bit_width;
+        // This loop will write 8 bits at a time into current_byte, except for the
+        // first iteration after a previous value has been written. The previous
+        // value may have bits left over, still in current_byte, which is represented
+        // by 8 - bits_left (aka bits_left is the amount of space left in current_byte).
+        while bits_to_write > bits_left {
+            // Writing from most significant bits first.
+            let shift = bits_to_write - bits_left;
+            // Shift so bits to write are in least significant 8 bits.
+            // Masking out higher bits so conversion to u8 is safe.
+            let bits = value.unsigned_shr(shift as u32) & N::from_u8(0xFF);
+            current_byte |= bits.to_u8().unwrap();
+            bits_to_write -= bits_left;
+
+            writer.put_u8(current_byte);
+            current_byte = 0;
+            bits_left = 8;
+        }
+
+        // If there are trailing bits then include these into current_byte.
+        bits_left -= bits_to_write;
+        let bits = (value << bits_left) & N::from_u8(0xFF);
+        current_byte |= bits.to_u8().unwrap();
+
+        if bits_left == 0 {
+            writer.put_u8(current_byte);
+            current_byte = 0;
+            bits_left = 8;
+        }
+    }
+    // Flush any remaining bits
+    if bits_left != 8 {
+        writer.put_u8(current_byte);
+    }
+}
+
 fn unrolled_pack_1<N: NInt>(writer: &mut BytesMut, values: &[N]) {
     let mut iter = values.chunks_exact(8);
     for chunk in &mut iter {
@@ -379,7 +437,7 @@ fn get_closest_fixed_bits(n: usize) -> usize {
     }
 }
 
-fn encode_bit_width(n: usize) -> usize {
+pub fn encode_bit_width(n: usize) -> usize {
     let n = get_closest_fixed_bits(n);
     match n {
         1..=24 => n - 1,
@@ -539,50 +597,34 @@ pub fn signed_msb_encode<N: NInt + Signed>(value: N, encoded_byte_size: usize) -
     encoded_msb | value
 }
 
-/// Calculate nth percentile based on aligned bit width,
-/// able to be incrementally built up (e.g. as part of
-/// an existing for loop).
-pub struct PercentileBitCalculator<N: VarintSerde> {
-    histogram: [usize; 32],
-    count: usize,
-    phantom: PhantomData<N>,
-}
+/// Get the nth percentile, where input percentile must be in range (0.0, 1.0].
+pub fn calculate_percentile_bits<N: VarintSerde>(values: &[N], percentile: f32) -> usize {
+    debug_assert!(
+        percentile > 0.0 && percentile <= 1.0,
+        "percentile must be in range (0.0, 1.0]"
+    );
 
-impl<N: VarintSerde> PercentileBitCalculator<N> {
-    pub fn new() -> Self {
-        Self {
-            histogram: [0; 32],
-            count: 0,
-            phantom: Default::default(),
+    let mut histogram = [0; 32];
+    // Fill out histogram
+    for n in values {
+        // Map into range [0, 31]
+        let encoded_bit_width = encode_bit_width(n.bits_used());
+        histogram[encoded_bit_width] += 1;
+    }
+
+    // Then calculate the percentile here
+    let count = values.len() as f32;
+    let mut per_len = ((1.0 - percentile) * count) as usize;
+    for i in (0..32).rev() {
+        if let Some(a) = per_len.checked_sub(histogram[i]) {
+            per_len = a;
+        } else {
+            return decode_bit_width(i);
         }
     }
 
-    pub fn add_value(&mut self, value: N) {
-        // Now in range [0, 31]
-        let encoded_bit_width = encode_bit_width(value.bits_used());
-        self.histogram[encoded_bit_width] += 1;
-        self.count += 1;
-    }
-
-    /// Get the nth percentile, where input percentile must be in range (0.0, 1.0].
-    pub fn calculate_percentile(&self, percentile: f32) -> usize {
-        debug_assert!(
-            percentile > 0.0 && percentile <= 1.0,
-            "percentile must be in range (0.0, 1.0]"
-        );
-
-        let mut per_len = ((1.0 - percentile) * (self.count as f32)) as usize;
-        for i in (0..32).rev() {
-            if let Some(a) = per_len.checked_sub(self.histogram[i]) {
-                per_len = a;
-            } else {
-                return decode_bit_width(i);
-            }
-        }
-
-        // If percentile is in correct input range then we should always return above
-        unreachable!()
-    }
+    // If percentile is in correct input range then we should always return above
+    unreachable!()
 }
 
 #[cfg(test)]
@@ -851,5 +893,54 @@ mod tests {
         assert_eq!(roundtrip_varint::<_, SignedEncoding>(value), value);
         let value = i128::MAX;
         assert_eq!(roundtrip_varint::<_, SignedEncoding>(value), value);
+    }
+
+    /// Easier to generate values then bound them, instead of generating correctly bounded
+    /// values. In this case, bounds are that no value will exceed the `bit_width` in terms
+    /// of bit size.
+    fn mask_to_bit_width<N: NInt>(values: &[N], bit_width: usize) -> Vec<N> {
+        let shift = N::BYTE_SIZE * 8 - bit_width;
+        let mask = N::max_value().unsigned_shr(shift as u32);
+        values.iter().map(|&v| v & mask).collect()
+    }
+
+    fn roundtrip_packed_ints_serde<N: NInt>(values: &[N], bit_width: usize) -> Result<Vec<N>> {
+        let mut buf = BytesMut::new();
+        let mut out = vec![];
+        write_packed_ints(&mut buf, bit_width, values);
+        read_ints(&mut out, values.len(), bit_width, &mut Cursor::new(buf))?;
+        Ok(out)
+    }
+
+    proptest! {
+        #[test]
+        fn roundtrip_packed_ints_serde_i64(
+            values in prop::collection::vec(any::<i64>(), 1..=512),
+            bit_width in 1..=64_usize
+        ) {
+            let values = mask_to_bit_width(&values, bit_width);
+            let out = roundtrip_packed_ints_serde(&values, bit_width)?;
+            prop_assert_eq!(out, values);
+        }
+
+        #[test]
+        fn roundtrip_packed_ints_serde_i32(
+            values in prop::collection::vec(any::<i32>(), 1..=512),
+            bit_width in 1..=32_usize
+        ) {
+            let values = mask_to_bit_width(&values, bit_width);
+            let out = roundtrip_packed_ints_serde(&values, bit_width)?;
+            prop_assert_eq!(out, values);
+        }
+
+        #[test]
+        fn roundtrip_packed_ints_serde_i16(
+            values in prop::collection::vec(any::<i16>(), 1..=512),
+            bit_width in 1..=16_usize
+        ) {
+            let values = mask_to_bit_width(&values, bit_width);
+            let out = roundtrip_packed_ints_serde(&values, bit_width)?;
+            prop_assert_eq!(out, values);
+        }
     }
 }

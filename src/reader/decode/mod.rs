@@ -29,8 +29,7 @@ use crate::proto::column_encoding::Kind as ProtoColumnKind;
 use self::rle_v1::RleReaderV1;
 use self::rle_v2::RleReaderV2;
 use self::util::{
-    get_closest_aligned_bit_width, signed_msb_decode, signed_msb_encode, signed_zigzag_decode,
-    signed_zigzag_encode,
+    get_closest_aligned_bit_width, signed_msb_decode, signed_zigzag_decode, signed_zigzag_encode,
 };
 
 // TODO: rename mod to encoding
@@ -79,7 +78,6 @@ trait EncodingSign: Send + 'static {
     fn zigzag_encode<N: VarintSerde>(v: N) -> N;
 
     fn decode_signed_msb<N: NInt>(v: N, encoded_byte_size: usize) -> N;
-    fn encode_signed_msb<N: NInt>(v: N, encoded_byte_size: usize) -> N;
 }
 
 struct SignedEncoding;
@@ -99,11 +97,6 @@ impl EncodingSign for SignedEncoding {
     fn decode_signed_msb<N: NInt>(v: N, encoded_byte_size: usize) -> N {
         signed_msb_decode(v, encoded_byte_size)
     }
-
-    #[inline]
-    fn encode_signed_msb<N: NInt>(v: N, encoded_byte_size: usize) -> N {
-        signed_msb_encode(v, encoded_byte_size)
-    }
 }
 
 struct UnsignedEncoding;
@@ -121,11 +114,6 @@ impl EncodingSign for UnsignedEncoding {
 
     #[inline]
     fn decode_signed_msb<N: NInt>(v: N, _encoded_byte_size: usize) -> N {
-        v
-    }
-
-    #[inline]
-    fn encode_signed_msb<N: NInt>(v: N, _encoded_byte_size: usize) -> N {
         v
     }
 }

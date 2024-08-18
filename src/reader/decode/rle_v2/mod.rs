@@ -17,7 +17,7 @@
 
 use std::{io::Read, marker::PhantomData};
 
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 
 use crate::error::Result;
 
@@ -29,7 +29,7 @@ use self::{
 };
 
 use super::{
-    util::{try_read_u8, PercentileBitCalculator},
+    util::{calculate_percentile_bits, try_read_u8},
     EncodingSign, NInt, VarintSerde,
 };
 
@@ -136,7 +136,11 @@ fn delta_encoding_check<N: NInt>(literals: &[N]) -> DeltaEncodingCheckResult<N> 
     let base_value = literals[0];
     let mut min = base_value.min(literals[1]);
     let mut max = base_value.max(literals[1]);
-    let first_delta = literals[1].as_i64() - base_value.as_i64();
+    // Saturating should be fine here (and below) as we later check the
+    // difference between min & max and defer to direct encoding if it
+    // is too large (so the corrupt delta here won't actually be used).
+    // TODO: is there a more explicit way of ensuring this behaviour?
+    let first_delta = literals[1].as_i64().saturating_sub(base_value.as_i64());
     let mut current_delta;
     let mut max_delta = 0;
 
@@ -154,13 +158,13 @@ fn delta_encoding_check<N: NInt>(literals: &[N]) -> DeltaEncodingCheckResult<N> 
         min = min.min(l1);
         max = max.max(l1);
 
-        current_delta = l1.as_i64() - l0.as_i64();
+        current_delta = l1.as_i64().saturating_sub(l0.as_i64());
 
         is_increasing &= current_delta >= 0;
         is_decreasing &= current_delta <= 0;
 
         is_fixed_delta &= current_delta == first_delta;
-        let current_delta = current_delta.abs();
+        let current_delta = current_delta.saturating_abs();
         adjacent_deltas.push(current_delta);
         max_delta = max_delta.max(current_delta);
     }
@@ -224,6 +228,11 @@ impl<N: NInt, S: EncodingSign> RleWriterV2<N, S> {
 
     pub fn write_one(&mut self, value: N) {
         self.process_value(value);
+    }
+
+    pub fn close(mut self) -> Bytes {
+        self.flush();
+        self.data.into()
     }
 
     // Algorithm adapted from:
@@ -419,53 +428,53 @@ fn determine_variable_run_encoding<N: NInt, S: EncodingSign>(
         return;
     }
 
-    // TODO: can derive from min/max above?
-    let mut max_zigzag = S::zigzag_encode(literals[0]);
-    let mut c = PercentileBitCalculator::new();
-    for l in literals.iter() {
-        let zz = S::zigzag_encode(*l);
-        max_zigzag = zz.max(max_zigzag);
-        c.add_value(zz);
-    }
-    let zigzagged_90_percentile_bit_width = c.calculate_percentile(0.90);
+    // TODO: another allocation here
+    let zigzag_literals = literals
+        .iter()
+        .map(|&v| S::zigzag_encode(v))
+        .collect::<Vec<_>>();
+    let zigzagged_90_percentile_bit_width = calculate_percentile_bits(&zigzag_literals, 0.90);
+    // TODO: can derive from min/max?
+    let zigzagged_100_percentile_bit_width = calculate_percentile_bits(&zigzag_literals, 1.00);
     // If variation of bit width between largest value and lower 90% of values isn't
     // significant enough, just use direct encoding as patched base wouldn't be as
     // efficient.
-    if (max_zigzag.closest_aligned_bit_width() - zigzagged_90_percentile_bit_width) <= 1 {
-        for v in literals.iter_mut() {
-            *v = S::zigzag_encode(*v);
-        }
-        write_direct(writer, literals, Some(max_zigzag));
+    if (zigzagged_100_percentile_bit_width.saturating_sub(zigzagged_90_percentile_bit_width)) <= 1 {
+        // TODO: pass through the 100p here
+        write_direct(writer, &zigzag_literals, None);
         return;
     }
 
     // Base value for patched base is the minimum value
     // Patch data values are the literals with the base value subtracted
-    // We use long_buffer to store these base reduced literals
+    // We use base_reduced_literals to store these base reduced literals
     let mut max_data_value = 0;
-    let mut c = PercentileBitCalculator::new();
     let mut base_reduced_literals = vec![];
     for l in literals.iter() {
         // All base reduced literals become positive here
         let base_reduced_literal = l.as_i64() - min;
         base_reduced_literals.push(base_reduced_literal);
         max_data_value = max_data_value.max(base_reduced_literal);
-        c.add_value(base_reduced_literal);
     }
 
     // Aka 100th percentile
     let base_reduced_literals_max_bit_width = max_data_value.closest_aligned_bit_width();
     // 95th percentile width is used to find the 5% of values to encode with patches
-    let base_reduced_literals_95th_percentile_bit_width = c.calculate_percentile(0.95);
+    let base_reduced_literals_95th_percentile_bit_width =
+        calculate_percentile_bits(&base_reduced_literals, 0.95);
 
     // Patch only if we have outliers, based on bit width
     if base_reduced_literals_max_bit_width != base_reduced_literals_95th_percentile_bit_width {
-        for v in literals.iter_mut() {
-            *v = S::zigzag_encode(*v);
-        }
-        write_direct(writer, literals, Some(max_zigzag));
+        write_patched_base(
+            writer,
+            &mut base_reduced_literals,
+            min,
+            base_reduced_literals_max_bit_width,
+            base_reduced_literals_95th_percentile_bit_width,
+        );
     } else {
-        write_patched_base(writer);
+        // TODO: pass through the 100p here
+        write_direct(writer, &zigzag_literals, None);
     }
 }
 
@@ -506,6 +515,8 @@ impl EncodingType {
 mod tests {
 
     use std::io::Cursor;
+
+    use proptest::prelude::*;
 
     use crate::reader::decode::{SignedEncoding, UnsignedEncoding};
 
@@ -680,5 +691,48 @@ mod tests {
         let a = reader.collect::<Result<Vec<_>>>().unwrap();
 
         assert_eq!(a, expected);
+    }
+
+    // TODO: be smarter about prop test here, generate different patterns of ints
+    //        - e.g. increasing/decreasing sequences, outliers, repeated
+    //        - to ensure all different subencodings are being used (and might make shrinking better)
+    //       currently 99% of the time here the subencoding will be Direct due to random generation
+
+    fn roundtrip_helper<N: NInt, S: EncodingSign>(values: &[N]) -> Result<Vec<N>> {
+        let mut writer = RleWriterV2::<N, S>::new();
+        writer.write(values);
+        let data = writer.close();
+
+        let cursor = Cursor::new(data);
+        let reader = RleReaderV2::<N, _, S>::new(cursor);
+        let out = reader.collect::<Result<Vec<_>>>()?;
+
+        Ok(out)
+    }
+
+    proptest! {
+        #[test]
+        fn roundtrip_i16(values in prop::collection::vec(any::<i16>(), 1..1_000)) {
+            let out = roundtrip_helper::<_, SignedEncoding>(&values)?;
+            prop_assert_eq!(out, values);
+        }
+
+        #[test]
+        fn roundtrip_i32(values in prop::collection::vec(any::<i32>(), 1..1_000)) {
+            let out = roundtrip_helper::<_, SignedEncoding>(&values)?;
+            prop_assert_eq!(out, values);
+        }
+
+        #[test]
+        fn roundtrip_i64(values in prop::collection::vec(any::<i64>(), 1..1_000)) {
+            let out = roundtrip_helper::<_, SignedEncoding>(&values)?;
+            prop_assert_eq!(out, values);
+        }
+
+        #[test]
+        fn roundtrip_i64_unsigned(values in prop::collection::vec(0..=i64::MAX, 1..1_000)) {
+            let out = roundtrip_helper::<_, UnsignedEncoding>(&values)?;
+            prop_assert_eq!(out, values);
+        }
     }
 }
