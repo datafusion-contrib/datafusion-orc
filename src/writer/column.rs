@@ -61,6 +61,8 @@ where
     fn take_inner(&mut self) -> Bytes;
 }
 
+// TODO: simplify these generics, probably overcomplicating things here
+
 /// Encoder for primitive ORC types (e.g. int, float). Uses a specific [`PrimitiveValueEncoder`] to
 /// encode the primitive values into internal memory. When finished, outputs a DATA stream and
 /// optionally a PRESENT stream.
