@@ -1,4 +1,4 @@
-use std::io::{Seek, Write};
+use std::io::Write;
 
 use arrow::{
     array::RecordBatch,
@@ -25,7 +25,7 @@ pub struct ArrowWriterBuilder<W> {
     stripe_byte_size: usize,
 }
 
-impl<W: Write + Seek> ArrowWriterBuilder<W> {
+impl<W: Write> ArrowWriterBuilder<W> {
     /// Create a new [`ArrowWriterBuilder`], which will write an ORC file to
     /// the provided writer, with the expected Arrow schema.
     pub fn new(writer: W, schema: SchemaRef) -> Self {
@@ -33,7 +33,7 @@ impl<W: Write + Seek> ArrowWriterBuilder<W> {
             writer,
             schema,
             batch_size: 1024,
-            // 64 mb
+            // 64 MiB
             stripe_byte_size: 64 * 1024 * 1024,
         }
     }
@@ -45,7 +45,7 @@ impl<W: Write + Seek> ArrowWriterBuilder<W> {
         self
     }
 
-    /// The approximate size of stripes. Default is `64mb`.
+    /// The approximate size of stripes. Default is `64MiB`.
     pub fn with_stripe_byte_size(mut self, stripe_byte_size: usize) -> Self {
         self.stripe_byte_size = stripe_byte_size;
         self
@@ -63,6 +63,8 @@ impl<W: Write + Seek> ArrowWriterBuilder<W> {
             batch_size: self.batch_size,
             stripe_byte_size: self.stripe_byte_size,
             written_stripes: vec![],
+            // Accounting for the 3 magic bytes above
+            total_bytes_written: 3,
         })
     }
 }
@@ -76,9 +78,11 @@ pub struct ArrowWriter<W> {
     batch_size: usize,
     stripe_byte_size: usize,
     written_stripes: Vec<StripeInformation>,
+    /// Used to keep track of progress in file so far (instead of needing Seek on the writer)
+    total_bytes_written: u64,
 }
 
-impl<W: Write + Seek> ArrowWriter<W> {
+impl<W: Write> ArrowWriter<W> {
     /// Encode the provided batch at `batch_size` rows at a time, flushing any
     /// stripes that exceed the configured stripe size.
     pub fn write(&mut self, batch: &RecordBatch) -> Result<()> {
@@ -105,7 +109,8 @@ impl<W: Write + Seek> ArrowWriter<W> {
     /// Flush any buffered data that hasn't been written, and write the stripe
     /// footer metadata.
     pub fn flush_stripe(&mut self) -> Result<()> {
-        let info = self.writer.finish_stripe()?;
+        let info = self.writer.finish_stripe(self.total_bytes_written)?;
+        self.total_bytes_written += info.total_byte_size();
         self.written_stripes.push(info);
         Ok(())
     }
@@ -123,7 +128,7 @@ impl<W: Write + Seek> ArrowWriter<W> {
         let postscript = postscript.encode_to_vec();
         let postscript_len = postscript.len() as u8;
 
-        let mut writer = self.writer.close();
+        let mut writer = self.writer.finish();
         writer.write_all(&footer).context(IoSnafu)?;
         writer.write_all(&postscript).context(IoSnafu)?;
         // Postscript length as last byte

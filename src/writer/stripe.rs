@@ -1,4 +1,4 @@
-use std::io::{Seek, Write};
+use std::io::Write;
 
 use arrow::array::RecordBatch;
 use arrow::datatypes::{DataType as ArrowDataType, FieldRef, SchemaRef};
@@ -21,6 +21,12 @@ pub struct StripeInformation {
     pub data_length: u64,
     pub footer_length: u64,
     pub row_count: usize,
+}
+
+impl StripeInformation {
+    pub fn total_byte_size(&self) -> u64 {
+        self.index_length + self.data_length + self.footer_length
+    }
 }
 
 impl From<&StripeInformation> for proto::StripeInformation {
@@ -54,7 +60,7 @@ impl<W> EstimateMemory for StripeWriter<W> {
     }
 }
 
-impl<W: Write + Seek> StripeWriter<W> {
+impl<W: Write> StripeWriter<W> {
     pub fn new(writer: W, schema: &SchemaRef) -> Self {
         let columns = schema.fields().iter().map(create_encoder).collect();
         Self {
@@ -78,9 +84,10 @@ impl<W: Write + Seek> StripeWriter<W> {
     /// Flush streams to the writer, and write the stripe footer to finish
     /// the stripe. After this, the [`StripeWriter`] will be reset and ready
     /// to write a fresh new stripe.
-    pub fn finish_stripe(&mut self) -> Result<StripeInformation> {
-        let start_offset = self.writer.stream_position().context(IoSnafu)?;
-
+    ///
+    /// `start_offset` is used to manually keep track of position in the writer (instead
+    /// of relying on Seek).
+    pub fn finish_stripe(&mut self, start_offset: u64) -> Result<StripeInformation> {
         // Order of column_encodings needs to match final type vec order.
         // (see arrow_writer::serialize_schema())
         // Direct encoding to represent root struct
@@ -95,6 +102,7 @@ impl<W: Write + Seek> StripeWriter<W> {
 
         // Root type won't have any streams
         let mut written_streams = vec![];
+        let mut data_length = 0;
         for (index, c) in self.columns.iter_mut().enumerate() {
             // Offset by 1 to account for root of 0
             let column = index + 1;
@@ -104,8 +112,9 @@ impl<W: Write + Seek> StripeWriter<W> {
                 let (s_type, bytes) = s.into_parts();
                 let length = bytes.len();
                 self.writer.write_all(&bytes).context(IoSnafu)?;
+                data_length += length as u64;
                 written_streams.push(WrittenStream {
-                    s_type,
+                    kind: s_type,
                     column,
                     length,
                 });
@@ -119,7 +128,6 @@ impl<W: Write + Seek> StripeWriter<W> {
             encryption: vec![],
         };
 
-        let data_length = self.writer.stream_position().context(IoSnafu)? - start_offset;
         let footer_bytes = stripe_footer.encode_to_vec();
         let footer_length = footer_bytes.len() as u64;
         let row_count = self.row_count;
@@ -138,7 +146,7 @@ impl<W: Write + Seek> StripeWriter<W> {
     }
 
     /// Close this writer and return the inner writer.
-    pub fn close(self) -> W {
+    pub fn finish(self) -> W {
         self.writer
     }
 }
@@ -158,14 +166,14 @@ fn create_encoder(field: &FieldRef) -> Box<dyn ColumnStripeEncoder> {
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 struct WrittenStream {
-    s_type: StreamType,
+    kind: StreamType,
     column: usize,
     length: usize,
 }
 
 impl From<&WrittenStream> for proto::Stream {
     fn from(value: &WrittenStream) -> Self {
-        let kind = proto::stream::Kind::from(value.s_type);
+        let kind = proto::stream::Kind::from(value.kind);
         proto::Stream {
             kind: Some(kind.into()),
             column: Some(value.column as u32),

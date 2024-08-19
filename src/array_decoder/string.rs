@@ -137,7 +137,7 @@ impl<T: ByteArrayType> GenericByteArrayDecoder<T> {
         let mut bytes = Vec::with_capacity(total_length as usize);
         self.bytes
             .by_ref()
-            .take(total_length as u64) // TODO
+            .take(total_length as u64)
             .read_to_end(&mut bytes)
             .context(IoSnafu)?;
         let bytes = Buffer::from(bytes);
