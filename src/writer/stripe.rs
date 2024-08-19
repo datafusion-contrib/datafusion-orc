@@ -1,7 +1,7 @@
 use std::io::{Seek, Write};
 
 use arrow::array::RecordBatch;
-use arrow::datatypes::{DataType as ArrowDataType, FieldRef, Float32Type, Float64Type, SchemaRef};
+use arrow::datatypes::{DataType as ArrowDataType, FieldRef, SchemaRef};
 use prost::Message;
 use snafu::ResultExt;
 
@@ -9,8 +9,8 @@ use crate::error::{IoSnafu, Result};
 use crate::proto;
 
 use super::column::{
-    ByteStripeEncoder, ColumnStripeEncoder, FloatStripeEncoder, Int16StripeEncoder,
-    Int32StripeEncoder, Int64StripeEncoder,
+    ByteStripeEncoder, ColumnStripeEncoder, DoubleStripeEncoder, FloatStripeEncoder,
+    Int16StripeEncoder, Int32StripeEncoder, Int64StripeEncoder,
 };
 use super::{ColumnEncoding, StreamType};
 
@@ -143,12 +143,12 @@ impl<W: Write + Seek> StripeWriter<W> {
 
 fn create_encoder(field: &FieldRef) -> Box<dyn ColumnStripeEncoder> {
     match field.data_type() {
-        ArrowDataType::Float32 => Box::new(FloatStripeEncoder::<Float32Type>::new()),
-        ArrowDataType::Float64 => Box::new(FloatStripeEncoder::<Float64Type>::new()),
-        ArrowDataType::Int8 => Box::new(ByteStripeEncoder::new()),
-        ArrowDataType::Int16 => Box::new(Int16StripeEncoder::new()),
-        ArrowDataType::Int32 => Box::new(Int32StripeEncoder::new()),
-        ArrowDataType::Int64 => Box::new(Int64StripeEncoder::new()),
+        ArrowDataType::Float32 => Box::new(FloatStripeEncoder::new(ColumnEncoding::Direct)),
+        ArrowDataType::Float64 => Box::new(DoubleStripeEncoder::new(ColumnEncoding::Direct)),
+        ArrowDataType::Int8 => Box::new(ByteStripeEncoder::new(ColumnEncoding::Direct)),
+        ArrowDataType::Int16 => Box::new(Int16StripeEncoder::new(ColumnEncoding::DirectV2)),
+        ArrowDataType::Int32 => Box::new(Int32StripeEncoder::new(ColumnEncoding::DirectV2)),
+        ArrowDataType::Int64 => Box::new(Int64StripeEncoder::new(ColumnEncoding::DirectV2)),
         // TODO: support more datatypes
         _ => unimplemented!("unsupported datatype"),
     }

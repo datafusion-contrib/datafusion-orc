@@ -19,7 +19,7 @@ use std::{io::Read, marker::PhantomData};
 
 use bytes::BytesMut;
 
-use crate::error::Result;
+use crate::{error::Result, writer::column::PrimitiveValueEncoder};
 
 use self::{
     delta::{read_delta_values, write_fixed_delta, write_varying_delta},
@@ -212,34 +212,6 @@ pub struct RleWriterV2<N: NInt, S: EncodingSign> {
 }
 
 impl<N: NInt, S: EncodingSign> RleWriterV2<N, S> {
-    pub fn new() -> Self {
-        Self {
-            data: BytesMut::new(),
-            state: RleV2EncodingState::Empty,
-            phantom: Default::default(),
-        }
-    }
-
-    pub fn write(&mut self, values: &[N]) {
-        for &value in values {
-            self.process_value(value);
-        }
-    }
-
-    pub fn write_one(&mut self, value: N) {
-        self.process_value(value);
-    }
-
-    pub fn take_inner(&mut self) -> BytesMut {
-        self.flush();
-        std::mem::take(&mut self.data)
-    }
-
-    /// Estimated current memory footprint of bytes being encoded.
-    pub fn estimate_memory_size(&self) -> usize {
-        self.data.len()
-    }
-
     // Algorithm adapted from:
     // https://github.com/apache/orc/blob/main/java/core/src/java/org/apache/orc/impl/RunLengthIntegerWriterV2.java
 
@@ -369,6 +341,29 @@ impl<N: NInt, S: EncodingSign> RleWriterV2<N, S> {
                 determine_variable_run_encoding::<_, S>(&mut self.data, &mut literals);
             }
         }
+    }
+}
+
+impl<N: NInt, S: EncodingSign> PrimitiveValueEncoder<N> for RleWriterV2<N, S> {
+    fn new() -> Self {
+        Self {
+            data: BytesMut::new(),
+            state: RleV2EncodingState::Empty,
+            phantom: Default::default(),
+        }
+    }
+
+    fn write_one(&mut self, value: N) {
+        self.process_value(value);
+    }
+
+    fn estimate_memory_size(&self) -> usize {
+        self.data.len()
+    }
+
+    fn take_inner(&mut self) -> bytes::Bytes {
+        self.flush();
+        std::mem::take(&mut self.data).into()
     }
 }
 
@@ -705,7 +700,7 @@ mod tests {
 
     fn roundtrip_helper<N: NInt, S: EncodingSign>(values: &[N]) -> Result<Vec<N>> {
         let mut writer = RleWriterV2::<N, S>::new();
-        writer.write(values);
+        writer.write_slice(values);
         let data = writer.take_inner();
 
         let cursor = Cursor::new(data);

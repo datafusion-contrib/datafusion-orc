@@ -17,7 +17,7 @@
 
 use bytes::{BufMut, BytesMut};
 
-use crate::error::Result;
+use crate::{error::Result, writer::column::PrimitiveValueEncoder};
 use std::io::Read;
 
 use super::util::read_u8;
@@ -41,21 +41,11 @@ pub struct ByteRleWriter {
 }
 
 impl ByteRleWriter {
-    pub fn new() -> Self {
-        Self {
-            writer: BytesMut::new(),
-            literals: [0; MAX_LITERAL_LENGTH],
-            num_literals: 0,
-            tail_run_length: 0,
-            run_value: None,
-        }
-    }
-
-    /// Encode bytes using Run Length Encoding, where the subencodings are:
+    /// Incrementally encode bytes using Run Length Encoding, where the subencodings are:
     ///   - Run: at least 3 repeated values in sequence (up to `MAX_REPEAT_LENGTH`)
     ///   - Literals: disparate values (up to `MAX_LITERAL_LENGTH` length)
     ///
-    /// A broad overview of how the relevant encodings are chosen:
+    /// How the relevant encodings are chosen:
     ///   - Keep of track of values as they come, starting off assuming Literal sequence
     ///   - Keep track of latest value, to see if we are encountering a sequence of repeated
     ///     values (Run sequence)
@@ -63,43 +53,6 @@ impl ByteRleWriter {
     ///     sequence (or switch to Run if entire current sequence is the repeated value)
     ///   - Whether in Literal or Run mode, keep buffering values and flushing when max length
     ///     reached or encoding is broken (e.g. non-repeated value found in Run mode)
-    pub fn write(&mut self, values: &[u8]) {
-        for &byte in values {
-            self.process_value(byte);
-        }
-    }
-
-    /// Like [`Self::write`] but for a single value.
-    pub fn write_byte(&mut self, byte: u8) {
-        self.process_value(byte);
-    }
-
-    /// Flush any buffered values to writer in appropriate sequence.
-    fn flush(&mut self) {
-        if self.num_literals != 0 {
-            if let Some(value) = self.run_value {
-                write_run(&mut self.writer, value, self.num_literals);
-            } else {
-                let literals = &self.literals[..self.num_literals];
-                write_literals(&mut self.writer, literals);
-            }
-            self.clear_state();
-        }
-    }
-
-    /// Take the encoded bytes, replacing it with an empty buffer.
-    pub fn take_inner(&mut self) -> BytesMut {
-        self.flush();
-        std::mem::take(&mut self.writer)
-    }
-
-    /// Estimated current memory footprint of bytes being encoded.
-    pub fn estimate_memory_size(&self) -> usize {
-        self.writer.len() + self.num_literals
-    }
-
-    /// Incrementally process values to determine when to encode with a Literal sequence
-    /// or when to switch to Run sequence (and vice-versa).
     fn process_value(&mut self, value: u8) {
         // Adapted from https://github.com/apache/orc/blob/main/java/core/src/java/org/apache/orc/impl/RunLengthByteWriter.java
         if self.num_literals == 0 {
@@ -169,6 +122,45 @@ impl ByteRleWriter {
         self.run_value = None;
         self.tail_run_length = 0;
         self.num_literals = 0;
+    }
+
+    /// Flush any buffered values to writer in appropriate sequence.
+    fn flush(&mut self) {
+        if self.num_literals != 0 {
+            if let Some(value) = self.run_value {
+                write_run(&mut self.writer, value, self.num_literals);
+            } else {
+                let literals = &self.literals[..self.num_literals];
+                write_literals(&mut self.writer, literals);
+            }
+            self.clear_state();
+        }
+    }
+}
+
+/// i8 to match with Arrow Int8 type.
+impl PrimitiveValueEncoder<i8> for ByteRleWriter {
+    fn new() -> Self {
+        Self {
+            writer: BytesMut::new(),
+            literals: [0; MAX_LITERAL_LENGTH],
+            num_literals: 0,
+            tail_run_length: 0,
+            run_value: None,
+        }
+    }
+
+    fn write_one(&mut self, value: i8) {
+        self.process_value(value as u8);
+    }
+
+    fn estimate_memory_size(&self) -> usize {
+        self.writer.len() + self.num_literals
+    }
+
+    fn take_inner(&mut self) -> bytes::Bytes {
+        self.flush();
+        std::mem::take(&mut self.writer).into()
     }
 }
 
@@ -285,7 +277,8 @@ mod test {
 
     fn roundtrip_byte_rle_helper(values: &[u8]) -> Result<Vec<u8>> {
         let mut writer = ByteRleWriter::new();
-        writer.write(values);
+        let values = values.iter().map(|&b| b as i8).collect::<Vec<_>>();
+        writer.write_slice(&values);
         writer.flush();
 
         let buf = writer.take_inner();

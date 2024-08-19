@@ -2,15 +2,16 @@ use std::marker::PhantomData;
 
 use arrow::{
     array::{Array, ArrayRef, AsArray},
-    datatypes::{ArrowPrimitiveType, Int16Type, Int32Type, Int64Type, Int8Type, ToByteSlice},
+    datatypes::{
+        ArrowPrimitiveType, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type,
+        ToByteSlice,
+    },
 };
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 
 use crate::{
     error::Result,
-    reader::decode::{
-        byte_rle::ByteRleWriter, float::Float, rle_v2::RleWriterV2, NInt, SignedEncoding,
-    },
+    reader::decode::{byte_rle::ByteRleWriter, float::Float, rle_v2::RleWriterV2, SignedEncoding},
     writer::StreamType,
 };
 
@@ -35,300 +36,181 @@ pub trait ColumnStripeEncoder {
     fn finish(&mut self) -> Vec<Stream>;
 }
 
-/// ORC float/double column encoder.
-pub struct FloatStripeEncoder<T: ArrowPrimitiveType>
+/// Encodes primitive values into an internal buffer, usually with a specialized run length
+/// encoding for better compression.
+pub trait PrimitiveValueEncoder<V>
+where
+    V: Copy,
+{
+    fn new() -> Self;
+
+    fn write_one(&mut self, value: V);
+
+    fn write_slice(&mut self, values: &[V]) {
+        for &value in values {
+            self.write_one(value);
+        }
+    }
+
+    /// Estimated current memory footprint of bytes being encoded.
+    // TODO: extract into a trait
+    fn estimate_memory_size(&self) -> usize;
+
+    /// Take the encoded bytes, replacing it with an empty buffer.
+    // TODO: Figure out how to retain the allocation instead of handing
+    //       it off each time.
+    fn take_inner(&mut self) -> Bytes;
+}
+
+/// Encoder for primitive ORC types (e.g. int, float). Uses a specific [`PrimitiveValueEncoder`] to
+/// encode the primitive values into internal memory. When finished, outputs a DATA stream and
+/// optionally a PRESENT stream.
+pub struct PrimitiveStripeEncoder<T: ArrowPrimitiveType, E: PrimitiveValueEncoder<T::Native>> {
+    encoder: E,
+    column_encoding: ColumnEncoding,
+    /// Lazily initialized once we encounter an [`Array`] with a [`NullBuffer`].
+    present: Option<PresentStreamEncoder>,
+    encoded_count: usize,
+    _phantom: PhantomData<T>,
+}
+
+impl<T: ArrowPrimitiveType, E: PrimitiveValueEncoder<T::Native>> PrimitiveStripeEncoder<T, E> {
+    // TODO: encode knowledge of the ColumnEncoding as part of the type, instead of requiring it
+    //       to be passed at runtime
+    pub fn new(column_encoding: ColumnEncoding) -> Self {
+        Self {
+            encoder: E::new(),
+            column_encoding,
+            present: None,
+            encoded_count: 0,
+            _phantom: Default::default(),
+        }
+    }
+}
+
+impl<T: ArrowPrimitiveType, E: PrimitiveValueEncoder<T::Native>> ColumnStripeEncoder
+    for PrimitiveStripeEncoder<T, E>
+{
+    fn encode_array(&mut self, array: &ArrayRef) -> Result<()> {
+        // TODO: return as result instead of panicking here?
+        let array = array.as_primitive::<T>();
+        // Handling case where if encoding across RecordBatch boundaries, arrays
+        // might introduce a NullBuffer
+        match (array.nulls(), &mut self.present) {
+            // Need to copy only the valid values as indicated by null_buffer
+            (Some(null_buffer), Some(present)) => {
+                present.extend(null_buffer);
+                for index in null_buffer.valid_indices() {
+                    let v = array.value(index);
+                    self.encoder.write_one(v);
+                }
+            }
+            (Some(null_buffer), None) => {
+                // Lazily initiate present buffer and ensure backfill the already encoded values
+                // TODO: have a test case for this
+                let mut present = PresentStreamEncoder::new();
+                present.extend_present(self.encoded_count);
+                present.extend(null_buffer);
+                self.present = Some(present);
+                for index in null_buffer.valid_indices() {
+                    let v = array.value(index);
+                    self.encoder.write_one(v);
+                }
+            }
+            // Simple direct copy from values buffer, extending present if needed
+            (None, Some(present)) => {
+                let values = array.values();
+                self.encoder.write_slice(values);
+                present.extend_present(array.len());
+            }
+            (None, None) => {
+                let values = array.values();
+                self.encoder.write_slice(values);
+            }
+        }
+        self.encoded_count += array.len() - array.null_count();
+        Ok(())
+    }
+
+    fn column_encoding(&self) -> ColumnEncoding {
+        self.column_encoding
+    }
+
+    fn estimate_memory_size(&self) -> usize {
+        self.encoder.estimate_memory_size()
+            + self
+                .present
+                .as_ref()
+                .map(|p| p.estimate_memory_size())
+                .unwrap_or(0)
+    }
+
+    fn finish(&mut self) -> Vec<Stream> {
+        let bytes = self.encoder.take_inner();
+        // Return mandatory Data stream and optional Present stream
+        let data = Stream {
+            s_type: StreamType::Data,
+            bytes,
+        };
+        self.encoded_count = 0;
+        match &mut self.present {
+            Some(present) => {
+                let bytes = present.finish();
+                let present = Stream {
+                    s_type: StreamType::Present,
+                    bytes,
+                };
+                vec![data, present]
+            }
+            None => vec![data],
+        }
+    }
+}
+
+/// No special run encoding for floats/doubles, they are stored as their IEEE 754 floating
+/// point bit layout. This encoder simply copies incoming floats/doubles to its internal
+/// byte buffer.
+pub struct FloatValueEncoder<T: ArrowPrimitiveType>
 where
     T::Native: Float,
 {
     data: BytesMut,
-    /// Lazily initialized once we encounter an [`Array`] with a [`NullBuffer`].
-    present: Option<PresentStreamEncoder>,
-    phantom: PhantomData<T>,
+    _phantom: PhantomData<T>,
 }
 
-impl<T: ArrowPrimitiveType> FloatStripeEncoder<T>
+impl<T: ArrowPrimitiveType> PrimitiveValueEncoder<T::Native> for FloatValueEncoder<T>
 where
     T::Native: Float,
 {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             data: BytesMut::new(),
-            present: None,
-            phantom: Default::default(),
+            _phantom: Default::default(),
         }
     }
-}
 
-impl<T: ArrowPrimitiveType> ColumnStripeEncoder for FloatStripeEncoder<T>
-where
-    T::Native: Float,
-{
-    fn encode_array(&mut self, array: &ArrayRef) -> Result<()> {
-        let array = array.as_primitive::<T>();
-        // Handling case where if encoding across RecordBatch boundaries, arrays
-        // might introduce a NullBuffer
-        // TODO: extract this common functionality into a ValuesEncoder
-        match (array.nulls(), &mut self.present) {
-            // Need to copy only the valid values as indicated by null_buffer
-            (Some(null_buffer), Some(present)) if null_buffer.null_count() > 0 => {
-                present.extend(null_buffer);
-                for index in null_buffer.valid_indices() {
-                    let f = array.value(index);
-                    let f = f.to_byte_slice();
-                    self.data.extend_from_slice(f);
-                }
-            }
-            (Some(null_buffer), None) if null_buffer.null_count() > 0 => {
-                let mut present = PresentStreamEncoder::new();
-                present.extend(null_buffer);
-                self.present = Some(present);
-                for index in null_buffer.valid_indices() {
-                    let f = array.value(index);
-                    let f = f.to_byte_slice();
-                    self.data.extend_from_slice(f);
-                }
-            }
-            // Simple direct copy from values buffer, extending present if needed
-            (_, Some(present)) => {
-                let bytes = array.values().to_byte_slice();
-                self.data.extend_from_slice(bytes);
-                present.extend_present(array.len());
-            }
-            (_, None) => {
-                let bytes = array.values().to_byte_slice();
-                self.data.extend_from_slice(bytes);
-            }
-        }
-
-        Ok(())
+    fn write_one(&mut self, value: T::Native) {
+        let bytes = value.to_byte_slice();
+        self.data.extend_from_slice(bytes);
     }
 
-    fn column_encoding(&self) -> ColumnEncoding {
-        ColumnEncoding::Direct
+    fn write_slice(&mut self, values: &[T::Native]) {
+        let bytes = values.to_byte_slice();
+        self.data.extend_from_slice(bytes)
     }
 
     fn estimate_memory_size(&self) -> usize {
         self.data.len()
-            + self
-                .present
-                .as_ref()
-                .map(|p| p.estimate_memory_size())
-                .unwrap_or(0)
     }
 
-    fn finish(&mut self) -> Vec<Stream> {
-        // TODO: Figure out how to retain the allocation instead of handing
-        //       it off each time.
-        let bytes = std::mem::take(&mut self.data);
-        // Return mandatory Data stream and optional Present stream
-        let data = Stream {
-            s_type: StreamType::Data,
-            bytes: bytes.into(),
-        };
-        match &mut self.present {
-            Some(present) => {
-                let bytes = present.finish();
-                let present = Stream {
-                    s_type: StreamType::Present,
-                    bytes,
-                };
-                vec![data, present]
-            }
-            None => vec![data],
-        }
+    fn take_inner(&mut self) -> Bytes {
+        std::mem::take(&mut self.data).into()
     }
 }
 
-/// ORC TinyInt column encoder.
-pub struct ByteStripeEncoder {
-    encoder: ByteRleWriter,
-    /// Lazily initialized once we encounter an [`Array`] with a [`NullBuffer`].
-    present: Option<PresentStreamEncoder>,
-}
-
-impl ByteStripeEncoder {
-    pub fn new() -> Self {
-        Self {
-            encoder: ByteRleWriter::new(),
-            present: None,
-        }
-    }
-}
-
-impl ColumnStripeEncoder for ByteStripeEncoder {
-    fn encode_array(&mut self, array: &ArrayRef) -> Result<()> {
-        let array = array.as_primitive::<Int8Type>();
-        // Handling case where if encoding across RecordBatch boundaries, arrays
-        // might introduce a NullBuffer
-        match (array.nulls(), &mut self.present) {
-            // Need to copy only the valid values as indicated by null_buffer
-            (Some(null_buffer), Some(present)) => {
-                present.extend(null_buffer);
-                for index in null_buffer.valid_indices() {
-                    let b = array.value(index) as u8;
-                    self.encoder.write_byte(b);
-                }
-            }
-            (Some(null_buffer), None) => {
-                let mut present = PresentStreamEncoder::new();
-                present.extend(null_buffer);
-                self.present = Some(present);
-                for index in null_buffer.valid_indices() {
-                    let b = array.value(index) as u8;
-                    self.encoder.write_byte(b);
-                }
-            }
-            // Simple direct copy from values buffer, extending present if needed
-            (None, Some(present)) => {
-                let bytes = array.values().to_byte_slice();
-                self.encoder.write(bytes);
-                present.extend_present(array.len());
-            }
-            (None, None) => {
-                let bytes = array.values().to_byte_slice();
-                self.encoder.write(bytes);
-            }
-        }
-
-        Ok(())
-    }
-
-    fn column_encoding(&self) -> ColumnEncoding {
-        ColumnEncoding::Direct
-    }
-
-    fn estimate_memory_size(&self) -> usize {
-        self.encoder.estimate_memory_size()
-            + self
-                .present
-                .as_ref()
-                .map(|p| p.estimate_memory_size())
-                .unwrap_or(0)
-    }
-
-    fn finish(&mut self) -> Vec<Stream> {
-        // TODO: Figure out how to retain the allocation instead of handing
-        //       it off each time.
-        let bytes = self.encoder.take_inner();
-        // Return mandatory Data stream and optional Present stream
-        let data = Stream {
-            s_type: StreamType::Data,
-            bytes: bytes.into(),
-        };
-        match &mut self.present {
-            Some(present) => {
-                let bytes = present.finish();
-                let present = Stream {
-                    s_type: StreamType::Present,
-                    bytes,
-                };
-                vec![data, present]
-            }
-            None => vec![data],
-        }
-    }
-}
-
-pub type Int16StripeEncoder = IntStripeEncoder<Int16Type>;
-pub type Int32StripeEncoder = IntStripeEncoder<Int32Type>;
-pub type Int64StripeEncoder = IntStripeEncoder<Int64Type>;
-
-// TODO: deduplicate this with ByteRLE, it is very similar
-/// ORC Int16/32/64 column encoder.
-pub struct IntStripeEncoder<T: ArrowPrimitiveType>
-where
-    T::Native: NInt,
-{
-    encoder: RleWriterV2<T::Native, SignedEncoding>,
-    /// Lazily initialized once we encounter an [`Array`] with a [`NullBuffer`].
-    present: Option<PresentStreamEncoder>,
-}
-
-impl<T: ArrowPrimitiveType> IntStripeEncoder<T>
-where
-    T::Native: NInt,
-{
-    pub fn new() -> Self {
-        Self {
-            encoder: RleWriterV2::new(),
-            present: None,
-        }
-    }
-}
-
-impl<T: ArrowPrimitiveType> ColumnStripeEncoder for IntStripeEncoder<T>
-where
-    T::Native: NInt,
-{
-    fn encode_array(&mut self, array: &ArrayRef) -> Result<()> {
-        let array = array.as_primitive::<T>();
-        // Handling case where if encoding across RecordBatch boundaries, arrays
-        // might introduce a NullBuffer
-        match (array.nulls(), &mut self.present) {
-            // Need to copy only the valid values as indicated by null_buffer
-            (Some(null_buffer), Some(present)) => {
-                present.extend(null_buffer);
-                for index in null_buffer.valid_indices() {
-                    let v = array.value(index);
-                    self.encoder.write_one(v);
-                }
-            }
-            (Some(null_buffer), None) => {
-                let mut present = PresentStreamEncoder::new();
-                present.extend(null_buffer);
-                self.present = Some(present);
-                for index in null_buffer.valid_indices() {
-                    let v = array.value(index);
-                    self.encoder.write_one(v);
-                }
-            }
-            // Simple direct copy from values buffer, extending present if needed
-            (None, Some(present)) => {
-                let values = array.values();
-                self.encoder.write(values);
-                present.extend_present(array.len());
-            }
-            (None, None) => {
-                let values = array.values();
-                self.encoder.write(values);
-            }
-        }
-
-        Ok(())
-    }
-
-    fn column_encoding(&self) -> ColumnEncoding {
-        ColumnEncoding::DirectV2
-    }
-
-    fn estimate_memory_size(&self) -> usize {
-        self.encoder.estimate_memory_size()
-            + self
-                .present
-                .as_ref()
-                .map(|p| p.estimate_memory_size())
-                .unwrap_or(0)
-    }
-
-    fn finish(&mut self) -> Vec<Stream> {
-        // TODO: Figure out how to retain the allocation instead of handing
-        //       it off each time.
-        let bytes = self.encoder.take_inner();
-        // Return mandatory Data stream and optional Present stream
-        let data = Stream {
-            s_type: StreamType::Data,
-            bytes: bytes.into(),
-        };
-        match &mut self.present {
-            Some(present) => {
-                let bytes = present.finish();
-                let present = Stream {
-                    s_type: StreamType::Present,
-                    bytes,
-                };
-                vec![data, present]
-            }
-            None => vec![data],
-        }
-    }
-}
+pub type FloatStripeEncoder = PrimitiveStripeEncoder<Float32Type, FloatValueEncoder<Float32Type>>;
+pub type DoubleStripeEncoder = PrimitiveStripeEncoder<Float64Type, FloatValueEncoder<Float64Type>>;
+pub type ByteStripeEncoder = PrimitiveStripeEncoder<Int8Type, ByteRleWriter>;
+pub type Int16StripeEncoder = PrimitiveStripeEncoder<Int16Type, RleWriterV2<i16, SignedEncoding>>;
+pub type Int32StripeEncoder = PrimitiveStripeEncoder<Int32Type, RleWriterV2<i32, SignedEncoding>>;
+pub type Int64StripeEncoder = PrimitiveStripeEncoder<Int64Type, RleWriterV2<i64, SignedEncoding>>;
