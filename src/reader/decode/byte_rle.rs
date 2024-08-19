@@ -17,7 +17,10 @@
 
 use bytes::{BufMut, BytesMut};
 
-use crate::{error::Result, writer::column::PrimitiveValueEncoder};
+use crate::{
+    error::Result,
+    writer::column::{EstimateMemory, PrimitiveValueEncoder},
+};
 use std::io::Read;
 
 use super::util::read_u8;
@@ -138,6 +141,12 @@ impl ByteRleWriter {
     }
 }
 
+impl EstimateMemory for ByteRleWriter {
+    fn estimate_memory_size(&self) -> usize {
+        self.writer.len() + self.num_literals
+    }
+}
+
 /// i8 to match with Arrow Int8 type.
 impl PrimitiveValueEncoder<i8> for ByteRleWriter {
     fn new() -> Self {
@@ -152,10 +161,6 @@ impl PrimitiveValueEncoder<i8> for ByteRleWriter {
 
     fn write_one(&mut self, value: i8) {
         self.process_value(value as u8);
-    }
-
-    fn estimate_memory_size(&self) -> usize {
-        self.writer.len() + self.num_literals
     }
 
     fn take_inner(&mut self) -> bytes::Bytes {

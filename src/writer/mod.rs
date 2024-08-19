@@ -5,6 +5,8 @@ use bytes::Bytes;
 
 use crate::proto;
 
+use self::column::EstimateMemory;
+
 pub mod column;
 pub mod stripe;
 
@@ -82,6 +84,12 @@ struct PresentStreamEncoder {
     builder: BooleanBufferBuilder,
 }
 
+impl EstimateMemory for PresentStreamEncoder {
+    fn estimate_memory_size(&self) -> usize {
+        self.builder.len() / 8
+    }
+}
+
 impl PresentStreamEncoder {
     pub fn new() -> Self {
         Self {
@@ -97,10 +105,6 @@ impl PresentStreamEncoder {
     /// Extend with n true bits.
     pub fn extend_present(&mut self, n: usize) {
         self.builder.append_n(n, true);
-    }
-
-    pub fn estimate_memory_size(&self) -> usize {
-        self.builder.len() / 8
     }
 
     /// Produce ORC present stream bytes and reset internal builder.

@@ -9,8 +9,8 @@ use crate::error::{IoSnafu, Result};
 use crate::proto;
 
 use super::column::{
-    ByteStripeEncoder, ColumnStripeEncoder, DoubleStripeEncoder, FloatStripeEncoder,
-    Int16StripeEncoder, Int32StripeEncoder, Int64StripeEncoder,
+    ByteStripeEncoder, ColumnStripeEncoder, DoubleStripeEncoder, EstimateMemory,
+    FloatStripeEncoder, Int16StripeEncoder, Int32StripeEncoder, Int64StripeEncoder,
 };
 use super::{ColumnEncoding, StreamType};
 
@@ -46,6 +46,14 @@ pub struct StripeWriter<W> {
     pub row_count: usize,
 }
 
+impl<W> EstimateMemory for StripeWriter<W> {
+    /// Used to estimate when stripe size is over threshold and should be flushed
+    /// to the writer and a new stripe started.
+    fn estimate_memory_size(&self) -> usize {
+        self.columns.iter().map(|c| c.estimate_memory_size()).sum()
+    }
+}
+
 impl<W: Write + Seek> StripeWriter<W> {
     pub fn new(writer: W, schema: &SchemaRef) -> Self {
         let columns = schema.fields().iter().map(create_encoder).collect();
@@ -65,12 +73,6 @@ impl<W: Write + Seek> StripeWriter<W> {
         }
         self.row_count += batch.num_rows();
         Ok(())
-    }
-
-    /// Used to estimate when stripe size is over threshold and should be flushed
-    /// to the writer and a new stripe started.
-    pub fn estimate_memory_size(&self) -> usize {
-        self.columns.iter().map(|c| c.estimate_memory_size()).sum()
     }
 
     /// Flush streams to the writer, and write the stripe footer to finish

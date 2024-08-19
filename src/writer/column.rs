@@ -17,19 +17,22 @@ use crate::{
 
 use super::{ColumnEncoding, PresentStreamEncoder, Stream};
 
+/// Used to help determine when to finish writing a stripe once a certain
+/// size threshold has been reached.
+pub trait EstimateMemory {
+    /// Approximate current memory usage in bytes.
+    fn estimate_memory_size(&self) -> usize;
+}
+
 /// Encodes a specific column for a stripe. Will encode to an internal memory
 /// buffer until it is finished, in which case it returns the stream bytes to
 /// be serialized to a writer.
-pub trait ColumnStripeEncoder {
+pub trait ColumnStripeEncoder: EstimateMemory {
     /// Encode entire provided [`ArrayRef`] to internal buffer.
     fn encode_array(&mut self, array: &ArrayRef) -> Result<()>;
 
     /// Column encoding used for streams.
     fn column_encoding(&self) -> ColumnEncoding;
-
-    /// Approximate current memory usage to aid in determining when to flush
-    /// a stripe to the writer.
-    fn estimate_memory_size(&self) -> usize;
 
     /// Emit buffered streams to be written to the writer, and reset state
     /// in preparation for next stripe.
@@ -38,7 +41,7 @@ pub trait ColumnStripeEncoder {
 
 /// Encodes primitive values into an internal buffer, usually with a specialized run length
 /// encoding for better compression.
-pub trait PrimitiveValueEncoder<V>
+pub trait PrimitiveValueEncoder<V>: EstimateMemory
 where
     V: Copy,
 {
@@ -51,10 +54,6 @@ where
             self.write_one(value);
         }
     }
-
-    /// Estimated current memory footprint of bytes being encoded.
-    // TODO: extract into a trait
-    fn estimate_memory_size(&self) -> usize;
 
     /// Take the encoded bytes, replacing it with an empty buffer.
     // TODO: Figure out how to retain the allocation instead of handing
@@ -85,6 +84,19 @@ impl<T: ArrowPrimitiveType, E: PrimitiveValueEncoder<T::Native>> PrimitiveStripe
             encoded_count: 0,
             _phantom: Default::default(),
         }
+    }
+}
+
+impl<T: ArrowPrimitiveType, E: PrimitiveValueEncoder<T::Native>> EstimateMemory
+    for PrimitiveStripeEncoder<T, E>
+{
+    fn estimate_memory_size(&self) -> usize {
+        self.encoder.estimate_memory_size()
+            + self
+                .present
+                .as_ref()
+                .map(|p| p.estimate_memory_size())
+                .unwrap_or(0)
     }
 }
 
@@ -136,15 +148,6 @@ impl<T: ArrowPrimitiveType, E: PrimitiveValueEncoder<T::Native>> ColumnStripeEnc
         self.column_encoding
     }
 
-    fn estimate_memory_size(&self) -> usize {
-        self.encoder.estimate_memory_size()
-            + self
-                .present
-                .as_ref()
-                .map(|p| p.estimate_memory_size())
-                .unwrap_or(0)
-    }
-
     fn finish(&mut self) -> Vec<Stream> {
         let bytes = self.encoder.take_inner();
         // Return mandatory Data stream and optional Present stream
@@ -178,6 +181,15 @@ where
     _phantom: PhantomData<T>,
 }
 
+impl<T: ArrowPrimitiveType> EstimateMemory for FloatValueEncoder<T>
+where
+    T::Native: Float,
+{
+    fn estimate_memory_size(&self) -> usize {
+        self.data.len()
+    }
+}
+
 impl<T: ArrowPrimitiveType> PrimitiveValueEncoder<T::Native> for FloatValueEncoder<T>
 where
     T::Native: Float,
@@ -197,10 +209,6 @@ where
     fn write_slice(&mut self, values: &[T::Native]) {
         let bytes = values.to_byte_slice();
         self.data.extend_from_slice(bytes)
-    }
-
-    fn estimate_memory_size(&self) -> usize {
-        self.data.len()
     }
 
     fn take_inner(&mut self) -> Bytes {

@@ -19,7 +19,10 @@ use std::{io::Read, marker::PhantomData};
 
 use bytes::BytesMut;
 
-use crate::{error::Result, writer::column::PrimitiveValueEncoder};
+use crate::{
+    error::Result,
+    writer::column::{EstimateMemory, PrimitiveValueEncoder},
+};
 
 use self::{
     delta::{read_delta_values, write_fixed_delta, write_varying_delta},
@@ -344,6 +347,12 @@ impl<N: NInt, S: EncodingSign> RleWriterV2<N, S> {
     }
 }
 
+impl<N: NInt, S: EncodingSign> EstimateMemory for RleWriterV2<N, S> {
+    fn estimate_memory_size(&self) -> usize {
+        self.data.len()
+    }
+}
+
 impl<N: NInt, S: EncodingSign> PrimitiveValueEncoder<N> for RleWriterV2<N, S> {
     fn new() -> Self {
         Self {
@@ -355,10 +364,6 @@ impl<N: NInt, S: EncodingSign> PrimitiveValueEncoder<N> for RleWriterV2<N, S> {
 
     fn write_one(&mut self, value: N) {
         self.process_value(value);
-    }
-
-    fn estimate_memory_size(&self) -> usize {
-        self.data.len()
     }
 
     fn take_inner(&mut self) -> bytes::Bytes {
