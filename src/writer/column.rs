@@ -154,7 +154,7 @@ impl<T: ArrowPrimitiveType, E: PrimitiveValueEncoder<T::Native>> ColumnStripeEnc
         let bytes = self.encoder.take_inner();
         // Return mandatory Data stream and optional Present stream
         let data = Stream {
-            s_type: StreamType::Data,
+            kind: StreamType::Data,
             bytes,
         };
         self.encoded_count = 0;
@@ -162,7 +162,7 @@ impl<T: ArrowPrimitiveType, E: PrimitiveValueEncoder<T::Native>> ColumnStripeEnc
             Some(present) => {
                 let bytes = present.finish();
                 let present = Stream {
-                    s_type: StreamType::Present,
+                    kind: StreamType::Present,
                     bytes,
                 };
                 vec![data, present]

@@ -33,13 +33,13 @@ impl From<StreamType> for proto::stream::Kind {
 
 #[derive(Debug, Clone)]
 pub struct Stream {
-    s_type: StreamType,
+    kind: StreamType,
     bytes: Bytes,
 }
 
 impl Stream {
     pub fn into_parts(self) -> (StreamType, Bytes) {
-        (self.s_type, self.bytes)
+        (self.kind, self.bytes)
     }
 }
 

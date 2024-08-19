@@ -109,12 +109,12 @@ impl<W: Write> StripeWriter<W> {
             let streams = c.finish();
             // Flush the streams to the writer
             for s in streams {
-                let (s_type, bytes) = s.into_parts();
+                let (kind, bytes) = s.into_parts();
                 let length = bytes.len();
                 self.writer.write_all(&bytes).context(IoSnafu)?;
                 data_length += length as u64;
                 written_streams.push(WrittenStream {
-                    kind: s_type,
+                    kind,
                     column,
                     length,
                 });
