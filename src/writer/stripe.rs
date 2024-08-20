@@ -145,7 +145,7 @@ impl<W: Write> StripeWriter<W> {
         })
     }
 
-    /// Close this writer and return the inner writer.
+    /// When finished writing all stripes, return the inner writer.
     pub fn finish(self) -> W {
         self.writer
     }
