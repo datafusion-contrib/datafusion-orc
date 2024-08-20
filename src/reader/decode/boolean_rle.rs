@@ -68,7 +68,7 @@ impl<R: Read> Iterator for BooleanIter<R> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     #[test]

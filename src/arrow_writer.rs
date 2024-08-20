@@ -236,7 +236,7 @@ mod tests {
 
     use arrow::{
         array::{
-            Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, Int8Array,
+            Array, Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, Int8Array,
             RecordBatchReader,
         },
         compute::concat_batches,
@@ -320,5 +320,50 @@ mod tests {
         );
         let actual = concat_batches(&schema, rows.iter()).unwrap();
         assert_eq!(batch, actual);
+    }
+
+    #[test]
+    fn test_write_inconsistent_null_buffers() {
+        // When writing arrays where null buffer can appear/disappear between writes
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "int64",
+            ArrowDataType::Int64,
+            true,
+        )]));
+
+        // Ensure first batch has array with no null buffer
+        let array_no_nulls = Arc::new(Int64Array::from(vec![1, 2, 3]));
+        assert!(array_no_nulls.nulls().is_none());
+        // But subsequent batch has array with null buffer
+        let array_with_nulls = Arc::new(Int64Array::from(vec![None, Some(4), None]));
+        assert!(array_with_nulls.nulls().is_some());
+
+        let batch1 = RecordBatch::try_new(schema.clone(), vec![array_no_nulls]).unwrap();
+        let batch2 = RecordBatch::try_new(schema.clone(), vec![array_with_nulls]).unwrap();
+
+        let mut f = vec![];
+        let mut writer = ArrowWriterBuilder::new(&mut f, schema.clone())
+            .with_stripe_byte_size(256)
+            .try_build()
+            .unwrap();
+        writer.write(&batch1).unwrap();
+        writer.write(&batch2).unwrap();
+        writer.close().unwrap();
+
+        // ORC writer should be able to handle this gracefully
+        let expected_array = Arc::new(Int64Array::from(vec![
+            Some(1),
+            Some(2),
+            Some(3),
+            None,
+            Some(4),
+            None,
+        ]));
+        let expected_batch = RecordBatch::try_new(schema, vec![expected_array]).unwrap();
+
+        let f = Bytes::from(f);
+        let reader = ArrowReaderBuilder::try_new(f).unwrap().build();
+        let rows = reader.collect::<Result<Vec<_>, _>>().unwrap();
+        assert_eq!(expected_batch, rows[0]);
     }
 }

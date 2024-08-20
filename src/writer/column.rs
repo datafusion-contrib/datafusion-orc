@@ -121,7 +121,6 @@ impl<T: ArrowPrimitiveType, E: PrimitiveValueEncoder<T::Native>> ColumnStripeEnc
             }
             (Some(null_buffer), None) => {
                 // Lazily initiate present buffer and ensure backfill the already encoded values
-                // TODO: have a test case for this
                 let mut present = PresentStreamEncoder::new();
                 present.extend_present(self.encoded_count);
                 present.extend(null_buffer);

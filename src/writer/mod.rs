@@ -3,9 +3,9 @@ use std::fmt::Debug;
 use arrow::{array::BooleanBufferBuilder, buffer::NullBuffer};
 use bytes::Bytes;
 
-use crate::proto;
+use crate::{proto, reader::decode::byte_rle::ByteRleWriter};
 
-use self::column::EstimateMemory;
+use self::column::{EstimateMemory, PrimitiveValueEncoder};
 
 pub mod column;
 pub mod stripe;
@@ -114,6 +114,13 @@ impl PresentStreamEncoder {
         let bytes = bb.values();
         // Reverse bits as ORC stores from MSB
         let bytes = bytes.iter().map(|b| b.reverse_bits()).collect::<Vec<_>>();
-        bytes.into()
+        // Bytes are then further encoded via Byte RLE
+        // TODO: refactor; this is a hack to ensure writing nulls works for now
+        //       figure a better way than throwing away this writer everytime
+        let mut encoder = ByteRleWriter::new();
+        for &b in bytes.as_slice() {
+            encoder.write_one(b as i8);
+        }
+        encoder.take_inner()
     }
 }

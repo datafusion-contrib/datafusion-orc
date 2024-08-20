@@ -249,7 +249,7 @@ impl<R: Read> Iterator for ByteRleReader<R> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use std::io::Cursor;
 
     use super::*;
