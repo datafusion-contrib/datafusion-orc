@@ -23,27 +23,10 @@ use snafu::{OptionExt, ResultExt};
 use super::{EncodingType, NInt};
 use crate::error::{IoSnafu, OutOfSpecSnafu, Result};
 use crate::reader::decode::util::{
-    encode_bit_width, extract_run_length_from_header, read_ints, read_u8, rle_v2_decode_bit_width,
-    signed_msb_encode, write_packed_ints,
+    encode_bit_width, extract_run_length_from_header, get_closest_fixed_bits, read_ints, read_u8,
+    rle_v2_decode_bit_width, signed_msb_encode, write_packed_ints,
 };
 use crate::reader::decode::{EncodingSign, VarintSerde};
-
-/// Patches (gap + actual patch bits) width are ceil'd here.
-// TODO: this is duplicated by util::get_closest_fixed_bits
-fn get_closest_fixed_bits(width: usize) -> usize {
-    match width {
-        1..=24 => width,
-        25..=26 => 26,
-        27..=28 => 28,
-        29..=30 => 30,
-        31..=32 => 32,
-        33..=40 => 40,
-        41..=48 => 48,
-        49..=56 => 56,
-        57..=64 => 64,
-        _ => unreachable!(),
-    }
-}
 
 pub fn read_patched_base<N: NInt, R: Read, S: EncodingSign>(
     reader: &mut R,

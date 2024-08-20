@@ -421,7 +421,7 @@ pub fn rle_v2_encode_bit_width(width: usize) -> u8 {
     }
 }
 
-fn get_closest_fixed_bits(n: usize) -> usize {
+pub fn get_closest_fixed_bits(n: usize) -> usize {
     match n {
         0 => 1,
         1..=24 => n,
