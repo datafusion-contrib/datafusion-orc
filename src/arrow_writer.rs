@@ -232,7 +232,7 @@ fn serialize_postscript(footer_length: u64) -> proto::PostScript {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, sync::Arc};
+    use std::sync::Arc;
 
     use arrow::{
         array::{
@@ -242,6 +242,7 @@ mod tests {
         compute::concat_batches,
         datatypes::{DataType as ArrowDataType, Field, Schema},
     };
+    use bytes::Bytes;
 
     use crate::ArrowReaderBuilder;
 
@@ -277,21 +278,21 @@ mod tests {
         )
         .unwrap();
 
-        let f = File::create("/tmp/new.orc").unwrap();
-        let mut writer = ArrowWriterBuilder::new(f, batch.schema())
+        let mut f = vec![];
+        let mut writer = ArrowWriterBuilder::new(&mut f, batch.schema())
             .try_build()
             .unwrap();
         writer.write(&batch).unwrap();
         writer.close().unwrap();
 
-        let f = File::open("/tmp/new.orc").unwrap();
+        let f = Bytes::from(f);
         let reader = ArrowReaderBuilder::try_new(f).unwrap().build();
         let rows = reader.collect::<Result<Vec<_>, _>>().unwrap();
         assert_eq!(batch, rows[0]);
     }
 
     #[test]
-    fn test_roundtrip_write_small_stripes() {
+    fn test_write_small_stripes() {
         // Set small stripe size to ensure writing across multiple stripes works
         let data: Vec<i64> = (0..1_000_000).collect();
         let int64_array = Arc::new(Int64Array::from(data));
@@ -299,15 +300,15 @@ mod tests {
 
         let batch = RecordBatch::try_new(Arc::new(schema), vec![int64_array]).unwrap();
 
-        let f = File::create("/tmp/new.orc").unwrap();
-        let mut writer = ArrowWriterBuilder::new(f, batch.schema())
+        let mut f = vec![];
+        let mut writer = ArrowWriterBuilder::new(&mut f, batch.schema())
             .with_stripe_byte_size(256)
             .try_build()
             .unwrap();
         writer.write(&batch).unwrap();
         writer.close().unwrap();
 
-        let f = File::open("/tmp/new.orc").unwrap();
+        let f = Bytes::from(f);
         let reader = ArrowReaderBuilder::try_new(f).unwrap().build();
         let schema = reader.schema();
         // Current reader doesn't read a batch across stripe boundaries, so we expect

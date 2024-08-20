@@ -22,7 +22,7 @@ pub mod metadata;
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
 
 /// Primary source used for reading required bytes for operations.
 #[allow(clippy::len_without_is_empty)]
@@ -31,6 +31,7 @@ pub trait ChunkReader {
 
     /// Get total length of bytes. Useful for parsing the metadata located at
     /// the end of the file.
+    // TODO: this is only used for file tail, so replace with load_metadata?
     fn len(&self) -> u64;
 
     /// Get a reader starting at a specific offset.
@@ -49,7 +50,6 @@ pub trait ChunkReader {
 impl ChunkReader for File {
     type T = BufReader<File>;
 
-    // TODO: this is only used for file tail, so replace with load_metadata?
     fn len(&self) -> u64 {
         self.metadata().map(|m| m.len()).unwrap_or(0u64)
     }
@@ -62,6 +62,18 @@ impl ChunkReader for File {
         let mut reader = self.try_clone()?;
         reader.seek(SeekFrom::Start(offset_from_start))?;
         Ok(BufReader::new(self.try_clone()?))
+    }
+}
+
+impl ChunkReader for Bytes {
+    type T = bytes::buf::Reader<Bytes>;
+
+    fn len(&self) -> u64 {
+        self.len() as u64
+    }
+
+    fn get_read(&self, offset_from_start: u64) -> std::io::Result<Self::T> {
+        Ok(self.slice(offset_from_start as usize..).reader())
     }
 }
 
