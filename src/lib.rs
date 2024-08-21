@@ -37,6 +37,7 @@ pub mod arrow_writer;
 #[cfg(feature = "async")]
 pub mod async_arrow_reader;
 mod column;
+mod encoding;
 pub mod error;
 pub mod projection;
 mod proto;

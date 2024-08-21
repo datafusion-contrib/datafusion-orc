@@ -21,14 +21,14 @@ use arrow::{
     array::{Array, ArrayRef, AsArray},
     datatypes::{
         ArrowPrimitiveType, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type,
-        ToByteSlice,
     },
 };
-use bytes::{Bytes, BytesMut};
+use bytes::Bytes;
 
 use crate::{
+    encoding::float::FloatValueEncoder,
     error::Result,
-    reader::decode::{byte_rle::ByteRleWriter, float::Float, rle_v2::RleWriterV2, SignedEncoding},
+    reader::decode::{byte_rle::ByteRleWriter, rle_v2::RleWriterV2, SignedEncoding},
     writer::StreamType,
 };
 
@@ -185,52 +185,6 @@ impl<T: ArrowPrimitiveType, E: PrimitiveValueEncoder<T::Native>> ColumnStripeEnc
             }
             None => vec![data],
         }
-    }
-}
-
-/// No special run encoding for floats/doubles, they are stored as their IEEE 754 floating
-/// point bit layout. This encoder simply copies incoming floats/doubles to its internal
-/// byte buffer.
-pub struct FloatValueEncoder<T: ArrowPrimitiveType>
-where
-    T::Native: Float,
-{
-    data: BytesMut,
-    _phantom: PhantomData<T>,
-}
-
-impl<T: ArrowPrimitiveType> EstimateMemory for FloatValueEncoder<T>
-where
-    T::Native: Float,
-{
-    fn estimate_memory_size(&self) -> usize {
-        self.data.len()
-    }
-}
-
-impl<T: ArrowPrimitiveType> PrimitiveValueEncoder<T::Native> for FloatValueEncoder<T>
-where
-    T::Native: Float,
-{
-    fn new() -> Self {
-        Self {
-            data: BytesMut::new(),
-            _phantom: Default::default(),
-        }
-    }
-
-    fn write_one(&mut self, value: T::Native) {
-        let bytes = value.to_byte_slice();
-        self.data.extend_from_slice(bytes);
-    }
-
-    fn write_slice(&mut self, values: &[T::Native]) {
-        let bytes = values.to_byte_slice();
-        self.data.extend_from_slice(bytes)
-    }
-
-    fn take_inner(&mut self) -> Bytes {
-        std::mem::take(&mut self.data).into()
     }
 }
 

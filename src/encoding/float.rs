@@ -15,9 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::marker::PhantomData;
+
+use arrow::datatypes::{ArrowPrimitiveType, ToByteSlice};
+use bytes::{Bytes, BytesMut};
 use snafu::ResultExt;
 
-use crate::error::{self, Result};
+use crate::{
+    error::{self, Result},
+    writer::column::{EstimateMemory, PrimitiveValueEncoder},
+};
 
 /// Generically represent f32 and f64.
 // TODO: figure out how to use num::traits::FromBytes instead of rolling our own?
@@ -84,6 +91,52 @@ impl<T: Float, R: std::io::Read> Iterator for FloatIter<T, R> {
             }
         };
         Some(Ok(T::from_le_bytes(chunk)))
+    }
+}
+
+/// No special run encoding for floats/doubles, they are stored as their IEEE 754 floating
+/// point bit layout. This encoder simply copies incoming floats/doubles to its internal
+/// byte buffer.
+pub struct FloatValueEncoder<T: ArrowPrimitiveType>
+where
+    T::Native: Float,
+{
+    data: BytesMut,
+    _phantom: PhantomData<T>,
+}
+
+impl<T: ArrowPrimitiveType> EstimateMemory for FloatValueEncoder<T>
+where
+    T::Native: Float,
+{
+    fn estimate_memory_size(&self) -> usize {
+        self.data.len()
+    }
+}
+
+impl<T: ArrowPrimitiveType> PrimitiveValueEncoder<T::Native> for FloatValueEncoder<T>
+where
+    T::Native: Float,
+{
+    fn new() -> Self {
+        Self {
+            data: BytesMut::new(),
+            _phantom: Default::default(),
+        }
+    }
+
+    fn write_one(&mut self, value: T::Native) {
+        let bytes = value.to_byte_slice();
+        self.data.extend_from_slice(bytes);
+    }
+
+    fn write_slice(&mut self, values: &[T::Native]) {
+        let bytes = values.to_byte_slice();
+        self.data.extend_from_slice(bytes)
+    }
+
+    fn take_inner(&mut self) -> Bytes {
+        std::mem::take(&mut self.data).into()
     }
 }
 
