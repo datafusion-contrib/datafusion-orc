@@ -31,11 +31,11 @@ use crate::column::{get_present_vec, Column};
 use crate::encoding::boolean::BooleanIter;
 use crate::encoding::byte::ByteRleReader;
 use crate::encoding::float::FloatIter;
+use crate::encoding::get_rle_reader;
 use crate::error::{
     self, ArrowSnafu, MismatchedSchemaSnafu, Result, UnexpectedSnafu, UnsupportedTypeVariantSnafu,
 };
 use crate::proto::stream::Kind;
-use crate::reader::decode::get_rle_reader;
 use crate::schema::DataType;
 use crate::stripe::Stripe;
 

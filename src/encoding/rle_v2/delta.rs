@@ -20,14 +20,18 @@ use std::io::Read;
 use bytes::{BufMut, BytesMut};
 use snafu::OptionExt;
 
-use crate::error::{OrcError, OutOfSpecSnafu, Result};
-use crate::reader::decode::rle_v2::{EncodingType, MAX_RUN_LENGTH};
-use crate::reader::decode::util::{
-    extract_run_length_from_header, read_ints, read_u8, read_varint_zigzagged,
-    rle_v2_decode_bit_width, rle_v2_encode_bit_width, write_aligned_packed_ints,
-    write_varint_zigzagged,
+use crate::{
+    encoding::{
+        rle_v2::{EncodingType, MAX_RUN_LENGTH},
+        util::{
+            extract_run_length_from_header, read_ints, read_u8, read_varint_zigzagged,
+            rle_v2_decode_bit_width, rle_v2_encode_bit_width, write_aligned_packed_ints,
+            write_varint_zigzagged,
+        },
+        EncodingSign, SignedEncoding, VarintSerde,
+    },
+    error::{OrcError, OutOfSpecSnafu, Result},
 };
-use crate::reader::decode::{EncodingSign, SignedEncoding, VarintSerde};
 
 use super::NInt;
 
@@ -178,7 +182,7 @@ fn derive_delta_header(delta_width: usize, run_length: usize) -> [u8; 2] {
 mod tests {
     use std::io::Cursor;
 
-    use crate::reader::decode::UnsignedEncoding;
+    use crate::encoding::UnsignedEncoding;
 
     use super::*;
 

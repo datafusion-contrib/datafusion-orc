@@ -631,8 +631,8 @@ pub fn calculate_percentile_bits<N: VarintSerde>(values: &[N], percentile: f32) 
 mod tests {
     use super::*;
     use crate::{
+        encoding::{SignedEncoding, UnsignedEncoding},
         error::Result,
-        reader::decode::{SignedEncoding, UnsignedEncoding},
     };
     use proptest::prelude::*;
     use std::io::Cursor;

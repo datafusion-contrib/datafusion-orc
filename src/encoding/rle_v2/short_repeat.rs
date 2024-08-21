@@ -21,8 +21,8 @@ use bytes::{BufMut, BytesMut};
 use snafu::ResultExt;
 
 use crate::{
+    encoding::{rle_v2::EncodingType, EncodingSign},
     error::{IoSnafu, OutOfSpecSnafu, Result},
-    reader::decode::{rle_v2::EncodingType, EncodingSign},
 };
 
 use super::{NInt, SHORT_REPEAT_MIN_LENGTH};
@@ -93,7 +93,7 @@ mod tests {
 
     use proptest::prelude::*;
 
-    use crate::reader::decode::{SignedEncoding, UnsignedEncoding};
+    use crate::encoding::{SignedEncoding, UnsignedEncoding};
 
     use super::*;
 

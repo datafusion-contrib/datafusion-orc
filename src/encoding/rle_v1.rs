@@ -123,7 +123,7 @@ impl<N: NInt, R: Read, S: EncodingSign> Iterator for RleReaderV1<N, R, S> {
 mod tests {
     use std::io::Cursor;
 
-    use crate::reader::decode::UnsignedEncoding;
+    use crate::encoding::UnsignedEncoding;
 
     use super::*;
 
