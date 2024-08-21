@@ -56,7 +56,7 @@ pub trait ColumnStripeEncoder: EstimateMemory {
 /// Encoder for primitive ORC types (e.g. int, float). Uses a specific [`PrimitiveValueEncoder`] to
 /// encode the primitive values into internal memory. When finished, outputs a DATA stream and
 /// optionally a PRESENT stream.
-pub struct PrimitiveStripeEncoder<T: ArrowPrimitiveType, E: PrimitiveValueEncoder<T::Native>> {
+pub struct PrimitiveColumnEncoder<T: ArrowPrimitiveType, E: PrimitiveValueEncoder<T::Native>> {
     encoder: E,
     column_encoding: ColumnEncoding,
     /// Lazily initialized once we encounter an [`Array`] with a [`NullBuffer`].
@@ -65,7 +65,7 @@ pub struct PrimitiveStripeEncoder<T: ArrowPrimitiveType, E: PrimitiveValueEncode
     _phantom: PhantomData<T>,
 }
 
-impl<T: ArrowPrimitiveType, E: PrimitiveValueEncoder<T::Native>> PrimitiveStripeEncoder<T, E> {
+impl<T: ArrowPrimitiveType, E: PrimitiveValueEncoder<T::Native>> PrimitiveColumnEncoder<T, E> {
     // TODO: encode knowledge of the ColumnEncoding as part of the type, instead of requiring it
     //       to be passed at runtime
     pub fn new(column_encoding: ColumnEncoding) -> Self {
@@ -80,7 +80,7 @@ impl<T: ArrowPrimitiveType, E: PrimitiveValueEncoder<T::Native>> PrimitiveStripe
 }
 
 impl<T: ArrowPrimitiveType, E: PrimitiveValueEncoder<T::Native>> EstimateMemory
-    for PrimitiveStripeEncoder<T, E>
+    for PrimitiveColumnEncoder<T, E>
 {
     fn estimate_memory_size(&self) -> usize {
         self.encoder.estimate_memory_size()
@@ -93,7 +93,7 @@ impl<T: ArrowPrimitiveType, E: PrimitiveValueEncoder<T::Native>> EstimateMemory
 }
 
 impl<T: ArrowPrimitiveType, E: PrimitiveValueEncoder<T::Native>> ColumnStripeEncoder
-    for PrimitiveStripeEncoder<T, E>
+    for PrimitiveColumnEncoder<T, E>
 {
     fn encode_array(&mut self, array: &ArrayRef) -> Result<()> {
         // TODO: return as result instead of panicking here?
@@ -161,9 +161,9 @@ impl<T: ArrowPrimitiveType, E: PrimitiveValueEncoder<T::Native>> ColumnStripeEnc
     }
 }
 
-pub type FloatStripeEncoder = PrimitiveStripeEncoder<Float32Type, FloatValueEncoder<Float32Type>>;
-pub type DoubleStripeEncoder = PrimitiveStripeEncoder<Float64Type, FloatValueEncoder<Float64Type>>;
-pub type ByteStripeEncoder = PrimitiveStripeEncoder<Int8Type, ByteRleWriter>;
-pub type Int16StripeEncoder = PrimitiveStripeEncoder<Int16Type, RleWriterV2<i16, SignedEncoding>>;
-pub type Int32StripeEncoder = PrimitiveStripeEncoder<Int32Type, RleWriterV2<i32, SignedEncoding>>;
-pub type Int64StripeEncoder = PrimitiveStripeEncoder<Int64Type, RleWriterV2<i64, SignedEncoding>>;
+pub type FloatStripeEncoder = PrimitiveColumnEncoder<Float32Type, FloatValueEncoder<Float32Type>>;
+pub type DoubleStripeEncoder = PrimitiveColumnEncoder<Float64Type, FloatValueEncoder<Float64Type>>;
+pub type ByteStripeEncoder = PrimitiveColumnEncoder<Int8Type, ByteRleWriter>;
+pub type Int16StripeEncoder = PrimitiveColumnEncoder<Int16Type, RleWriterV2<i16, SignedEncoding>>;
+pub type Int32StripeEncoder = PrimitiveColumnEncoder<Int32Type, RleWriterV2<i32, SignedEncoding>>;
+pub type Int64StripeEncoder = PrimitiveColumnEncoder<Int64Type, RleWriterV2<i64, SignedEncoding>>;
