@@ -26,11 +26,9 @@ use snafu::{ensure, ResultExt};
 
 use crate::{
     error::{IoSnafu, Result, UnexpectedSnafu},
+    memory::EstimateMemory,
     proto,
-    writer::{
-        column::EstimateMemory,
-        stripe::{StripeInformation, StripeWriter},
-    },
+    writer::stripe::{StripeInformation, StripeWriter},
 };
 
 /// Construct an [`ArrowWriter`] to encode [`RecordBatch`]es into a single

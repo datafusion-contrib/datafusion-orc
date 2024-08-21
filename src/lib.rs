@@ -39,6 +39,7 @@ pub mod async_arrow_reader;
 mod column;
 mod encoding;
 pub mod error;
+mod memory;
 pub mod projection;
 mod proto;
 pub mod reader;

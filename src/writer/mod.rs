@@ -20,9 +20,9 @@ use std::fmt::Debug;
 use arrow::{array::BooleanBufferBuilder, buffer::NullBuffer};
 use bytes::Bytes;
 
-use crate::{encoding::byte::ByteRleWriter, proto};
+use crate::{encoding::byte::ByteRleWriter, memory::EstimateMemory, proto};
 
-use self::column::{EstimateMemory, PrimitiveValueEncoder};
+use self::column::PrimitiveValueEncoder;
 
 pub mod column;
 pub mod stripe;

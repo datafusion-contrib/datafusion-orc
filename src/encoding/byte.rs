@@ -17,10 +17,7 @@
 
 use bytes::{BufMut, BytesMut};
 
-use crate::{
-    error::Result,
-    writer::column::{EstimateMemory, PrimitiveValueEncoder},
-};
+use crate::{error::Result, memory::EstimateMemory, writer::column::PrimitiveValueEncoder};
 use std::io::Read;
 
 use super::util::read_u8;
