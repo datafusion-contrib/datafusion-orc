@@ -24,10 +24,10 @@ use snafu::ResultExt;
 
 use crate::array_decoder::{derive_present_vec, populate_lengths_with_nulls};
 use crate::column::{get_present_vec, Column};
+use crate::encoding::get_unsigned_rle_reader;
 use crate::proto::stream::Kind;
 
 use crate::error::{ArrowSnafu, Result};
-use crate::reader::decode::get_unsigned_rle_reader;
 use crate::stripe::Stripe;
 
 use super::{array_decoder_factory, ArrayBatchDecoder};

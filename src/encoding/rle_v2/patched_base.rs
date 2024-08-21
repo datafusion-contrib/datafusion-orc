@@ -21,12 +21,16 @@ use bytes::{BufMut, BytesMut};
 use snafu::{OptionExt, ResultExt};
 
 use super::{EncodingType, NInt};
-use crate::error::{IoSnafu, OutOfSpecSnafu, Result};
-use crate::reader::decode::util::{
-    encode_bit_width, extract_run_length_from_header, get_closest_fixed_bits, read_ints, read_u8,
-    rle_v2_decode_bit_width, signed_msb_encode, write_packed_ints,
+use crate::{
+    encoding::{
+        util::{
+            encode_bit_width, extract_run_length_from_header, get_closest_fixed_bits, read_ints,
+            read_u8, rle_v2_decode_bit_width, signed_msb_encode, write_packed_ints,
+        },
+        EncodingSign, VarintSerde,
+    },
+    error::{IoSnafu, OutOfSpecSnafu, Result},
 };
-use crate::reader::decode::{EncodingSign, VarintSerde};
 
 pub fn read_patched_base<N: NInt, R: Read, S: EncodingSign>(
     reader: &mut R,
@@ -284,7 +288,7 @@ mod tests {
 
     use proptest::prelude::*;
 
-    use crate::reader::decode::{util::calculate_percentile_bits, SignedEncoding};
+    use crate::encoding::{util::calculate_percentile_bits, SignedEncoding};
 
     use super::*;
 

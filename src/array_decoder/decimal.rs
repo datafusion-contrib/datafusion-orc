@@ -19,8 +19,8 @@ use std::cmp::Ordering;
 
 use crate::column::get_present_vec;
 use crate::encoding::decimal::UnboundedVarintStreamDecoder;
+use crate::encoding::get_rle_reader;
 use crate::proto::stream::Kind;
-use crate::reader::decode::get_rle_reader;
 use crate::stripe::Stripe;
 use crate::{column::Column, error::Result};
 

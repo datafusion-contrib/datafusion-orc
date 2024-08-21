@@ -523,7 +523,7 @@ mod tests {
 
     use proptest::prelude::*;
 
-    use crate::reader::decode::{SignedEncoding, UnsignedEncoding};
+    use crate::encoding::{SignedEncoding, UnsignedEncoding};
 
     use super::*;
 

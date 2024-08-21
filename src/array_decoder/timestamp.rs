@@ -20,10 +20,9 @@ use std::sync::Arc;
 use crate::{
     array_decoder::ArrowDataType,
     column::{get_present_vec, Column},
-    encoding::timestamp::TimestampIterator,
+    encoding::{get_rle_reader, get_unsigned_rle_reader, timestamp::TimestampIterator},
     error::{MismatchedSchemaSnafu, Result},
     proto::stream::Kind,
-    reader::decode::{get_rle_reader, get_unsigned_rle_reader},
     stripe::Stripe,
 };
 use arrow::array::ArrayRef;
