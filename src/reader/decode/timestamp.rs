@@ -27,7 +27,7 @@ const NANOSECONDS_IN_SECOND: i64 = 1_000_000_000;
 pub struct TimestampIterator<T: ArrowTimestampType, Item: TryFrom<i128>> {
     base_from_epoch: i64,
     data: Box<dyn Iterator<Item = Result<i64>> + Send>,
-    secondary: Box<dyn Iterator<Item = Result<u64>> + Send>,
+    secondary: Box<dyn Iterator<Item = Result<i64>> + Send>,
     _marker: PhantomData<(T, Item)>,
 }
 
@@ -35,7 +35,7 @@ impl<T: ArrowTimestampType, Item: TryFrom<i128>> TimestampIterator<T, Item> {
     pub fn new(
         base_from_epoch: i64,
         data: Box<dyn Iterator<Item = Result<i64>> + Send>,
-        secondary: Box<dyn Iterator<Item = Result<u64>> + Send>,
+        secondary: Box<dyn Iterator<Item = Result<i64>> + Send>,
     ) -> Self {
         Self {
             base_from_epoch,
@@ -61,10 +61,11 @@ impl<T: ArrowTimestampType, Item: TryFrom<i128>> Iterator for TimestampIterator<
 fn decode_timestamp<T: ArrowTimestampType, Ret: TryFrom<i128>>(
     base: i64,
     seconds_since_orc_base: Result<i64>,
-    nanoseconds: Result<u64>,
+    nanoseconds: Result<i64>,
 ) -> Result<Option<Ret>> {
     let data = seconds_since_orc_base?;
-    let mut nanoseconds = nanoseconds?;
+    // TODO
+    let mut nanoseconds = nanoseconds? as u64;
     // Last 3 bits indicate how many trailing zeros were truncated
     let zeros = nanoseconds & 0x7;
     nanoseconds >>= 3;

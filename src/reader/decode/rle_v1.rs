@@ -17,7 +17,7 @@
 
 //! Handling decoding of Integer Run Length Encoded V1 data in ORC files
 
-use std::io::Read;
+use std::{io::Read, marker::PhantomData};
 
 use snafu::OptionExt;
 
@@ -25,24 +25,26 @@ use crate::error::{OutOfSpecSnafu, Result};
 
 use super::{
     util::{read_u8, read_varint_zigzagged, try_read_u8},
-    NInt,
+    EncodingSign, NInt,
 };
 
 const MAX_RUN_LENGTH: usize = 130;
 
 /// Decodes a stream of Integer Run Length Encoded version 1 bytes.
-pub struct RleReaderV1<N: NInt, R: Read> {
+pub struct RleReaderV1<N: NInt, R: Read, S: EncodingSign> {
     reader: R,
     decoded_ints: Vec<N>,
     current_head: usize,
+    phantom: PhantomData<S>,
 }
 
-impl<N: NInt, R: Read> RleReaderV1<N, R> {
+impl<N: NInt, R: Read, S: EncodingSign> RleReaderV1<N, R, S> {
     pub fn new(reader: R) -> Self {
         Self {
             reader,
             decoded_ints: Vec::with_capacity(MAX_RUN_LENGTH),
             current_head: 0,
+            phantom: Default::default(),
         }
     }
 
@@ -55,7 +57,7 @@ impl<N: NInt, R: Read> RleReaderV1<N, R> {
             Some(byte) if byte < 0 => {
                 let length = byte.unsigned_abs();
                 for _ in 0..length {
-                    let lit = read_varint_zigzagged(&mut self.reader)?;
+                    let lit = read_varint_zigzagged::<_, _, S>(&mut self.reader)?;
                     self.decoded_ints.push(lit);
                 }
                 Ok(true)
@@ -65,7 +67,7 @@ impl<N: NInt, R: Read> RleReaderV1<N, R> {
                 let byte = byte as u8;
                 let length = byte + 2; // Technically +3, but we subtract 1 for the base
                 let delta = read_u8(&mut self.reader)? as i8;
-                let mut base = read_varint_zigzagged(&mut self.reader)?;
+                let mut base = read_varint_zigzagged::<_, _, S>(&mut self.reader)?;
                 self.decoded_ints.push(base);
                 if delta < 0 {
                     let delta = delta.unsigned_abs();
@@ -93,7 +95,7 @@ impl<N: NInt, R: Read> RleReaderV1<N, R> {
     }
 }
 
-impl<N: NInt, R: Read> Iterator for RleReaderV1<N, R> {
+impl<N: NInt, R: Read, S: EncodingSign> Iterator for RleReaderV1<N, R, S> {
     type Item = Result<N>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -121,18 +123,20 @@ impl<N: NInt, R: Read> Iterator for RleReaderV1<N, R> {
 mod tests {
     use std::io::Cursor;
 
+    use crate::reader::decode::UnsignedEncoding;
+
     use super::*;
 
     #[test]
     fn test_run() -> Result<()> {
         let input = [0x61, 0x00, 0x07];
-        let decoder = RleReaderV1::<u64, _>::new(Cursor::new(&input));
+        let decoder = RleReaderV1::<i64, _, UnsignedEncoding>::new(Cursor::new(&input));
         let expected = vec![7; 100];
         let actual = decoder.collect::<Result<Vec<_>>>()?;
         assert_eq!(actual, expected);
 
         let input = [0x61, 0xff, 0x64];
-        let decoder = RleReaderV1::<u64, _>::new(Cursor::new(&input));
+        let decoder = RleReaderV1::<i64, _, UnsignedEncoding>::new(Cursor::new(&input));
         let expected = (1..=100).rev().collect::<Vec<_>>();
         let actual = decoder.collect::<Result<Vec<_>>>()?;
         assert_eq!(actual, expected);
@@ -143,7 +147,7 @@ mod tests {
     #[test]
     fn test_literal() -> Result<()> {
         let input = [0xfb, 0x02, 0x03, 0x06, 0x07, 0xb];
-        let decoder = RleReaderV1::<u64, _>::new(Cursor::new(&input));
+        let decoder = RleReaderV1::<i64, _, UnsignedEncoding>::new(Cursor::new(&input));
         let expected = vec![2, 3, 6, 7, 11];
         let actual = decoder.collect::<Result<Vec<_>>>()?;
         assert_eq!(actual, expected);

@@ -19,10 +19,10 @@ use std::io::Read;
 
 use crate::error::Result;
 
-use super::byte_rle::ByteRleIter;
+use super::byte_rle::ByteRleReader;
 
 pub struct BooleanIter<R: Read> {
-    iter: ByteRleIter<R>,
+    iter: ByteRleReader<R>,
     data: u8,
     bits_in_data: usize,
 }
@@ -30,7 +30,7 @@ pub struct BooleanIter<R: Read> {
 impl<R: Read> BooleanIter<R> {
     pub fn new(reader: R) -> Self {
         Self {
-            iter: ByteRleIter::new(reader),
+            iter: ByteRleReader::new(reader),
             bits_in_data: 0,
             data: 0,
         }
@@ -68,7 +68,7 @@ impl<R: Read> Iterator for BooleanIter<R> {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     #[test]

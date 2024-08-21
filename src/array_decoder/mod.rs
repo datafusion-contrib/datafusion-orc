@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use arrow::array::{ArrayRef, BooleanArray, BooleanBuilder, PrimitiveArray, PrimitiveBuilder};
 use arrow::buffer::NullBuffer;
-use arrow::datatypes::{ArrowPrimitiveType, Decimal128Type, UInt64Type};
+use arrow::datatypes::{ArrowPrimitiveType, Decimal128Type};
 use arrow::datatypes::{DataType as ArrowDataType, Field};
 use arrow::datatypes::{
     Date32Type, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type, SchemaRef,
@@ -33,7 +33,7 @@ use crate::error::{
 };
 use crate::proto::stream::Kind;
 use crate::reader::decode::boolean_rle::BooleanIter;
-use crate::reader::decode::byte_rle::ByteRleIter;
+use crate::reader::decode::byte_rle::ByteRleReader;
 use crate::reader::decode::float::FloatIter;
 use crate::reader::decode::get_rle_reader;
 use crate::schema::DataType;
@@ -119,7 +119,6 @@ impl<T: ArrowPrimitiveType> ArrayBatchDecoder for PrimitiveArrayDecoder<T> {
     }
 }
 
-type UInt64ArrayDecoder = PrimitiveArrayDecoder<UInt64Type>;
 type Int64ArrayDecoder = PrimitiveArrayDecoder<Int64Type>;
 type Int32ArrayDecoder = PrimitiveArrayDecoder<Int32Type>;
 type Int16ArrayDecoder = PrimitiveArrayDecoder<Int16Type>;
@@ -260,7 +259,7 @@ fn derive_present_vec(
 
 /// Fix the lengths to account for nulls (represented as 0 length)
 fn populate_lengths_with_nulls(
-    lengths: Vec<u64>,
+    lengths: Vec<i64>,
     batch_size: usize,
     present: &Option<Vec<bool>>,
 ) -> Vec<usize> {
@@ -365,7 +364,8 @@ pub fn array_decoder_factory(
                 }
             );
             let iter = stripe.stream_map().get(column, Kind::Data);
-            let iter = Box::new(ByteRleIter::new(iter).map(|value| value.map(|value| value as i8)));
+            let iter =
+                Box::new(ByteRleReader::new(iter).map(|value| value.map(|value| value as i8)));
             let present = get_present_vec(column, stripe)?
                 .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
             Box::new(Int8ArrayDecoder::new(iter, present))

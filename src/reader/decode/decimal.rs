@@ -19,6 +19,8 @@ use std::io::Read;
 
 use crate::{error::Result, reader::decode::util::read_varint_zigzagged};
 
+use super::SignedEncoding;
+
 /// Read stream of zigzag encoded varints as i128 (unbound).
 pub struct UnboundedVarintStreamDecoder<R: Read> {
     reader: R,
@@ -40,7 +42,7 @@ impl<R: Read> Iterator for UnboundedVarintStreamDecoder<R> {
     fn next(&mut self) -> Option<Self::Item> {
         (self.remaining > 0).then(|| {
             self.remaining -= 1;
-            read_varint_zigzagged::<i128, _>(&mut self.reader)
+            read_varint_zigzagged::<i128, _, SignedEncoding>(&mut self.reader)
         })
     }
 }
