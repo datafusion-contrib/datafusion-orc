@@ -37,7 +37,6 @@ use self::util::{
 pub mod boolean_rle;
 pub mod byte_rle;
 pub mod decimal;
-pub mod float;
 mod rle_v1;
 pub mod rle_v2;
 pub mod timestamp;
