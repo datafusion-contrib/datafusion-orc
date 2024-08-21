@@ -20,7 +20,7 @@ use std::fmt::Debug;
 use arrow::{array::BooleanBufferBuilder, buffer::NullBuffer};
 use bytes::Bytes;
 
-use crate::{proto, reader::decode::byte_rle::ByteRleWriter};
+use crate::{encoding::byte::ByteRleWriter, proto};
 
 use self::column::{EstimateMemory, PrimitiveValueEncoder};
 

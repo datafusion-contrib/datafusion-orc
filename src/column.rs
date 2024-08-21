@@ -20,10 +20,10 @@ use std::sync::Arc;
 use bytes::Bytes;
 use snafu::ResultExt;
 
+use crate::encoding::boolean::BooleanIter;
 use crate::error::{IoSnafu, Result};
 use crate::proto::stream::Kind;
 use crate::proto::{ColumnEncoding, StripeFooter};
-use crate::reader::decode::boolean_rle::BooleanIter;
 use crate::reader::ChunkReader;
 use crate::schema::DataType;
 use crate::stripe::Stripe;

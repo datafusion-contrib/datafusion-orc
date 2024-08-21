@@ -19,11 +19,10 @@ use bytes::{BufMut, BytesMut};
 
 use crate::{
     error::Result,
+    reader::decode::util::read_u8,
     writer::column::{EstimateMemory, PrimitiveValueEncoder},
 };
 use std::io::Read;
-
-use super::util::read_u8;
 
 const MAX_LITERAL_LENGTH: usize = 128;
 const MIN_REPEAT_LENGTH: usize = 3;
