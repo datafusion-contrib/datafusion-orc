@@ -23,11 +23,13 @@ use std::{
     ops::{BitOrAssign, ShlAssign},
 };
 
+use bytes::Bytes;
 use num::{traits::CheckedShl, PrimInt, Signed};
 
 use crate::{
     column::Column,
     error::{InvalidColumnEncodingSnafu, Result},
+    memory::EstimateMemory,
     proto::column_encoding::Kind as ProtoColumnKind,
 };
 
@@ -48,6 +50,28 @@ pub mod rle_v1;
 pub mod rle_v2;
 pub mod timestamp;
 mod util;
+
+/// Encodes primitive values into an internal buffer, usually with a specialized run length
+/// encoding for better compression.
+pub trait PrimitiveValueEncoder<V>: EstimateMemory
+where
+    V: Copy,
+{
+    fn new() -> Self;
+
+    fn write_one(&mut self, value: V);
+
+    fn write_slice(&mut self, values: &[V]) {
+        for &value in values {
+            self.write_one(value);
+        }
+    }
+
+    /// Take the encoded bytes, replacing it with an empty buffer.
+    // TODO: Figure out how to retain the allocation instead of handing
+    //       it off each time.
+    fn take_inner(&mut self) -> Bytes;
+}
 
 pub fn get_unsigned_rle_reader<R: Read + Send + 'static>(
     column: &Column,

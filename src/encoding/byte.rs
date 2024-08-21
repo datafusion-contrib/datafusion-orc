@@ -17,10 +17,10 @@
 
 use bytes::{BufMut, BytesMut};
 
-use crate::{error::Result, memory::EstimateMemory, writer::column::PrimitiveValueEncoder};
+use crate::{error::Result, memory::EstimateMemory};
 use std::io::Read;
 
-use super::util::read_u8;
+use super::{util::read_u8, PrimitiveValueEncoder};
 
 const MAX_LITERAL_LENGTH: usize = 128;
 const MIN_REPEAT_LENGTH: usize = 3;

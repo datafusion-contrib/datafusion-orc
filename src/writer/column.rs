@@ -23,11 +23,11 @@ use arrow::{
         ArrowPrimitiveType, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type,
     },
 };
-use bytes::Bytes;
 
 use crate::{
     encoding::{
-        byte::ByteRleWriter, float::FloatValueEncoder, rle_v2::RleWriterV2, SignedEncoding,
+        byte::ByteRleWriter, float::FloatValueEncoder, rle_v2::RleWriterV2, PrimitiveValueEncoder,
+        SignedEncoding,
     },
     error::Result,
     memory::EstimateMemory,
@@ -49,28 +49,6 @@ pub trait ColumnStripeEncoder: EstimateMemory {
     /// Emit buffered streams to be written to the writer, and reset state
     /// in preparation for next stripe.
     fn finish(&mut self) -> Vec<Stream>;
-}
-
-/// Encodes primitive values into an internal buffer, usually with a specialized run length
-/// encoding for better compression.
-pub trait PrimitiveValueEncoder<V>: EstimateMemory
-where
-    V: Copy,
-{
-    fn new() -> Self;
-
-    fn write_one(&mut self, value: V);
-
-    fn write_slice(&mut self, values: &[V]) {
-        for &value in values {
-            self.write_one(value);
-        }
-    }
-
-    /// Take the encoded bytes, replacing it with an empty buffer.
-    // TODO: Figure out how to retain the allocation instead of handing
-    //       it off each time.
-    fn take_inner(&mut self) -> Bytes;
 }
 
 // TODO: simplify these generics, probably overcomplicating things here

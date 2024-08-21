@@ -24,8 +24,9 @@ use snafu::ResultExt;
 use crate::{
     error::{self, Result},
     memory::EstimateMemory,
-    writer::column::PrimitiveValueEncoder,
 };
+
+use super::PrimitiveValueEncoder;
 
 /// Generically represent f32 and f64.
 // TODO: figure out how to use num::traits::FromBytes instead of rolling our own?
