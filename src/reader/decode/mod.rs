@@ -34,13 +34,9 @@ use self::util::{
 
 // TODO: rename mod to encoding
 
-pub mod boolean_rle;
-pub mod byte_rle;
-pub mod decimal;
-mod rle_v1;
+pub mod rle_v1;
 pub mod rle_v2;
-pub mod timestamp;
-mod util;
+pub mod util;
 
 pub fn get_unsigned_rle_reader<R: Read + Send + 'static>(
     column: &Column,

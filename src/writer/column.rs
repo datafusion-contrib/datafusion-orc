@@ -26,9 +26,9 @@ use arrow::{
 use bytes::Bytes;
 
 use crate::{
-    encoding::float::FloatValueEncoder,
+    encoding::{byte::ByteRleWriter, float::FloatValueEncoder},
     error::Result,
-    reader::decode::{byte_rle::ByteRleWriter, rle_v2::RleWriterV2, SignedEncoding},
+    reader::decode::{rle_v2::RleWriterV2, SignedEncoding},
     writer::StreamType,
 };
 

@@ -19,7 +19,7 @@ use std::io::Read;
 
 use crate::error::Result;
 
-use super::byte_rle::ByteRleReader;
+use super::byte::ByteRleReader;
 
 pub struct BooleanIter<R: Read> {
     iter: ByteRleReader<R>,

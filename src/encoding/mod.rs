@@ -17,4 +17,8 @@
 
 //! TODO: MODULE DOC
 
+pub mod boolean;
+pub mod byte;
+pub mod decimal;
 pub mod float;
+pub mod timestamp;

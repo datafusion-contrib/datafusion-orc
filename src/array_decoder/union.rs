@@ -23,10 +23,10 @@ use arrow::datatypes::UnionFields;
 use snafu::ResultExt;
 
 use crate::column::{get_present_vec, Column};
+use crate::encoding::byte::ByteRleReader;
 use crate::error::ArrowSnafu;
 use crate::error::Result;
 use crate::proto::stream::Kind;
-use crate::reader::decode::byte_rle::ByteRleReader;
 use crate::stripe::Stripe;
 
 use super::{array_decoder_factory, derive_present_vec, ArrayBatchDecoder};
