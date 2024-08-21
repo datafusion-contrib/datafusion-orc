@@ -23,11 +23,12 @@ use prost::Message;
 use snafu::ResultExt;
 
 use crate::error::{IoSnafu, Result};
+use crate::memory::EstimateMemory;
 use crate::proto;
 
 use super::column::{
-    ByteStripeEncoder, ColumnStripeEncoder, DoubleStripeEncoder, EstimateMemory,
-    FloatStripeEncoder, Int16StripeEncoder, Int32StripeEncoder, Int64StripeEncoder,
+    ByteStripeEncoder, ColumnStripeEncoder, DoubleStripeEncoder, FloatStripeEncoder,
+    Int16StripeEncoder, Int32StripeEncoder, Int64StripeEncoder,
 };
 use super::{ColumnEncoding, StreamType};
 

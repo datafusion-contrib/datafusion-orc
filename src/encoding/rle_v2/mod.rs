@@ -19,10 +19,7 @@ use std::{io::Read, marker::PhantomData};
 
 use bytes::BytesMut;
 
-use crate::{
-    error::Result,
-    writer::column::{EstimateMemory, PrimitiveValueEncoder},
-};
+use crate::{error::Result, memory::EstimateMemory, writer::column::PrimitiveValueEncoder};
 
 use self::{
     delta::{read_delta_values, write_fixed_delta, write_varying_delta},

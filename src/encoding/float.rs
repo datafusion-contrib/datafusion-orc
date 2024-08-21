@@ -23,7 +23,8 @@ use snafu::ResultExt;
 
 use crate::{
     error::{self, Result},
-    writer::column::{EstimateMemory, PrimitiveValueEncoder},
+    memory::EstimateMemory,
+    writer::column::PrimitiveValueEncoder,
 };
 
 /// Generically represent f32 and f64.

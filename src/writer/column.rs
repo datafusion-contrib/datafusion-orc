@@ -30,17 +30,11 @@ use crate::{
         byte::ByteRleWriter, float::FloatValueEncoder, rle_v2::RleWriterV2, SignedEncoding,
     },
     error::Result,
+    memory::EstimateMemory,
     writer::StreamType,
 };
 
 use super::{ColumnEncoding, PresentStreamEncoder, Stream};
-
-/// Used to help determine when to finish writing a stripe once a certain
-/// size threshold has been reached.
-pub trait EstimateMemory {
-    /// Approximate current memory usage in bytes.
-    fn estimate_memory_size(&self) -> usize;
-}
 
 /// Encodes a specific column for a stripe. Will encode to an internal memory
 /// buffer until it is finished, in which case it returns the stream bytes to
