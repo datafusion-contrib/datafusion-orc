@@ -19,7 +19,7 @@ use std::{io::Read, marker::PhantomData};
 
 use bytes::BytesMut;
 
-use crate::{error::Result, memory::EstimateMemory, writer::column::PrimitiveValueEncoder};
+use crate::{error::Result, memory::EstimateMemory};
 
 use self::{
     delta::{read_delta_values, write_fixed_delta, write_varying_delta},
@@ -30,7 +30,7 @@ use self::{
 
 use super::{
     util::{calculate_percentile_bits, try_read_u8},
-    EncodingSign, NInt, VarintSerde,
+    EncodingSign, NInt, PrimitiveValueEncoder, VarintSerde,
 };
 
 pub mod delta;
