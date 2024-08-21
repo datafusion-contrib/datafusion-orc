@@ -33,6 +33,7 @@
 
 mod array_decoder;
 pub mod arrow_reader;
+pub mod arrow_writer;
 #[cfg(feature = "async")]
 pub mod async_arrow_reader;
 mod column;
@@ -43,8 +44,10 @@ pub mod reader;
 pub mod schema;
 pub mod statistics;
 pub mod stripe;
+mod writer;
 
 pub use arrow_reader::{ArrowReader, ArrowReaderBuilder};
+pub use arrow_writer::{ArrowWriter, ArrowWriterBuilder};
 #[cfg(feature = "async")]
 pub use async_arrow_reader::ArrowStreamReader;
 
