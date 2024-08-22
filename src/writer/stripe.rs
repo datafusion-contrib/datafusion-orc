@@ -27,8 +27,8 @@ use crate::memory::EstimateMemory;
 use crate::proto;
 
 use super::column::{
-    ByteStripeEncoder, ColumnStripeEncoder, DoubleStripeEncoder, FloatStripeEncoder,
-    Int16StripeEncoder, Int32StripeEncoder, Int64StripeEncoder, LargeStringColumnEncoder,
+    ByteColumnEncoder, ColumnStripeEncoder, DoubleColumnEncoder, FloatColumnEncoder,
+    Int16ColumnEncoder, Int32ColumnEncoder, Int64ColumnEncoder, LargeStringColumnEncoder,
     StringColumnEncoder,
 };
 use super::{ColumnEncoding, StreamType};
@@ -172,12 +172,12 @@ impl<W: Write> StripeWriter<W> {
 
 fn create_encoder(field: &FieldRef) -> Box<dyn ColumnStripeEncoder> {
     match field.data_type() {
-        ArrowDataType::Float32 => Box::new(FloatStripeEncoder::new(ColumnEncoding::Direct)),
-        ArrowDataType::Float64 => Box::new(DoubleStripeEncoder::new(ColumnEncoding::Direct)),
-        ArrowDataType::Int8 => Box::new(ByteStripeEncoder::new(ColumnEncoding::Direct)),
-        ArrowDataType::Int16 => Box::new(Int16StripeEncoder::new(ColumnEncoding::DirectV2)),
-        ArrowDataType::Int32 => Box::new(Int32StripeEncoder::new(ColumnEncoding::DirectV2)),
-        ArrowDataType::Int64 => Box::new(Int64StripeEncoder::new(ColumnEncoding::DirectV2)),
+        ArrowDataType::Float32 => Box::new(FloatColumnEncoder::new(ColumnEncoding::Direct)),
+        ArrowDataType::Float64 => Box::new(DoubleColumnEncoder::new(ColumnEncoding::Direct)),
+        ArrowDataType::Int8 => Box::new(ByteColumnEncoder::new(ColumnEncoding::Direct)),
+        ArrowDataType::Int16 => Box::new(Int16ColumnEncoder::new(ColumnEncoding::DirectV2)),
+        ArrowDataType::Int32 => Box::new(Int32ColumnEncoder::new(ColumnEncoding::DirectV2)),
+        ArrowDataType::Int64 => Box::new(Int64ColumnEncoder::new(ColumnEncoding::DirectV2)),
         ArrowDataType::Utf8 => Box::new(StringColumnEncoder::new()),
         ArrowDataType::LargeUtf8 => Box::new(LargeStringColumnEncoder::new()),
         // TODO: support more datatypes
