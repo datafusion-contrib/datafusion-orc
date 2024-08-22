@@ -28,15 +28,15 @@ use bytes::{BufMut, BytesMut};
 
 use crate::{
     encoding::{
-        byte::ByteRleWriter, float::FloatValueEncoder, rle_v2::RleWriterV2, NInt,
-        PrimitiveValueEncoder, SignedEncoding, UnsignedEncoding,
+        boolean::BooleanEncoder, byte::ByteRleWriter, float::FloatValueEncoder,
+        rle_v2::RleWriterV2, NInt, PrimitiveValueEncoder, SignedEncoding, UnsignedEncoding,
     },
     error::Result,
     memory::EstimateMemory,
     writer::StreamType,
 };
 
-use super::{ColumnEncoding, PresentStreamEncoder, Stream};
+use super::{ColumnEncoding, Stream};
 
 /// Encodes a specific column for a stripe. Will encode to an internal memory
 /// buffer until it is finished, in which case it returns the stream bytes to
@@ -62,7 +62,7 @@ pub struct PrimitiveColumnEncoder<T: ArrowPrimitiveType, E: PrimitiveValueEncode
     encoder: E,
     column_encoding: ColumnEncoding,
     /// Lazily initialized once we encounter an [`Array`] with a [`NullBuffer`].
-    present: Option<PresentStreamEncoder>,
+    present: Option<BooleanEncoder>,
     encoded_count: usize,
     _phantom: PhantomData<T>,
 }
@@ -113,7 +113,7 @@ impl<T: ArrowPrimitiveType, E: PrimitiveValueEncoder<T::Native>> ColumnStripeEnc
             }
             (Some(null_buffer), None) => {
                 // Lazily initiate present buffer and ensure backfill the already encoded values
-                let mut present = PresentStreamEncoder::new();
+                let mut present = BooleanEncoder::new();
                 present.extend_present(self.encoded_count);
                 present.extend(null_buffer);
                 self.present = Some(present);
@@ -168,7 +168,7 @@ where
 {
     string_bytes: BytesMut,
     length_encoder: RleWriterV2<T::Offset, UnsignedEncoding>,
-    present: Option<PresentStreamEncoder>,
+    present: Option<BooleanEncoder>,
     encoded_count: usize,
 }
 
@@ -224,7 +224,7 @@ where
             }
             (Some(null_buffer), None) => {
                 // Lazily initiate present buffer and ensure backfill the already encoded values
-                let mut present = PresentStreamEncoder::new();
+                let mut present = BooleanEncoder::new();
                 present.extend_present(self.encoded_count);
                 present.extend(null_buffer);
                 self.present = Some(present);
