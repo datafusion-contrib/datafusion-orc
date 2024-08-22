@@ -284,7 +284,7 @@ impl FallibleStreamingIterator for DecompressorIter {
 }
 
 /// A [`Read`]er fulfilling the ORC specification of reading compressed data.
-pub struct Decompressor {
+pub(crate) struct Decompressor {
     decompressor: DecompressorIter,
     offset: usize,
     is_first: bool,
