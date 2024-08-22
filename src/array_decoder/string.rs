@@ -27,11 +27,11 @@ use snafu::ResultExt;
 
 use crate::array_decoder::{create_null_buffer, derive_present_vec, populate_lengths_with_nulls};
 use crate::column::{get_present_vec, Column};
+use crate::compression::Decompressor;
 use crate::encoding::get_unsigned_rle_reader;
 use crate::error::{ArrowSnafu, IoSnafu, Result};
 use crate::proto::column_encoding::Kind as ColumnEncodingKind;
 use crate::proto::stream::Kind;
-use crate::reader::decompress::Decompressor;
 use crate::stripe::Stripe;
 
 use super::{ArrayBatchDecoder, Int64ArrayDecoder};

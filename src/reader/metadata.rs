@@ -48,14 +48,13 @@ use bytes::{Bytes, BytesMut};
 use prost::Message;
 use snafu::{ensure, OptionExt, ResultExt};
 
+use crate::compression::{Compression, Decompressor};
 use crate::error::{self, EmptyFileSnafu, OutOfSpecSnafu, Result};
 use crate::proto::{self, Footer, Metadata, PostScript};
-use crate::reader::decompress::Decompressor;
 use crate::schema::RootDataType;
 use crate::statistics::ColumnStatistics;
 use crate::stripe::StripeMetadata;
 
-use super::decompress::Compression;
 use crate::reader::ChunkReader;
 
 const DEFAULT_FOOTER_SIZE: u64 = 16 * 1024;

@@ -23,13 +23,10 @@ use snafu::ResultExt;
 
 use crate::{
     column::Column,
+    compression::{Compression, Decompressor},
     error::{self, IoSnafu, Result},
     proto::{self, stream::Kind, StripeFooter},
-    reader::{
-        decompress::{Compression, Decompressor},
-        metadata::FileMetadata,
-        ChunkReader,
-    },
+    reader::{metadata::FileMetadata, ChunkReader},
     schema::RootDataType,
     statistics::ColumnStatistics,
 };

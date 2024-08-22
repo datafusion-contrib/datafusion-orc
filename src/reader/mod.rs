@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-pub mod decompress;
 pub mod metadata;
 
 use std::fs::File;
