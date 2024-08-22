@@ -15,7 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! TODO: MODULE DOC
+//! Encoding/Decoding logic for writing/reading Run Length Encoded values
+//! from ORC types.
 
 use std::{
     fmt,
