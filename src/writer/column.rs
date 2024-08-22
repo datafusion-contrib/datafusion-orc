@@ -18,16 +18,17 @@
 use std::marker::PhantomData;
 
 use arrow::{
-    array::{Array, ArrayRef, AsArray},
+    array::{Array, ArrayRef, AsArray, OffsetSizeTrait},
     datatypes::{
         ArrowPrimitiveType, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type,
     },
 };
+use bytes::{BufMut, BytesMut};
 
 use crate::{
     encoding::{
-        byte::ByteRleWriter, float::FloatValueEncoder, rle_v2::RleWriterV2, PrimitiveValueEncoder,
-        SignedEncoding,
+        byte::ByteRleWriter, float::FloatValueEncoder, rle_v2::RleWriterV2, NInt,
+        PrimitiveValueEncoder, SignedEncoding, UnsignedEncoding,
     },
     error::Result,
     memory::EstimateMemory,
@@ -121,14 +122,12 @@ impl<T: ArrowPrimitiveType, E: PrimitiveValueEncoder<T::Native>> ColumnStripeEnc
                 }
             }
             // Simple direct copy from values buffer, extending present if needed
-            (None, Some(present)) => {
+            (None, _) => {
                 let values = array.values();
                 self.encoder.write_slice(values);
-                present.extend_present(array.len());
-            }
-            (None, None) => {
-                let values = array.values();
-                self.encoder.write_slice(values);
+                if let Some(present) = self.present.as_mut() {
+                    present.extend_present(array.len())
+                }
             }
         }
         self.encoded_count += array.len() - array.null_count();
@@ -161,9 +160,130 @@ impl<T: ArrowPrimitiveType, E: PrimitiveValueEncoder<T::Native>> ColumnStripeEnc
     }
 }
 
+/// Direct encodes strings.
+pub struct GenericStringColumnEncoder<N: NInt + OffsetSizeTrait> {
+    string_bytes: BytesMut,
+    length_encoder: RleWriterV2<N, UnsignedEncoding>,
+    present: Option<PresentStreamEncoder>,
+    encoded_count: usize,
+}
+
+impl<N: NInt + OffsetSizeTrait> GenericStringColumnEncoder<N> {
+    pub fn new() -> Self {
+        Self {
+            string_bytes: BytesMut::new(),
+            length_encoder: RleWriterV2::new(),
+            present: None,
+            encoded_count: 0,
+        }
+    }
+}
+
+impl<N: NInt + OffsetSizeTrait> EstimateMemory for GenericStringColumnEncoder<N> {
+    fn estimate_memory_size(&self) -> usize {
+        self.string_bytes.len()
+            + self.length_encoder.estimate_memory_size()
+            + self
+                .present
+                .as_ref()
+                .map(|p| p.estimate_memory_size())
+                .unwrap_or(0)
+    }
+}
+
+impl<N: NInt + OffsetSizeTrait> ColumnStripeEncoder for GenericStringColumnEncoder<N> {
+    fn encode_array(&mut self, array: &ArrayRef) -> Result<()> {
+        if array.is_empty() {
+            return Ok(());
+        }
+        // TODO: return as result instead of panicking here?
+        let array = array.as_string::<N>();
+        // Handling case where if encoding across RecordBatch boundaries, arrays
+        // might introduce a NullBuffer
+        match (array.nulls(), &mut self.present) {
+            // Need to copy only the valid values as indicated by null_buffer
+            (Some(null_buffer), Some(present)) => {
+                present.extend(null_buffer);
+                for index in null_buffer.valid_indices() {
+                    self.length_encoder.write_one(array.value_length(index));
+                    self.string_bytes.put_slice(array.value(index).as_bytes());
+                }
+            }
+            (Some(null_buffer), None) => {
+                // Lazily initiate present buffer and ensure backfill the already encoded values
+                let mut present = PresentStreamEncoder::new();
+                present.extend_present(self.encoded_count);
+                present.extend(null_buffer);
+                self.present = Some(present);
+                for index in null_buffer.valid_indices() {
+                    self.length_encoder.write_one(array.value_length(index));
+                    self.string_bytes.put_slice(array.value(index).as_bytes());
+                }
+            }
+            // Simple direct copy from values buffer, extending present if needed
+            (None, _) => {
+                let offsets = array.offsets();
+                let first_offset = offsets[0];
+
+                let mut length_to_copy = N::zero();
+                let mut prev_offset = first_offset;
+                // Derive lengths from offsets then encode them as ints
+                for &offset in offsets.iter().skip(1) {
+                    let length = offset - prev_offset;
+                    self.length_encoder.write_one(length);
+                    length_to_copy += length;
+                    prev_offset = offset;
+                }
+                // Copy all string bytes in a single go
+                let first_offset = first_offset.to_usize().unwrap();
+                let end_offset = first_offset + length_to_copy.to_usize().unwrap();
+                let string_bytes = &array.value_data()[first_offset..end_offset];
+                self.string_bytes.put_slice(string_bytes);
+                if let Some(present) = self.present.as_mut() {
+                    present.extend_present(array.len())
+                }
+            }
+        }
+        self.encoded_count += array.len() - array.null_count();
+        Ok(())
+    }
+
+    fn column_encoding(&self) -> ColumnEncoding {
+        ColumnEncoding::DirectV2
+    }
+
+    fn finish(&mut self) -> Vec<Stream> {
+        // TODO: throwing away allocations here
+        let data_bytes = std::mem::take(&mut self.string_bytes);
+        let length_bytes = self.length_encoder.take_inner();
+        let data = Stream {
+            kind: StreamType::Data,
+            bytes: data_bytes.into(),
+        };
+        let length = Stream {
+            kind: StreamType::Length,
+            bytes: length_bytes,
+        };
+        self.encoded_count = 0;
+        match &mut self.present {
+            Some(present) => {
+                let bytes = present.finish();
+                let present = Stream {
+                    kind: StreamType::Present,
+                    bytes,
+                };
+                vec![data, length, present]
+            }
+            None => vec![data, length],
+        }
+    }
+}
+
 pub type FloatStripeEncoder = PrimitiveColumnEncoder<Float32Type, FloatValueEncoder<Float32Type>>;
 pub type DoubleStripeEncoder = PrimitiveColumnEncoder<Float64Type, FloatValueEncoder<Float64Type>>;
 pub type ByteStripeEncoder = PrimitiveColumnEncoder<Int8Type, ByteRleWriter>;
 pub type Int16StripeEncoder = PrimitiveColumnEncoder<Int16Type, RleWriterV2<i16, SignedEncoding>>;
 pub type Int32StripeEncoder = PrimitiveColumnEncoder<Int32Type, RleWriterV2<i32, SignedEncoding>>;
 pub type Int64StripeEncoder = PrimitiveColumnEncoder<Int64Type, RleWriterV2<i64, SignedEncoding>>;
+pub type StringColumnEncoder = GenericStringColumnEncoder<i32>;
+pub type LargeStringColumnEncoder = GenericStringColumnEncoder<i64>;
