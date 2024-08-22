@@ -204,6 +204,10 @@ fn serialize_schema(schema: &SchemaRef) -> Vec<proto::Type> {
                 kind: Some(proto::r#type::Kind::String.into()),
                 ..Default::default()
             },
+            ArrowDataType::Binary | ArrowDataType::LargeBinary => proto::Type {
+                kind: Some(proto::r#type::Kind::Binary.into()),
+                ..Default::default()
+            },
             // TODO: support more types
             _ => unimplemented!("unsupported datatype"),
         };
@@ -255,8 +259,8 @@ mod tests {
 
     use arrow::{
         array::{
-            Array, Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, Int8Array,
-            LargeStringArray, RecordBatchReader, StringArray,
+            Array, BinaryArray, Float32Array, Float64Array, Int16Array, Int32Array, Int64Array,
+            Int8Array, LargeBinaryArray, LargeStringArray, RecordBatchReader, StringArray,
         },
         compute::concat_batches,
         datatypes::{DataType as ArrowDataType, Field, Schema},
@@ -299,6 +303,15 @@ mod tests {
             "",
             "123",
         ]));
+        let binary_array = Arc::new(BinaryArray::from(vec![
+            "Hello".as_bytes(),
+            "there".as_bytes(),
+            "楡井希実".as_bytes(),
+            "💯".as_bytes(),
+            "ORC".as_bytes(),
+            "".as_bytes(),
+            "123".as_bytes(),
+        ]));
         let schema = Schema::new(vec![
             Field::new("f32", ArrowDataType::Float32, false),
             Field::new("f64", ArrowDataType::Float64, false),
@@ -307,6 +320,7 @@ mod tests {
             Field::new("int32", ArrowDataType::Int32, false),
             Field::new("int64", ArrowDataType::Int64, false),
             Field::new("utf8", ArrowDataType::Utf8, false),
+            Field::new("binary", ArrowDataType::Binary, false),
         ]);
 
         let batch = RecordBatch::try_new(
@@ -319,6 +333,7 @@ mod tests {
                 int32_array,
                 int64_array,
                 utf8_array,
+                binary_array,
             ],
         )
         .unwrap();
@@ -338,16 +353,26 @@ mod tests {
             "",
             "123",
         ]));
-        let schema = Schema::new(vec![Field::new(
-            "large_utf8",
-            ArrowDataType::LargeUtf8,
-            false,
-        )]);
-        let batch = RecordBatch::try_new(Arc::new(schema), vec![large_utf8_array]).unwrap();
+        let large_binary_array = Arc::new(LargeBinaryArray::from(vec![
+            "Hello".as_bytes(),
+            "there".as_bytes(),
+            "楡井希実".as_bytes(),
+            "💯".as_bytes(),
+            "ORC".as_bytes(),
+            "".as_bytes(),
+            "123".as_bytes(),
+        ]));
+        let schema = Schema::new(vec![
+            Field::new("large_utf8", ArrowDataType::LargeUtf8, false),
+            Field::new("large_binary", ArrowDataType::LargeBinary, false),
+        ]);
+        let batch =
+            RecordBatch::try_new(Arc::new(schema), vec![large_utf8_array, large_binary_array])
+                .unwrap();
 
         let rows = roundtrip(&[batch]);
 
-        // Currently we read all String columns from ORC as plain StringArray
+        // Currently we read all String/Binary columns from ORC as plain StringArray/BinaryArray
         let utf8_array = Arc::new(StringArray::from(vec![
             "Hello",
             "there",
@@ -357,8 +382,20 @@ mod tests {
             "",
             "123",
         ]));
-        let schema = Schema::new(vec![Field::new("large_utf8", ArrowDataType::Utf8, false)]);
-        let batch = RecordBatch::try_new(Arc::new(schema), vec![utf8_array]).unwrap();
+        let binary_array = Arc::new(BinaryArray::from(vec![
+            "Hello".as_bytes(),
+            "there".as_bytes(),
+            "楡井希実".as_bytes(),
+            "💯".as_bytes(),
+            "ORC".as_bytes(),
+            "".as_bytes(),
+            "123".as_bytes(),
+        ]));
+        let schema = Schema::new(vec![
+            Field::new("large_utf8", ArrowDataType::Utf8, false),
+            Field::new("large_binary", ArrowDataType::Binary, false),
+        ]);
+        let batch = RecordBatch::try_new(Arc::new(schema), vec![utf8_array, binary_array]).unwrap();
         assert_eq!(batch, rows[0]);
     }
 

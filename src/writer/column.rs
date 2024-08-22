@@ -18,9 +18,10 @@
 use std::marker::PhantomData;
 
 use arrow::{
-    array::{Array, ArrayRef, AsArray, OffsetSizeTrait},
+    array::{Array, ArrayRef, AsArray},
     datatypes::{
-        ArrowPrimitiveType, Float32Type, Float64Type, Int16Type, Int32Type, Int64Type, Int8Type,
+        ArrowPrimitiveType, ByteArrayType, Float32Type, Float64Type, GenericBinaryType,
+        GenericStringType, Int16Type, Int32Type, Int64Type, Int8Type,
     },
 };
 use bytes::{BufMut, BytesMut};
@@ -160,15 +161,21 @@ impl<T: ArrowPrimitiveType, E: PrimitiveValueEncoder<T::Native>> ColumnStripeEnc
     }
 }
 
-/// Direct encodes strings.
-pub struct GenericStringColumnEncoder<N: NInt + OffsetSizeTrait> {
+/// Direct encodes binary/strings.
+pub struct GenericBinaryColumnEncoder<T: ByteArrayType>
+where
+    T::Offset: NInt,
+{
     string_bytes: BytesMut,
-    length_encoder: RleWriterV2<N, UnsignedEncoding>,
+    length_encoder: RleWriterV2<T::Offset, UnsignedEncoding>,
     present: Option<PresentStreamEncoder>,
     encoded_count: usize,
 }
 
-impl<N: NInt + OffsetSizeTrait> GenericStringColumnEncoder<N> {
+impl<T: ByteArrayType> GenericBinaryColumnEncoder<T>
+where
+    T::Offset: NInt,
+{
     pub fn new() -> Self {
         Self {
             string_bytes: BytesMut::new(),
@@ -179,7 +186,10 @@ impl<N: NInt + OffsetSizeTrait> GenericStringColumnEncoder<N> {
     }
 }
 
-impl<N: NInt + OffsetSizeTrait> EstimateMemory for GenericStringColumnEncoder<N> {
+impl<T: ByteArrayType> EstimateMemory for GenericBinaryColumnEncoder<T>
+where
+    T::Offset: NInt,
+{
     fn estimate_memory_size(&self) -> usize {
         self.string_bytes.len()
             + self.length_encoder.estimate_memory_size()
@@ -191,13 +201,16 @@ impl<N: NInt + OffsetSizeTrait> EstimateMemory for GenericStringColumnEncoder<N>
     }
 }
 
-impl<N: NInt + OffsetSizeTrait> ColumnStripeEncoder for GenericStringColumnEncoder<N> {
+impl<T: ByteArrayType> ColumnStripeEncoder for GenericBinaryColumnEncoder<T>
+where
+    T::Offset: NInt,
+{
     fn encode_array(&mut self, array: &ArrayRef) -> Result<()> {
         if array.is_empty() {
             return Ok(());
         }
         // TODO: return as result instead of panicking here?
-        let array = array.as_string::<N>();
+        let array = array.as_bytes::<T>();
         // Handling case where if encoding across RecordBatch boundaries, arrays
         // might introduce a NullBuffer
         match (array.nulls(), &mut self.present) {
@@ -206,7 +219,7 @@ impl<N: NInt + OffsetSizeTrait> ColumnStripeEncoder for GenericStringColumnEncod
                 present.extend(null_buffer);
                 for index in null_buffer.valid_indices() {
                     self.length_encoder.write_one(array.value_length(index));
-                    self.string_bytes.put_slice(array.value(index).as_bytes());
+                    self.string_bytes.put_slice(array.value(index).as_ref());
                 }
             }
             (Some(null_buffer), None) => {
@@ -217,7 +230,7 @@ impl<N: NInt + OffsetSizeTrait> ColumnStripeEncoder for GenericStringColumnEncod
                 self.present = Some(present);
                 for index in null_buffer.valid_indices() {
                     self.length_encoder.write_one(array.value_length(index));
-                    self.string_bytes.put_slice(array.value(index).as_bytes());
+                    self.string_bytes.put_slice(array.value(index).as_ref());
                 }
             }
             // Simple direct copy from values buffer, extending present if needed
@@ -225,7 +238,7 @@ impl<N: NInt + OffsetSizeTrait> ColumnStripeEncoder for GenericStringColumnEncod
                 let offsets = array.offsets();
                 let first_offset = offsets[0];
 
-                let mut length_to_copy = N::zero();
+                let mut length_to_copy = <T::Offset as num::Zero>::zero();
                 let mut prev_offset = first_offset;
                 // Derive lengths from offsets then encode them as ints
                 for &offset in offsets.iter().skip(1) {
@@ -235,10 +248,12 @@ impl<N: NInt + OffsetSizeTrait> ColumnStripeEncoder for GenericStringColumnEncod
                     prev_offset = offset;
                 }
                 // Copy all string bytes in a single go
-                let first_offset = first_offset.to_usize().unwrap();
-                let end_offset = first_offset + length_to_copy.to_usize().unwrap();
+                // TODO: this cast to i64 to usize can be cleaned up?
+                let first_offset = first_offset.as_i64() as usize;
+                let end_offset = first_offset + length_to_copy.as_i64() as usize;
                 let string_bytes = &array.value_data()[first_offset..end_offset];
                 self.string_bytes.put_slice(string_bytes);
+
                 if let Some(present) = self.present.as_mut() {
                     present.extend_present(array.len())
                 }
@@ -285,5 +300,7 @@ pub type ByteColumnEncoder = PrimitiveColumnEncoder<Int8Type, ByteRleWriter>;
 pub type Int16ColumnEncoder = PrimitiveColumnEncoder<Int16Type, RleWriterV2<i16, SignedEncoding>>;
 pub type Int32ColumnEncoder = PrimitiveColumnEncoder<Int32Type, RleWriterV2<i32, SignedEncoding>>;
 pub type Int64ColumnEncoder = PrimitiveColumnEncoder<Int64Type, RleWriterV2<i64, SignedEncoding>>;
-pub type StringColumnEncoder = GenericStringColumnEncoder<i32>;
-pub type LargeStringColumnEncoder = GenericStringColumnEncoder<i64>;
+pub type StringColumnEncoder = GenericBinaryColumnEncoder<GenericStringType<i32>>;
+pub type LargeStringColumnEncoder = GenericBinaryColumnEncoder<GenericStringType<i64>>;
+pub type BinaryColumnEncoder = GenericBinaryColumnEncoder<GenericBinaryType<i32>>;
+pub type LargeBinaryColumnEncoder = GenericBinaryColumnEncoder<GenericBinaryType<i64>>;

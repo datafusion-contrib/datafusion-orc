@@ -27,9 +27,9 @@ use crate::memory::EstimateMemory;
 use crate::proto;
 
 use super::column::{
-    ByteColumnEncoder, ColumnStripeEncoder, DoubleColumnEncoder, FloatColumnEncoder,
-    Int16ColumnEncoder, Int32ColumnEncoder, Int64ColumnEncoder, LargeStringColumnEncoder,
-    StringColumnEncoder,
+    BinaryColumnEncoder, ByteColumnEncoder, ColumnStripeEncoder, DoubleColumnEncoder,
+    FloatColumnEncoder, Int16ColumnEncoder, Int32ColumnEncoder, Int64ColumnEncoder,
+    LargeBinaryColumnEncoder, LargeStringColumnEncoder, StringColumnEncoder,
 };
 use super::{ColumnEncoding, StreamType};
 
@@ -180,6 +180,8 @@ fn create_encoder(field: &FieldRef) -> Box<dyn ColumnStripeEncoder> {
         ArrowDataType::Int64 => Box::new(Int64ColumnEncoder::new(ColumnEncoding::DirectV2)),
         ArrowDataType::Utf8 => Box::new(StringColumnEncoder::new()),
         ArrowDataType::LargeUtf8 => Box::new(LargeStringColumnEncoder::new()),
+        ArrowDataType::Binary => Box::new(BinaryColumnEncoder::new()),
+        ArrowDataType::LargeBinary => Box::new(LargeBinaryColumnEncoder::new()),
         // TODO: support more datatypes
         _ => unimplemented!("unsupported datatype"),
     }
