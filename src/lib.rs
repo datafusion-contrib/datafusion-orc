@@ -18,14 +18,32 @@
 //! A native Rust implementation of the [Apache ORC](https://orc.apache.org) file format,
 //! providing API's to read data into [Apache Arrow](https://arrow.apache.org) in-memory arrays.
 //!
-//! # Example usage
+//! # Example read usage
 //!
 //! ```no_run
 //! # use std::fs::File;
-//! # use orc_rust::arrow_reader::{ArrowReader, ArrowReaderBuilder};
+//! # use orc_rust::arrow_reader::ArrowReaderBuilder;
 //! let file = File::open("/path/to/file.orc").unwrap();
 //! let reader = ArrowReaderBuilder::try_new(file).unwrap().build();
 //! let record_batches = reader.collect::<Result<Vec<_>, _>>().unwrap();
+//! ```
+//!
+//! # Example write usage
+//!
+//! ```no_run
+//! # use std::fs::File;
+//! # use arrow::array::RecordBatch;
+//! # use orc_rust::arrow_writer::ArrowWriterBuilder;
+//! # fn get_record_batch() -> RecordBatch {
+//! #     unimplemented!()
+//! # }
+//! let file = File::create("/path/to/file.orc").unwrap();
+//! let batch = get_record_batch();
+//! let mut writer = ArrowWriterBuilder::new(file, batch.schema())
+//!     .try_build()
+//!     .unwrap();
+//! writer.write(&batch).unwrap();
+//! writer.close().unwrap();
 //! ```
 //!
 //! See the [`datafusion`] module for information on how to integrate with
