@@ -17,9 +17,15 @@
 
 use std::io::Read;
 
-use crate::error::Result;
+use arrow::{array::BooleanBufferBuilder, buffer::NullBuffer};
+use bytes::Bytes;
 
-use super::byte::ByteRleReader;
+use crate::{error::Result, memory::EstimateMemory};
+
+use super::{
+    byte::{ByteRleReader, ByteRleWriter},
+    PrimitiveValueEncoder,
+};
 
 pub struct BooleanIter<R: Read> {
     iter: ByteRleReader<R>,
@@ -64,6 +70,54 @@ impl<R: Read> Iterator for BooleanIter<R> {
         } else {
             Some(Ok(self.value()))
         }
+    }
+}
+
+/// ORC encodes validity starting from MSB, whilst Arrow encodes it
+/// from LSB. After bytes are filled with the present bits, they are
+/// further encoded via Byte RLE.
+pub struct BooleanEncoder {
+    // TODO: can we refactor to not need two separate buffers?
+    byte_encoder: ByteRleWriter,
+    builder: BooleanBufferBuilder,
+}
+
+impl EstimateMemory for BooleanEncoder {
+    fn estimate_memory_size(&self) -> usize {
+        self.builder.len() / 8
+    }
+}
+
+impl BooleanEncoder {
+    pub fn new() -> Self {
+        Self {
+            byte_encoder: ByteRleWriter::new(),
+            builder: BooleanBufferBuilder::new(8),
+        }
+    }
+
+    pub fn extend(&mut self, null_buffer: &NullBuffer) {
+        let bb = null_buffer.inner();
+        self.builder.append_buffer(bb);
+    }
+
+    /// Extend with n true bits.
+    pub fn extend_present(&mut self, n: usize) {
+        self.builder.append_n(n, true);
+    }
+
+    /// Produce ORC present stream bytes and reset internal builder.
+    pub fn finish(&mut self) -> Bytes {
+        // TODO: don't throw away allocation?
+        let bb = self.builder.finish();
+        // We use BooleanBufferBuilder so offset is 0
+        let bytes = bb.values();
+        // Reverse bits as ORC stores from MSB
+        let bytes = bytes.iter().map(|b| b.reverse_bits()).collect::<Vec<_>>();
+        for &b in bytes.as_slice() {
+            self.byte_encoder.write_one(b as i8);
+        }
+        self.byte_encoder.take_inner()
     }
 }
 
