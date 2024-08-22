@@ -28,7 +28,8 @@ use crate::proto;
 
 use super::column::{
     ByteStripeEncoder, ColumnStripeEncoder, DoubleStripeEncoder, FloatStripeEncoder,
-    Int16StripeEncoder, Int32StripeEncoder, Int64StripeEncoder,
+    Int16StripeEncoder, Int32StripeEncoder, Int64StripeEncoder, LargeStringColumnEncoder,
+    StringColumnEncoder,
 };
 use super::{ColumnEncoding, StreamType};
 
@@ -177,6 +178,8 @@ fn create_encoder(field: &FieldRef) -> Box<dyn ColumnStripeEncoder> {
         ArrowDataType::Int16 => Box::new(Int16StripeEncoder::new(ColumnEncoding::DirectV2)),
         ArrowDataType::Int32 => Box::new(Int32StripeEncoder::new(ColumnEncoding::DirectV2)),
         ArrowDataType::Int64 => Box::new(Int64StripeEncoder::new(ColumnEncoding::DirectV2)),
+        ArrowDataType::Utf8 => Box::new(StringColumnEncoder::new()),
+        ArrowDataType::LargeUtf8 => Box::new(LargeStringColumnEncoder::new()),
         // TODO: support more datatypes
         _ => unimplemented!("unsupported datatype"),
     }

@@ -200,6 +200,10 @@ fn serialize_schema(schema: &SchemaRef) -> Vec<proto::Type> {
                 kind: Some(proto::r#type::Kind::Long.into()),
                 ..Default::default()
             },
+            ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 => proto::Type {
+                kind: Some(proto::r#type::Kind::String.into()),
+                ..Default::default()
+            },
             // TODO: support more types
             _ => unimplemented!("unsupported datatype"),
         };
@@ -252,7 +256,7 @@ mod tests {
     use arrow::{
         array::{
             Array, Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, Int8Array,
-            RecordBatchReader,
+            LargeStringArray, RecordBatchReader, StringArray,
         },
         compute::concat_batches,
         datatypes::{DataType as ArrowDataType, Field, Schema},
@@ -263,6 +267,21 @@ mod tests {
 
     use super::*;
 
+    fn roundtrip(batches: &[RecordBatch]) -> Vec<RecordBatch> {
+        let mut f = vec![];
+        let mut writer = ArrowWriterBuilder::new(&mut f, batches[0].schema())
+            .try_build()
+            .unwrap();
+        for batch in batches {
+            writer.write(batch).unwrap();
+        }
+        writer.close().unwrap();
+
+        let f = Bytes::from(f);
+        let reader = ArrowReaderBuilder::try_new(f).unwrap().build();
+        reader.collect::<Result<Vec<_>, _>>().unwrap()
+    }
+
     #[test]
     fn test_roundtrip_write() {
         let f32_array = Arc::new(Float32Array::from(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0]));
@@ -271,6 +290,15 @@ mod tests {
         let int16_array = Arc::new(Int16Array::from(vec![0, 1, 2, 3, 4, 5, 6]));
         let int32_array = Arc::new(Int32Array::from(vec![0, 1, 2, 3, 4, 5, 6]));
         let int64_array = Arc::new(Int64Array::from(vec![0, 1, 2, 3, 4, 5, 6]));
+        let utf8_array = Arc::new(StringArray::from(vec![
+            "Hello",
+            "there",
+            "楡井希実",
+            "💯",
+            "ORC",
+            "",
+            "123",
+        ]));
         let schema = Schema::new(vec![
             Field::new("f32", ArrowDataType::Float32, false),
             Field::new("f64", ArrowDataType::Float64, false),
@@ -278,6 +306,7 @@ mod tests {
             Field::new("int16", ArrowDataType::Int16, false),
             Field::new("int32", ArrowDataType::Int32, false),
             Field::new("int64", ArrowDataType::Int64, false),
+            Field::new("utf8", ArrowDataType::Utf8, false),
         ]);
 
         let batch = RecordBatch::try_new(
@@ -289,20 +318,47 @@ mod tests {
                 int16_array,
                 int32_array,
                 int64_array,
+                utf8_array,
             ],
         )
         .unwrap();
 
-        let mut f = vec![];
-        let mut writer = ArrowWriterBuilder::new(&mut f, batch.schema())
-            .try_build()
-            .unwrap();
-        writer.write(&batch).unwrap();
-        writer.close().unwrap();
+        let rows = roundtrip(&[batch.clone()]);
+        assert_eq!(batch, rows[0]);
+    }
 
-        let f = Bytes::from(f);
-        let reader = ArrowReaderBuilder::try_new(f).unwrap().build();
-        let rows = reader.collect::<Result<Vec<_>, _>>().unwrap();
+    #[test]
+    fn test_roundtrip_write_large_type() {
+        let large_utf8_array = Arc::new(LargeStringArray::from(vec![
+            "Hello",
+            "there",
+            "楡井希実",
+            "💯",
+            "ORC",
+            "",
+            "123",
+        ]));
+        let schema = Schema::new(vec![Field::new(
+            "large_utf8",
+            ArrowDataType::LargeUtf8,
+            false,
+        )]);
+        let batch = RecordBatch::try_new(Arc::new(schema), vec![large_utf8_array]).unwrap();
+
+        let rows = roundtrip(&[batch]);
+
+        // Currently we read all String columns from ORC as plain StringArray
+        let utf8_array = Arc::new(StringArray::from(vec![
+            "Hello",
+            "there",
+            "楡井希実",
+            "💯",
+            "ORC",
+            "",
+            "123",
+        ]));
+        let schema = Schema::new(vec![Field::new("large_utf8", ArrowDataType::Utf8, false)]);
+        let batch = RecordBatch::try_new(Arc::new(schema), vec![utf8_array]).unwrap();
         assert_eq!(batch, rows[0]);
     }
 
@@ -356,15 +412,6 @@ mod tests {
         let batch1 = RecordBatch::try_new(schema.clone(), vec![array_no_nulls]).unwrap();
         let batch2 = RecordBatch::try_new(schema.clone(), vec![array_with_nulls]).unwrap();
 
-        let mut f = vec![];
-        let mut writer = ArrowWriterBuilder::new(&mut f, schema.clone())
-            .with_stripe_byte_size(256)
-            .try_build()
-            .unwrap();
-        writer.write(&batch1).unwrap();
-        writer.write(&batch2).unwrap();
-        writer.close().unwrap();
-
         // ORC writer should be able to handle this gracefully
         let expected_array = Arc::new(Int64Array::from(vec![
             Some(1),
@@ -376,9 +423,7 @@ mod tests {
         ]));
         let expected_batch = RecordBatch::try_new(schema, vec![expected_array]).unwrap();
 
-        let f = Bytes::from(f);
-        let reader = ArrowReaderBuilder::try_new(f).unwrap().build();
-        let rows = reader.collect::<Result<Vec<_>, _>>().unwrap();
+        let rows = roundtrip(&[batch1, batch2]);
         assert_eq!(expected_batch, rows[0]);
     }
 }
