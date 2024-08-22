@@ -161,6 +161,99 @@ impl<T: ArrowPrimitiveType, E: PrimitiveValueEncoder<T::Native>> ColumnStripeEnc
     }
 }
 
+pub struct BooleanColumnEncoder {
+    encoder: BooleanEncoder,
+    /// Lazily initialized once we encounter an [`Array`] with a [`NullBuffer`].
+    present: Option<BooleanEncoder>,
+    encoded_count: usize,
+}
+
+impl BooleanColumnEncoder {
+    pub fn new() -> Self {
+        Self {
+            encoder: BooleanEncoder::new(),
+            present: None,
+            encoded_count: 0,
+        }
+    }
+}
+
+impl EstimateMemory for BooleanColumnEncoder {
+    fn estimate_memory_size(&self) -> usize {
+        self.encoder.estimate_memory_size()
+            + self
+                .present
+                .as_ref()
+                .map(|p| p.estimate_memory_size())
+                .unwrap_or(0)
+    }
+}
+
+impl ColumnStripeEncoder for BooleanColumnEncoder {
+    fn encode_array(&mut self, array: &ArrayRef) -> Result<()> {
+        // TODO: return as result instead of panicking here?
+        let array = array.as_boolean();
+        // Handling case where if encoding across RecordBatch boundaries, arrays
+        // might introduce a NullBuffer
+        match (array.nulls(), &mut self.present) {
+            // Need to copy only the valid values as indicated by null_buffer
+            (Some(null_buffer), Some(present)) => {
+                present.extend(null_buffer);
+                for index in null_buffer.valid_indices() {
+                    let v = array.value(index);
+                    self.encoder.extend_boolean(v);
+                }
+            }
+            (Some(null_buffer), None) => {
+                // Lazily initiate present buffer and ensure backfill the already encoded values
+                let mut present = BooleanEncoder::new();
+                present.extend_present(self.encoded_count);
+                present.extend(null_buffer);
+                self.present = Some(present);
+                for index in null_buffer.valid_indices() {
+                    let v = array.value(index);
+                    self.encoder.extend_boolean(v);
+                }
+            }
+            // Simple direct copy from values buffer, extending present if needed
+            (None, _) => {
+                let values = array.values();
+                self.encoder.extend_bb(values);
+                if let Some(present) = self.present.as_mut() {
+                    present.extend_present(array.len())
+                }
+            }
+        }
+        self.encoded_count += array.len() - array.null_count();
+        Ok(())
+    }
+
+    fn column_encoding(&self) -> ColumnEncoding {
+        ColumnEncoding::Direct
+    }
+
+    fn finish(&mut self) -> Vec<Stream> {
+        let bytes = self.encoder.finish();
+        // Return mandatory Data stream and optional Present stream
+        let data = Stream {
+            kind: StreamType::Data,
+            bytes,
+        };
+        self.encoded_count = 0;
+        match &mut self.present {
+            Some(present) => {
+                let bytes = present.finish();
+                let present = Stream {
+                    kind: StreamType::Present,
+                    bytes,
+                };
+                vec![data, present]
+            }
+            None => vec![data],
+        }
+    }
+}
+
 /// Direct encodes binary/strings.
 pub struct GenericBinaryColumnEncoder<T: ByteArrayType>
 where

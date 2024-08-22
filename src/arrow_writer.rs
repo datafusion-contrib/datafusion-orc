@@ -208,6 +208,10 @@ fn serialize_schema(schema: &SchemaRef) -> Vec<proto::Type> {
                 kind: Some(proto::r#type::Kind::Binary.into()),
                 ..Default::default()
             },
+            ArrowDataType::Boolean => proto::Type {
+                kind: Some(proto::r#type::Kind::Boolean.into()),
+                ..Default::default()
+            },
             // TODO: support more types
             _ => unimplemented!("unsupported datatype"),
         };
@@ -259,8 +263,9 @@ mod tests {
 
     use arrow::{
         array::{
-            Array, BinaryArray, Float32Array, Float64Array, Int16Array, Int32Array, Int64Array,
-            Int8Array, LargeBinaryArray, LargeStringArray, RecordBatchReader, StringArray,
+            Array, BinaryArray, BooleanArray, Float32Array, Float64Array, Int16Array, Int32Array,
+            Int64Array, Int8Array, LargeBinaryArray, LargeStringArray, RecordBatchReader,
+            StringArray,
         },
         compute::concat_batches,
         datatypes::{DataType as ArrowDataType, Field, Schema},
@@ -312,6 +317,9 @@ mod tests {
             "".as_bytes(),
             "123".as_bytes(),
         ]));
+        let boolean_array = Arc::new(BooleanArray::from(vec![
+            true, false, true, false, true, true, false,
+        ]));
         let schema = Schema::new(vec![
             Field::new("f32", ArrowDataType::Float32, false),
             Field::new("f64", ArrowDataType::Float64, false),
@@ -321,6 +329,7 @@ mod tests {
             Field::new("int64", ArrowDataType::Int64, false),
             Field::new("utf8", ArrowDataType::Utf8, false),
             Field::new("binary", ArrowDataType::Binary, false),
+            Field::new("boolean", ArrowDataType::Boolean, false),
         ]);
 
         let batch = RecordBatch::try_new(
@@ -334,6 +343,7 @@ mod tests {
                 int64_array,
                 utf8_array,
                 binary_array,
+                boolean_array,
             ],
         )
         .unwrap();

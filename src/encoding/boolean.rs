@@ -17,7 +17,10 @@
 
 use std::io::Read;
 
-use arrow::{array::BooleanBufferBuilder, buffer::NullBuffer};
+use arrow::{
+    array::BooleanBufferBuilder,
+    buffer::{BooleanBuffer, NullBuffer},
+};
 use bytes::Bytes;
 
 use crate::{error::Result, memory::EstimateMemory};
@@ -98,12 +101,20 @@ impl BooleanEncoder {
 
     pub fn extend(&mut self, null_buffer: &NullBuffer) {
         let bb = null_buffer.inner();
+        self.extend_bb(bb);
+    }
+
+    pub fn extend_bb(&mut self, bb: &BooleanBuffer) {
         self.builder.append_buffer(bb);
     }
 
     /// Extend with n true bits.
     pub fn extend_present(&mut self, n: usize) {
         self.builder.append_n(n, true);
+    }
+
+    pub fn extend_boolean(&mut self, b: bool) {
+        self.builder.append(b);
     }
 
     /// Produce ORC present stream bytes and reset internal builder.
