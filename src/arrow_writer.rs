@@ -113,6 +113,7 @@ impl<W: Write> ArrowWriter<W> {
             let batch = batch.slice(offset, length);
             self.writer.encode_batch(&batch)?;
 
+            // TODO: be able to flush whilst writing a batch (instead of between batches)
             // Flush stripe when it exceeds estimated configured size
             if self.writer.estimate_memory_size() > self.stripe_byte_size {
                 self.flush_stripe()?;
