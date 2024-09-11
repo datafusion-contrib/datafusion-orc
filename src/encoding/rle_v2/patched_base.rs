@@ -39,12 +39,8 @@ pub fn read_patched_base<N: NInt, R: Read, S: EncodingSign>(
 ) -> Result<()> {
     let encoded_bit_width = (header >> 1) & 0x1F;
     let value_bit_width = rle_v2_decode_bit_width(encoded_bit_width);
-    let value_bit_width_u32 = u32::try_from(value_bit_width).or_else(|_| {
-        OutOfSpecSnafu {
-            msg: "value_bit_width overflows u32",
-        }
-        .fail()
-    })?;
+    // Bit width derived from u8 above, so impossible to overflow u32
+    let value_bit_width_u32 = u32::try_from(value_bit_width).unwrap();
 
     let second_byte = read_u8(reader)?;
     let length = extract_run_length_from_header(header, second_byte);
