@@ -21,7 +21,7 @@ use bytes::{BufMut, BytesMut};
 use num::Signed;
 use snafu::{OptionExt, ResultExt};
 
-use crate::error::{self, IoSnafu, Result, VarintTooLargeSnafu};
+use crate::error::{self, Result, VarintTooLargeSnafu};
 
 use super::{EncodingSign, NInt, VarintSerde};
 
@@ -221,14 +221,10 @@ fn unrolled_unpack_byte_aligned<N: NInt>(
         num_bytes <= N::BYTE_SIZE,
         "num_bytes cannot exceed size of integer being decoded into"
     );
-    // TODO: we probably don't need this intermediary buffer, just copy bytes directly into Vec
-    let mut num_buffer = N::empty_byte_array();
+    // TODO: can probably read direct into buffer? read_big_endian() decodes
+    //       into an intermediary buffer.
     for _ in 0..expected_num_of_ints {
-        // Read into back part of buffer since is big endian.
-        // So if smaller than N::BYTE_SIZE bytes, most significant bytes will be 0.
-        r.read_exact(&mut num_buffer.as_mut()[N::BYTE_SIZE - num_bytes..])
-            .context(IoSnafu)?;
-        let num = N::from_be_bytes(num_buffer);
+        let num = N::read_big_endian(r, num_bytes)?;
         buffer.push(num);
     }
     Ok(())
@@ -605,7 +601,6 @@ pub fn calculate_percentile_bits<N: VarintSerde>(values: &[N], percentile: f32) 
     );
 
     let mut histogram = [0; 32];
-    // Fill out histogram
     for n in values {
         // Map into range [0, 31]
         let encoded_bit_width = encode_bit_width(n.bits_used());

@@ -18,7 +18,7 @@
 use std::io::Read;
 
 use bytes::{BufMut, BytesMut};
-use snafu::{OptionExt, ResultExt};
+use snafu::OptionExt;
 
 use super::{EncodingType, NInt};
 use crate::{
@@ -29,7 +29,7 @@ use crate::{
         },
         EncodingSign, VarintSerde,
     },
-    error::{IoSnafu, OutOfSpecSnafu, Result},
+    error::{OutOfSpecSnafu, Result},
 };
 
 pub fn read_patched_base<N: NInt, R: Read, S: EncodingSign>(
@@ -66,13 +66,7 @@ pub fn read_patched_base<N: NInt, R: Read, S: EncodingSign>(
 
     let patch_list_length = (fourth_byte & 0x1f) as usize;
 
-    let mut buffer = N::empty_byte_array();
-    // Read into back part of buffer since is big endian.
-    // So if smaller than N::BYTE_SIZE bytes, most significant bytes will be 0.
-    reader
-        .read_exact(&mut buffer.as_mut()[N::BYTE_SIZE - base_byte_width..])
-        .context(IoSnafu)?;
-    let base = N::from_be_bytes(buffer);
+    let base = N::read_big_endian(reader, base_byte_width)?;
     let base = S::decode_signed_msb(base, base_byte_width);
 
     // Get data values

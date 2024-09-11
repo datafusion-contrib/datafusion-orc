@@ -18,11 +18,10 @@
 use std::io::Read;
 
 use bytes::{BufMut, BytesMut};
-use snafu::ResultExt;
 
 use crate::{
     encoding::{rle_v2::EncodingType, EncodingSign},
-    error::{IoSnafu, OutOfSpecSnafu, Result},
+    error::{OutOfSpecSnafu, Result},
 };
 
 use super::{NInt, SHORT_REPEAT_MIN_LENGTH};
@@ -55,13 +54,7 @@ pub fn read_short_repeat_values<N: NInt, R: Read, S: EncodingSign>(
     let run_length = (header & 0x07) as usize + SHORT_REPEAT_MIN_LENGTH;
 
     // Value that is being repeated is encoded as value_byte_width bytes in big endian format
-    let mut buffer = N::empty_byte_array();
-    // Read into back part of buffer since is big endian.
-    // So if smaller than N::BYTE_SIZE bytes, most significant bytes will be 0.
-    reader
-        .read_exact(&mut buffer.as_mut()[N::BYTE_SIZE - byte_width..])
-        .context(IoSnafu)?;
-    let val = N::from_be_bytes(buffer);
+    let val = N::read_big_endian(reader, byte_width)?;
     let val = S::zigzag_decode(val);
 
     out_ints.extend(std::iter::repeat(val).take(run_length));
