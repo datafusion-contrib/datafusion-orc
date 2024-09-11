@@ -26,10 +26,11 @@ use std::{
 
 use bytes::Bytes;
 use num::{traits::CheckedShl, PrimInt, Signed};
+use snafu::ResultExt;
 
 use crate::{
     column::Column,
-    error::{InvalidColumnEncodingSnafu, Result},
+    error::{InvalidColumnEncodingSnafu, IoSnafu, Result},
     memory::EstimateMemory,
     proto::column_encoding::Kind as ProtoColumnKind,
 };
@@ -193,6 +194,20 @@ pub trait NInt:
 
     // TODO: use Into<i64> instead?
     fn as_i64(self) -> i64;
+
+    fn read_big_endian(reader: &mut impl Read, byte_size: usize) -> Result<Self> {
+        debug_assert!(
+            byte_size <= Self::BYTE_SIZE,
+            "byte_size cannot exceed max byte size of self"
+        );
+        let mut buffer = Self::empty_byte_array();
+        // Read into back part of buffer since is big endian.
+        // So if smaller than N::BYTE_SIZE bytes, most significant bytes will be 0.
+        reader
+            .read_exact(&mut buffer.as_mut()[Self::BYTE_SIZE - byte_size..])
+            .context(IoSnafu)?;
+        Ok(Self::from_be_bytes(buffer))
+    }
 }
 
 impl VarintSerde for i16 {
