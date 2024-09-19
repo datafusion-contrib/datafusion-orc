@@ -20,6 +20,8 @@ import random
 import datetime
 import pyorc
 
+dir = "tests/basic/data"
+
 data = {
     "a": [1.0, 2.0, None, 4.0, 5.0],
     "b": [True, False, None, True, False],
@@ -113,7 +115,7 @@ nested_struct = {
     ],
 }
 
-_write("struct<nest:struct<a:float,b:boolean>>", nested_struct, "nested_struct.orc")
+_write("struct<nest:struct<a:float,b:boolean>>", nested_struct, f"{dir}/nested_struct.orc")
 
 
 nested_array = {
@@ -126,7 +128,7 @@ nested_array = {
     ],
 }
 
-_write("struct<value:array<int>>", nested_array, "nested_array.orc")
+_write("struct<value:array<int>>", nested_array, f"{dir}/nested_array.orc")
 
 
 nested_array_float = {
@@ -136,7 +138,7 @@ nested_array_float = {
     ],
 }
 
-_write("struct<value:array<float>>", nested_array_float, "nested_array_float.orc")
+_write("struct<value:array<float>>", nested_array_float, f"{dir}/nested_array_float.orc")
 
 nested_array_struct = {
     "value": [
@@ -145,7 +147,7 @@ nested_array_struct = {
     ],
 }
 
-_write("struct<value:array<struct<a:float,b:int,c:string>>>", nested_array_struct, "nested_array_struct.orc")
+_write("struct<value:array<struct<a:float,b:int,c:string>>>", nested_array_struct, f"{dir}/nested_array_struct.orc")
 
 nested_map = {
     "map": [
@@ -156,7 +158,7 @@ nested_map = {
     ],
 }
 
-_write("struct<map:map<string,int>>", nested_map, "nested_map.orc")
+_write("struct<map:map<string,int>>", nested_map, f"{dir}/nested_map.orc")
 
 nested_map_struct = {
     "map": [
@@ -166,46 +168,46 @@ nested_map_struct = {
     ],
 }
 
-_write("struct<value:map<string,struct<a:float,b:int,c:string>>>", nested_map_struct, "nested_map_struct.orc")
+_write("struct<value:map<string,struct<a:float,b:int,c:string>>>", nested_map_struct, f"{dir}/nested_map_struct.orc")
 
 
 _write(
     infer_schema(data),
     data,
-    "test.orc",
+    f"{dir}/test.orc",
 )
 
 data_boolean = {
     "long": [True] * 32,
 }
 
-_write("struct<long:boolean>", data_boolean, "long_bool.orc")
+_write("struct<long:boolean>", data_boolean, f"{dir}/long_bool.orc")
 
-_write("struct<long:boolean>", data_boolean, "long_bool_gzip.orc", pyorc.CompressionKind.ZLIB)
+_write("struct<long:boolean>", data_boolean, f"{dir}/long_bool_gzip.orc", pyorc.CompressionKind.ZLIB)
 
 data_dict = {
     "dict": ["abcd", "efgh"] * 32,
 }
 
-_write("struct<dict:string>", data_dict, "string_long.orc")
+_write("struct<dict:string>", data_dict, f"{dir}/string_long.orc")
 
 data_dict = {
     "dict": ["abc", "efgh"] * 32,
 }
 
-_write("struct<dict:string>", data_dict, "string_dict.orc", dict_key_size_threshold=0.1)
+_write("struct<dict:string>", data_dict, f"{dir}/string_dict.orc", dict_key_size_threshold=0.1)
 
-_write("struct<dict:string>", data_dict, "string_dict_gzip.orc", pyorc.CompressionKind.ZLIB)
+_write("struct<dict:string>", data_dict, f"{dir}/string_dict_gzip.orc", pyorc.CompressionKind.ZLIB)
 
 data_dict = {
     "dict": ["abcd", "efgh"] * (10**4 // 2),
 }
 
-_write("struct<dict:string>", data_dict, "string_long_long.orc")
-_write("struct<dict:string>", data_dict, "string_long_long_gzip.orc", pyorc.CompressionKind.ZLIB)
+_write("struct<dict:string>", data_dict, f"{dir}/string_long_long.orc")
+_write("struct<dict:string>", data_dict, f"{dir}/string_long_long_gzip.orc", pyorc.CompressionKind.ZLIB)
 
 long_f32 = {
     "dict": [random.uniform(0, 1) for _ in range(10**6)],
 }
 
-_write("struct<dict:float>", long_f32, "f32_long_long_gzip.orc", pyorc.CompressionKind.ZLIB)
+_write("struct<dict:float>", long_f32, f"{dir}/f32_long_long_gzip.orc", pyorc.CompressionKind.ZLIB)

@@ -22,6 +22,8 @@ from decimal import Decimal as Dec
 from pyspark.sql import SparkSession
 from pyspark.sql.types import *
 
+dir = "tests/basic/data"
+
 # We're using Spark because it supports lzo compression writing
 # (PyArrow supports all except lzo writing)
 
@@ -65,9 +67,9 @@ for c in compression:
     df.write.format("orc")\
       .option("compression", c)\
       .mode("overwrite")\
-      .save(f"./alltypes.{c}")
+      .save(f"{dir}/alltypes.{c}")
     # Since Spark saves into a directory
     # Move out and rename the expected single ORC file (because of coalesce above)
-    orc_file = glob.glob(f"./alltypes.{c}/*.orc")[0]
-    shutil.move(orc_file, f"./alltypes.{c}.orc")
-    shutil.rmtree(f"./alltypes.{c}")
+    orc_file = glob.glob(f"{dir}/alltypes.{c}/*.orc")[0]
+    shutil.move(orc_file, f"{dir}/alltypes.{c}.orc")
+    shutil.rmtree(f"{dir}/alltypes.{c}")

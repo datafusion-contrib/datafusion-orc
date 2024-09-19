@@ -21,6 +21,8 @@ from pyarrow import orc
 from pyarrow import parquet
 import pyorc
 
+dir = "tests/basic/data"
+
 schema = pa.schema([
     pa.field('timestamp_notz', pa.timestamp("ns")),
     pa.field('timestamp_utc', pa.timestamp("ns", tz="UTC")),
@@ -38,7 +40,7 @@ arr = pa.array([
     dttm(1900,  1,  1, 14, 25, 14),
 ])
 table = pa.Table.from_arrays([arr, arr], schema=schema)
-orc.write_table(table, "pyarrow_timestamps.orc")
+orc.write_table(table, f"{dir}/pyarrow_timestamps.orc")
 
 
 # pyarrow overflows when trying to write this, so we have to use pyorc instead
@@ -53,7 +55,7 @@ schema = pyorc.Struct(
     id=pyorc.Int(),
     timestamp=pyorc.Timestamp()
 )
-with open("overflowing_timestamps.orc", "wb") as f:
+with open(f"{dir}/overflowing_timestamps.orc", "wb") as f:
     with pyorc.Writer(
         f,
         schema,
