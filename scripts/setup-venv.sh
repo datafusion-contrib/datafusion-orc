@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
@@ -15,20 +17,13 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Requires pyarrow to be installed
-import glob
-from pyarrow import orc, feather
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+BASE_DIR=$SCRIPT_DIR/..
+VENV_BIN=$BASE_DIR/venv/bin
 
-files = glob.glob("data/expected/*")
-files = [file.removeprefix("data/expected/").removesuffix(".jsn.gz") for file in files]
+python3 -m venv $BASE_DIR/venv
 
-ignore_files = [
-    "TestOrcFile.testTimestamp" # Root data type isn't struct
-]
+$VENV_BIN/pip install -U pyorc pyspark pyarrow
 
-files = [file for file in files if file not in ignore_files]
+echo "Done"
 
-for file in files:
-    print(f"Converting {file} from ORC to feather")
-    table = orc.read_table(f"data/{file}.orc")
-    feather.write_feather(table, f"data/expected_arrow/{file}.feather")
