@@ -61,7 +61,7 @@ proptest = "1.0.0"
 serde_json = { version = "1.0", default-features = false, features = ["std"] }
 
 [features]
-default = ["datafusion"]
+default = ["async"]
 
 async = ["async-trait", "futures", "futures-util", "tokio"]
 cli = ["anyhow", "clap"]
