@@ -68,7 +68,7 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
       - name: Run cargo examples
-        run: cargo run --example datafusion_integration
+        run: cargo run --example datafusion_integration --all-features
 
   toml:
     name: Toml Check
