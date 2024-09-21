@@ -228,7 +228,7 @@ impl<R: Read> ByteRleReader<R> {
 }
 
 impl<R: Read> Iterator for ByteRleReader<R> {
-    type Item = Result<u8>;
+    type Item = Result<i8>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.used == self.num_literals {
@@ -241,7 +241,7 @@ impl<R: Read> Iterator for ByteRleReader<R> {
             self.literals[self.used]
         };
         self.used += 1;
-        Some(Ok(result))
+        Some(Ok(result as i8))
     }
 }
 
@@ -277,10 +277,9 @@ mod tests {
         assert_eq!(iter, vec![0x44, 0x45]);
     }
 
-    fn roundtrip_byte_rle_helper(values: &[u8]) -> Result<Vec<u8>> {
+    fn roundtrip_byte_rle_helper(values: &[i8]) -> Result<Vec<i8>> {
         let mut writer = ByteRleWriter::new();
-        let values = values.iter().map(|&b| b as i8).collect::<Vec<_>>();
-        writer.write_slice(&values);
+        writer.write_slice(values);
         writer.flush();
 
         let buf = writer.take_inner();
@@ -291,19 +290,19 @@ mod tests {
 
     #[derive(Debug, Clone)]
     enum ByteSequence {
-        Run(u8, usize),
-        Literals(Vec<u8>),
+        Run(i8, usize),
+        Literals(Vec<i8>),
     }
 
     fn byte_sequence_strategy() -> impl Strategy<Value = ByteSequence> {
         // We limit the max length of the sequences to 140 to try get more interleaving
         prop_oneof![
-            (any::<u8>(), 1..140_usize).prop_map(|(a, b)| ByteSequence::Run(a, b)),
-            prop::collection::vec(any::<u8>(), 1..140).prop_map(ByteSequence::Literals)
+            (any::<i8>(), 1..140_usize).prop_map(|(a, b)| ByteSequence::Run(a, b)),
+            prop::collection::vec(any::<i8>(), 1..140).prop_map(ByteSequence::Literals)
         ]
     }
 
-    fn generate_bytes_from_sequences(sequences: Vec<ByteSequence>) -> Vec<u8> {
+    fn generate_bytes_from_sequences(sequences: Vec<ByteSequence>) -> Vec<i8> {
         let mut bytes = vec![];
         for sequence in sequences {
             match sequence {
@@ -318,7 +317,7 @@ mod tests {
 
     proptest! {
         #[test]
-        fn roundtrip_byte_rle_pure_random(values: Vec<u8>) {
+        fn roundtrip_byte_rle_pure_random(values: Vec<i8>) {
             // Biased towards literal sequences due to purely random values
             let out = roundtrip_byte_rle_helper(&values).unwrap();
             prop_assert_eq!(out, values);

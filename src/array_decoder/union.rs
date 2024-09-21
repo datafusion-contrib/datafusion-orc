@@ -37,7 +37,7 @@ pub struct UnionArrayDecoder {
     // TODO: encode this assumption into types
     fields: UnionFields,
     variants: Vec<Box<dyn ArrayBatchDecoder>>,
-    tags: Box<dyn Iterator<Item = Result<u8>> + Send>,
+    tags: Box<dyn Iterator<Item = Result<i8>> + Send>,
     present: Option<Box<dyn Iterator<Item = bool> + Send>>,
 }
 
