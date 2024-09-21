@@ -54,6 +54,7 @@ object_store = { version = "0.10.1", optional = true }
 
 [dev-dependencies]
 arrow-json = "52.0.0"
+arrow-ipc = { version = "52.0.0", features = ["lz4"] }
 criterion = { version = "0.5", default-features = false, features = ["async_tokio"] }
 opendal = { version = "0.48", default-features = false, features = ["services-memory"] }
 pretty_assertions = "1.3.0"
