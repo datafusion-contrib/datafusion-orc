@@ -63,7 +63,7 @@ impl<R: Read> Iterator for BooleanIter<R> {
         if self.bits_in_data == 0 {
             match self.iter.next() {
                 Some(Ok(data)) => {
-                    self.data = data;
+                    self.data = data as u8;
                     self.bits_in_data = 8;
                     Some(Ok(self.value()))
                 }

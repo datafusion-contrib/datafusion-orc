@@ -364,8 +364,7 @@ pub fn array_decoder_factory(
                 }
             );
             let iter = stripe.stream_map().get(column, Kind::Data);
-            let iter =
-                Box::new(ByteRleReader::new(iter).map(|value| value.map(|value| value as i8)));
+            let iter = Box::new(ByteRleReader::new(iter));
             let present = get_present_vec(column, stripe)?
                 .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
             Box::new(Int8ArrayDecoder::new(iter, present))
