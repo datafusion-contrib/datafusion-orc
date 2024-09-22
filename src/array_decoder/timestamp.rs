@@ -110,23 +110,7 @@ fn decimal128_decoder(
 
     let iter: Box<dyn Iterator<Item = _> + Send> = match writer_tz {
         Some(UTC) | None => Box::new(iter),
-        // Avoid overflowable operations
-        Some(writer_tz) => Box::new(iter.map(move |ts| {
-            let ts = ts?;
-            let seconds = ts.div_euclid(NANOSECONDS_IN_SECOND);
-            let nanoseconds = ts.rem_euclid(NANOSECONDS_IN_SECOND);
-
-            // The addition may panic, because chrono stores dates in an i32,
-            // which can be overflowed with an i64 of seconds.
-            let dt = (writer_tz.timestamp_nanos(0)
-                + TimeDelta::new(seconds as i64, nanoseconds as u32)
-                    .expect("TimeDelta duration out of bound"))
-            .naive_local()
-            .and_utc();
-
-            Ok((dt.timestamp() as i128) * NANOSECONDS_IN_SECOND
-                + (dt.timestamp_subsec_nanos() as i128))
-        })),
+        Some(writer_tz) => Box::new(TimestampNanosecondAsDecimalWithTzIterator(iter, writer_tz)),
     };
 
     Ok(DecimalArrayDecoder::new(
@@ -296,5 +280,37 @@ impl<T: ArrowTimestampType> ArrayBatchDecoder for TimestampInstantArrayDecoder<T
             .with_timezone("UTC");
         let array = Arc::new(array) as ArrayRef;
         Ok(array)
+    }
+}
+
+struct TimestampNanosecondAsDecimalWithTzIterator(TimestampNanosecondAsDecimalIterator, Tz);
+
+impl TimestampNanosecondAsDecimalWithTzIterator {
+    fn next_inner(&self, ts: Result<i128>) -> Result<i128> {
+        let ts = ts?;
+        let seconds = ts.div_euclid(NANOSECONDS_IN_SECOND);
+        let nanoseconds = ts.rem_euclid(NANOSECONDS_IN_SECOND);
+
+        // The addition may panic, because chrono stores dates in an i32,
+        // which can be overflowed with an i64 of seconds.
+        let dt = (self.1.timestamp_nanos(0)
+            + TimeDelta::new(seconds as i64, nanoseconds as u32)
+                .expect("TimeDelta duration out of bound"))
+        .naive_local()
+        .and_utc();
+
+        Ok(
+            (dt.timestamp() as i128) * NANOSECONDS_IN_SECOND
+                + (dt.timestamp_subsec_nanos() as i128),
+        )
+    }
+}
+
+impl Iterator for TimestampNanosecondAsDecimalWithTzIterator {
+    type Item = Result<i128>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let ts = self.0.next()?;
+        Some(self.next_inner(ts))
     }
 }
