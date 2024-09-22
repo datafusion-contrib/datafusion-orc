@@ -25,7 +25,7 @@ use crate::error::{OutOfSpecSnafu, Result};
 
 use super::{
     util::{read_u8, read_varint_zigzagged, try_read_u8},
-    EncodingSign, NInt,
+    EncodingSign, NInt, PrimitiveValueDecoder,
 };
 
 const MAX_RUN_LENGTH: usize = 130;
@@ -118,6 +118,8 @@ impl<N: NInt, R: Read, S: EncodingSign> Iterator for RleReaderV1<N, R, S> {
         Some(Ok(result))
     }
 }
+
+impl<N: NInt, R: Read, S: EncodingSign> PrimitiveValueDecoder<N> for RleReaderV1<N, R, S> {}
 
 #[cfg(test)]
 mod tests {

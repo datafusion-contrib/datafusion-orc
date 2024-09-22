@@ -19,6 +19,7 @@ use std::sync::Arc;
 
 use arrow::array::{ArrayRef, BooleanArray, BooleanBuilder, PrimitiveArray, PrimitiveBuilder};
 use arrow::buffer::NullBuffer;
+use arrow::datatypes::ArrowNativeTypeOp;
 use arrow::datatypes::{ArrowPrimitiveType, Decimal128Type};
 use arrow::datatypes::{DataType as ArrowDataType, Field};
 use arrow::datatypes::{
@@ -31,7 +32,7 @@ use crate::column::{get_present_vec, Column};
 use crate::encoding::boolean::BooleanIter;
 use crate::encoding::byte::ByteRleReader;
 use crate::encoding::float::FloatIter;
-use crate::encoding::get_rle_reader;
+use crate::encoding::{get_rle_reader, PrimitiveValueDecoder};
 use crate::error::{
     self, ArrowSnafu, MismatchedSchemaSnafu, Result, UnexpectedSnafu, UnsupportedTypeVariantSnafu,
 };
@@ -56,13 +57,13 @@ mod timestamp;
 mod union;
 
 struct PrimitiveArrayDecoder<T: ArrowPrimitiveType> {
-    iter: Box<dyn Iterator<Item = Result<T::Native>> + Send>,
+    iter: Box<dyn PrimitiveValueDecoder<T::Native> + Send>,
     present: Option<Box<dyn Iterator<Item = bool> + Send>>,
 }
 
 impl<T: ArrowPrimitiveType> PrimitiveArrayDecoder<T> {
     pub fn new(
-        iter: Box<dyn Iterator<Item = Result<T::Native>> + Send>,
+        iter: Box<dyn PrimitiveValueDecoder<T::Native> + Send>,
         present: Option<Box<dyn Iterator<Item = bool> + Send>>,
     ) -> Self {
         Self { iter, present }
@@ -95,11 +96,9 @@ impl<T: ArrowPrimitiveType> PrimitiveArrayDecoder<T> {
                 Ok(array)
             }
             None => {
-                let data = self
-                    .iter
-                    .by_ref()
-                    .take(batch_size)
-                    .collect::<Result<Vec<_>>>()?;
+                let mut data = vec![T::Native::ZERO; batch_size];
+                let len = self.iter.decode(data.as_mut_slice())?;
+                data.truncate(len);
                 let array = PrimitiveArray::<T>::from_iter_values(data);
                 Ok(array)
             }
@@ -139,7 +138,7 @@ impl DecimalArrayDecoder {
     pub fn new(
         precision: u8,
         scale: i8,
-        iter: Box<dyn Iterator<Item = Result<i128>> + Send>,
+        iter: Box<dyn PrimitiveValueDecoder<i128> + Send>,
         present: Option<Box<dyn Iterator<Item = bool> + Send>>,
     ) -> Self {
         let inner = PrimitiveArrayDecoder::<Decimal128Type>::new(iter, present);

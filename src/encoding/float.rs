@@ -26,7 +26,7 @@ use crate::{
     memory::EstimateMemory,
 };
 
-use super::PrimitiveValueEncoder;
+use super::{PrimitiveValueDecoder, PrimitiveValueEncoder};
 
 /// Generically represent f32 and f64.
 // TODO: figure out how to use num::traits::FromBytes instead of rolling our own?
@@ -71,6 +71,8 @@ impl<T: Float, R: std::io::Read> FloatIter<T, R> {
         }
     }
 }
+
+impl<T: Float, R: std::io::Read> PrimitiveValueDecoder<T> for FloatIter<T, R> {}
 
 impl<T: Float, R: std::io::Read> Iterator for FloatIter<T, R> {
     type Item = Result<T>;

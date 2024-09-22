@@ -20,22 +20,25 @@ use std::marker::PhantomData;
 use arrow::datatypes::{ArrowTimestampType, TimeUnit};
 use snafu::ensure;
 
-use crate::error::{DecodeTimestampSnafu, Result};
+use crate::{
+    encoding::PrimitiveValueDecoder,
+    error::{DecodeTimestampSnafu, Result},
+};
 
 const NANOSECONDS_IN_SECOND: i64 = 1_000_000_000;
 
 pub struct TimestampIterator<T: ArrowTimestampType> {
     base_from_epoch: i64,
-    data: Box<dyn Iterator<Item = Result<i64>> + Send>,
-    secondary: Box<dyn Iterator<Item = Result<i64>> + Send>,
+    data: Box<dyn PrimitiveValueDecoder<i64> + Send>,
+    secondary: Box<dyn PrimitiveValueDecoder<i64> + Send>,
     _marker: PhantomData<T>,
 }
 
 impl<T: ArrowTimestampType> TimestampIterator<T> {
     pub fn new(
         base_from_epoch: i64,
-        data: Box<dyn Iterator<Item = Result<i64>> + Send>,
-        secondary: Box<dyn Iterator<Item = Result<i64>> + Send>,
+        data: Box<dyn PrimitiveValueDecoder<i64> + Send>,
+        secondary: Box<dyn PrimitiveValueDecoder<i64> + Send>,
     ) -> Self {
         Self {
             base_from_epoch,
@@ -61,20 +64,22 @@ impl<T: ArrowTimestampType> Iterator for TimestampIterator<T> {
     }
 }
 
+impl<T: ArrowTimestampType> PrimitiveValueDecoder<T::Native> for TimestampIterator<T> {}
+
 /// Arrow TimestampNanosecond type cannot represent the full datetime range of
 /// the ORC Timestamp type, so this iterator provides the ability to decode the
 /// raw nanoseconds without restricting it to the Arrow TimestampNanosecond range.
 pub struct TimestampNanosecondAsDecimalIterator {
     base_from_epoch: i64,
-    data: Box<dyn Iterator<Item = Result<i64>> + Send>,
-    secondary: Box<dyn Iterator<Item = Result<i64>> + Send>,
+    data: Box<dyn PrimitiveValueDecoder<i64> + Send>,
+    secondary: Box<dyn PrimitiveValueDecoder<i64> + Send>,
 }
 
 impl TimestampNanosecondAsDecimalIterator {
     pub fn new(
         base_from_epoch: i64,
-        data: Box<dyn Iterator<Item = Result<i64>> + Send>,
-        secondary: Box<dyn Iterator<Item = Result<i64>> + Send>,
+        data: Box<dyn PrimitiveValueDecoder<i64> + Send>,
+        secondary: Box<dyn PrimitiveValueDecoder<i64> + Send>,
     ) -> Self {
         Self {
             base_from_epoch,
@@ -98,6 +103,8 @@ impl Iterator for TimestampNanosecondAsDecimalIterator {
         ))
     }
 }
+
+impl PrimitiveValueDecoder<i128> for TimestampNanosecondAsDecimalIterator {}
 
 fn decode(
     base: i64,

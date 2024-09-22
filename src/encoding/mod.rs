@@ -75,10 +75,34 @@ where
     fn take_inner(&mut self) -> Bytes;
 }
 
+pub trait PrimitiveValueDecoder<V>: Iterator<Item = Result<V>> {
+    /// Decode out.len() values into out at a time, returning the amount of
+    /// values decoded successfully.
+    ///
+    /// By default it relies on Iterator::next(), but hopefully this can be
+    /// refactored away when it is properly implemented for all the decoders.
+    // TODO: what about returning a &mut []? or taking &mut Vec<> as input?
+    //       relying on return usize to indicate how many values in out are
+    //       actually valid is probably not the best interface here.
+    fn decode(&mut self, out: &mut [V]) -> Result<usize> {
+        let mut len = 0;
+        for n in out.iter_mut() {
+            match self.next() {
+                Some(r) => {
+                    *n = r?;
+                    len += 1;
+                }
+                None => break,
+            };
+        }
+        Ok(len)
+    }
+}
+
 pub fn get_unsigned_rle_reader<R: Read + Send + 'static>(
     column: &Column,
     reader: R,
-) -> Box<dyn Iterator<Item = Result<i64>> + Send> {
+) -> Box<dyn PrimitiveValueDecoder<i64> + Send> {
     match column.encoding().kind() {
         ProtoColumnKind::Direct | ProtoColumnKind::Dictionary => {
             Box::new(RleReaderV1::<i64, _, UnsignedEncoding>::new(reader))
@@ -92,7 +116,7 @@ pub fn get_unsigned_rle_reader<R: Read + Send + 'static>(
 pub fn get_rle_reader<N: NInt, R: Read + Send + 'static>(
     column: &Column,
     reader: R,
-) -> Result<Box<dyn Iterator<Item = Result<N>> + Send>> {
+) -> Result<Box<dyn PrimitiveValueDecoder<N> + Send>> {
     match column.encoding().kind() {
         ProtoColumnKind::Direct => Ok(Box::new(RleReaderV1::<N, _, SignedEncoding>::new(reader))),
         ProtoColumnKind::DirectV2 => Ok(Box::new(RleReaderV2::<N, _, SignedEncoding>::new(reader))),

@@ -23,6 +23,7 @@ use crate::{
     encoding::{
         get_rle_reader, get_unsigned_rle_reader,
         timestamp::{TimestampIterator, TimestampNanosecondAsDecimalIterator},
+        PrimitiveValueDecoder,
     },
     error::{MismatchedSchemaSnafu, Result},
     proto::stream::Kind,
@@ -108,7 +109,7 @@ fn decimal128_decoder(
 
     let iter = TimestampNanosecondAsDecimalIterator::new(seconds_since_unix_epoch, data, secondary);
 
-    let iter: Box<dyn Iterator<Item = _> + Send> = match writer_tz {
+    let iter: Box<dyn PrimitiveValueDecoder<i128> + Send> = match writer_tz {
         Some(UTC) | None => Box::new(iter),
         Some(writer_tz) => Box::new(TimestampNanosecondAsDecimalWithTzIterator(iter, writer_tz)),
     };
@@ -314,3 +315,5 @@ impl Iterator for TimestampNanosecondAsDecimalWithTzIterator {
         Some(self.next_inner(ts))
     }
 }
+
+impl PrimitiveValueDecoder<i128> for TimestampNanosecondAsDecimalWithTzIterator {}
