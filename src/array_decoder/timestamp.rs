@@ -20,7 +20,10 @@ use std::sync::Arc;
 use crate::{
     array_decoder::ArrowDataType,
     column::{get_present_vec, Column},
-    encoding::{get_rle_reader, get_unsigned_rle_reader, timestamp::TimestampIterator},
+    encoding::{
+        get_rle_reader, get_unsigned_rle_reader,
+        timestamp::{TimestampIterator, TimestampNanosecondAsDecimalIterator},
+    },
     error::{MismatchedSchemaSnafu, Result},
     proto::stream::Kind,
     stripe::Stripe,
@@ -58,7 +61,7 @@ fn get_inner_timestamp_decoder<T: ArrowTimestampType + Send>(
     let present = get_present_vec(column, stripe)?
         .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
 
-    let iter = Box::new(TimestampIterator::<T, _>::new(
+    let iter = Box::new(TimestampIterator::<T>::new(
         seconds_since_unix_epoch,
         data,
         secondary,
@@ -103,14 +106,11 @@ fn decimal128_decoder(
     let present = get_present_vec(column, stripe)?
         .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
 
-    let iter = TimestampIterator::<TimestampNanosecondType, i128>::new(
-        seconds_since_unix_epoch,
-        data,
-        secondary,
-    );
+    let iter = TimestampNanosecondAsDecimalIterator::new(seconds_since_unix_epoch, data, secondary);
 
     let iter: Box<dyn Iterator<Item = _> + Send> = match writer_tz {
-        Some(UTC) => Box::new(iter), // Avoid overflow-able operations below
+        Some(UTC) | None => Box::new(iter),
+        // Avoid overflowable operations
         Some(writer_tz) => Box::new(iter.map(move |ts| {
             let ts = ts?;
             let seconds = ts.div_euclid(NANOSECONDS_IN_SECOND);
@@ -127,7 +127,6 @@ fn decimal128_decoder(
             Ok((dt.timestamp() as i128) * NANOSECONDS_IN_SECOND
                 + (dt.timestamp_subsec_nanos() as i128))
         })),
-        None => Box::new(iter),
     };
 
     Ok(DecimalArrayDecoder::new(
