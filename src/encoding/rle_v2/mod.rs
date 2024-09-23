@@ -70,6 +70,8 @@ impl<N: NInt, R: Read, S: EncodingSign> RleReaderV2<N, R, S> {
 
     // Returns false if no more bytes
     fn decode_batch(&mut self) -> Result<bool> {
+        self.current_head = 0;
+        self.decoded_ints.clear();
         let header = match try_read_u8(&mut self.reader)? {
             Some(byte) => byte,
             None => return Ok(false),
@@ -105,8 +107,6 @@ impl<N: NInt, R: Read, S: EncodingSign> Iterator for RleReaderV2<N, R, S> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.current_head >= self.decoded_ints.len() {
-            self.current_head = 0;
-            self.decoded_ints.clear();
             match self.decode_batch() {
                 Ok(more) => {
                     if !more {
@@ -151,8 +151,6 @@ impl<N: NInt, R: Read, S: EncodingSign> PrimitiveValueDecoder<N> for RleReaderV2
             self.current_head += copying;
 
             if self.current_head == self.decoded_ints.len() {
-                self.current_head = 0;
-                self.decoded_ints.clear();
                 self.decode_batch()?;
             }
         }
