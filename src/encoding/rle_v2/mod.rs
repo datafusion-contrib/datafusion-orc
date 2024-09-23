@@ -99,6 +99,7 @@ impl<N: NInt, R: Read, S: EncodingSign> RleReaderV2<N, R, S> {
     }
 }
 
+// TODO: remove this, currently only needed as we move from iterator to PrimitiveValueDecoder
 impl<N: NInt, R: Read, S: EncodingSign> Iterator for RleReaderV2<N, R, S> {
     type Item = Result<N>;
 
