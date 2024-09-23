@@ -113,9 +113,11 @@ schemas = {
 }
 
 for table in tables:
+    schema = schemas[table]
     tbl = csv.read_csv(
         f"benchmark_data/{table}.tbl",
+        read_options=csv.ReadOptions(column_names=schema.names),
         parse_options=csv.ParseOptions(delimiter="|"),
-        convert_options=csv.ConvertOptions(column_types=schemas[table]),
+        convert_options=csv.ConvertOptions(column_types=schema),
     )
-    orc.write_table(tbl, f"benchmark_data/{table}.orc", compression="zstd")
+    orc.write_table(tbl, f"benchmark_data/{table}.orc")
