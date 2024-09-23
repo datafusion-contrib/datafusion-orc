@@ -19,7 +19,10 @@ use std::{io::Read, marker::PhantomData};
 
 use bytes::BytesMut;
 
-use crate::{error::Result, memory::EstimateMemory};
+use crate::{
+    error::{OutOfSpecSnafu, Result},
+    memory::EstimateMemory,
+};
 
 use self::{
     delta::{read_delta_values, write_fixed_delta, write_varying_delta},
@@ -121,13 +124,13 @@ impl<N: NInt, R: Read, S: EncodingSign> Iterator for RleReaderV2<N, R, S> {
 }
 
 impl<N: NInt, R: Read, S: EncodingSign> PrimitiveValueDecoder<N> for RleReaderV2<N, R, S> {
-    fn decode(&mut self, out: &mut [N]) -> Result<usize> {
+    fn decode(&mut self, out: &mut [N]) -> Result<()> {
         let available = &self.decoded_ints[self.current_head..];
         // If we have enough in buffer to copy over
         if available.len() >= out.len() {
             out.copy_from_slice(&available[..out.len()]);
             self.current_head += out.len();
-            return Ok(out.len());
+            return Ok(());
         }
 
         // Otherwise progressively copy over chunks
@@ -152,7 +155,16 @@ impl<N: NInt, R: Read, S: EncodingSign> PrimitiveValueDecoder<N> for RleReaderV2
                 self.decode_batch()?;
             }
         }
-        Ok(copied)
+
+        if copied != out.len() {
+            // TODO: more descriptive error
+            OutOfSpecSnafu {
+                msg: "Array length less than expected",
+            }
+            .fail()
+        } else {
+            Ok(())
+        }
     }
 }
 

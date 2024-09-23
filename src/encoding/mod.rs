@@ -30,7 +30,7 @@ use snafu::ResultExt;
 
 use crate::{
     column::Column,
-    error::{InvalidColumnEncodingSnafu, IoSnafu, Result},
+    error::{InvalidColumnEncodingSnafu, IoSnafu, OutOfSpecSnafu, Result},
     memory::EstimateMemory,
     proto::column_encoding::Kind as ProtoColumnKind,
 };
@@ -76,15 +76,12 @@ where
 }
 
 pub trait PrimitiveValueDecoder<V>: Iterator<Item = Result<V>> {
-    /// Decode out.len() values into out at a time, returning the amount of
-    /// values decoded successfully.
+    /// Decode out.len() values into out at a time, failing if it cannot fill
+    /// the buffer.
     ///
     /// By default it relies on Iterator::next(), but hopefully this can be
     /// refactored away when it is properly implemented for all the decoders.
-    // TODO: what about returning a &mut []? or taking &mut Vec<> as input?
-    //       relying on return usize to indicate how many values in out are
-    //       actually valid is probably not the best interface here.
-    fn decode(&mut self, out: &mut [V]) -> Result<usize> {
+    fn decode(&mut self, out: &mut [V]) -> Result<()> {
         let mut len = 0;
         for n in out.iter_mut() {
             match self.next() {
@@ -95,7 +92,15 @@ pub trait PrimitiveValueDecoder<V>: Iterator<Item = Result<V>> {
                 None => break,
             };
         }
-        Ok(len)
+        if len != out.len() {
+            // TODO: more descriptive error
+            OutOfSpecSnafu {
+                msg: "Array length less than expected",
+            }
+            .fail()
+        } else {
+            Ok(())
+        }
     }
 }
 
