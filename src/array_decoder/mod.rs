@@ -34,7 +34,8 @@ use crate::encoding::byte::ByteRleReader;
 use crate::encoding::float::FloatIter;
 use crate::encoding::{get_rle_reader, PrimitiveValueDecoder};
 use crate::error::{
-    self, ArrowSnafu, MismatchedSchemaSnafu, Result, UnexpectedSnafu, UnsupportedTypeVariantSnafu,
+    self, ArrowSnafu, MismatchedSchemaSnafu, OutOfSpecSnafu, Result, UnexpectedSnafu,
+    UnsupportedTypeVariantSnafu,
 };
 use crate::proto::stream::Kind;
 use crate::schema::DataType;
@@ -78,16 +79,22 @@ impl<T: ArrowPrimitiveType> PrimitiveArrayDecoder<T> {
 
         match present {
             Some(present) => {
+                let count = present.iter().filter(|&&p| p).count();
+                let mut data = vec![T::Native::ZERO; count];
+                if self.iter.decode(data.as_mut_slice())? != count {
+                    // TODO: use a more specific error type, be more descriptive
+                    return OutOfSpecSnafu {
+                        msg: "Not enough data in array",
+                    }
+                    .fail();
+                }
+
+                let mut data = data.iter();
                 let mut builder = PrimitiveBuilder::<T>::with_capacity(batch_size);
                 for is_present in present {
                     if is_present {
-                        // TODO: return as error instead
-                        let val = self
-                            .iter
-                            .next()
-                            .transpose()?
-                            .expect("array less than expected length");
-                        builder.append_value(val);
+                        // Safe unwrap as we guarantee length above
+                        builder.append_value(*data.next().unwrap());
                     } else {
                         builder.append_null();
                     }
