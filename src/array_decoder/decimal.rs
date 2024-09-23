@@ -71,10 +71,8 @@ struct DecimalScaleRepairIter {
 
 impl DecimalScaleRepairIter {
     #[inline]
-    fn next_helper(&mut self, varint: Result<i128>, scale: Result<i32>) -> Result<Option<i128>> {
-        let varint = varint?;
-        let scale = scale?;
-        Ok(Some(fix_i128_scale(varint, self.fixed_scale, scale)))
+    fn next_helper(&mut self, varint: Result<i128>, scale: Result<i32>) -> Result<i128> {
+        Ok(fix_i128_scale(varint?, self.fixed_scale, scale?))
     }
 }
 
@@ -82,9 +80,13 @@ impl Iterator for DecimalScaleRepairIter {
     type Item = Result<i128>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let varint = self.varint_iter.next()?;
-        let scale = self.scale_iter.next()?;
-        self.next_helper(varint, scale).transpose()
+        // TODO: throw error for mismatched stream lengths?
+        let (varint, scale) = self
+            .varint_iter
+            .by_ref()
+            .zip(self.scale_iter.by_ref())
+            .next()?;
+        Some(self.next_helper(varint, scale))
     }
 }
 
