@@ -22,7 +22,7 @@ use bytes::{Bytes, BytesMut};
 use snafu::ResultExt;
 
 use crate::{
-    error::{self, Result},
+    error::{IoSnafu, Result},
     memory::EstimateMemory,
 };
 
@@ -31,39 +31,39 @@ use super::{PrimitiveValueDecoder, PrimitiveValueEncoder};
 /// Generically represent f32 and f64.
 // TODO: figure out how to use num::traits::FromBytes instead of rolling our own?
 pub trait Float: num::Float + std::fmt::Debug + num::traits::ToBytes {
-    /// Named OBytes to not conflict with Bytes from [`num::traits::ToBytes`]
-    type OBytes: AsRef<[u8]> + AsMut<[u8]> + Default;
+    const BYTE_SIZE: usize;
 
-    fn from_le_bytes(bytes: Self::OBytes) -> Self;
+    fn from_le_bytes(bytes: &[u8]) -> Self;
 }
 
 impl Float for f32 {
-    type OBytes = [u8; 4];
+    const BYTE_SIZE: usize = 4;
 
     #[inline]
-    fn from_le_bytes(bytes: Self::OBytes) -> Self {
-        Self::from_le_bytes(bytes)
+    fn from_le_bytes(bytes: &[u8]) -> Self {
+        debug_assert!(Self::BYTE_SIZE == bytes.len());
+        Self::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
     }
 }
 
 impl Float for f64 {
-    type OBytes = [u8; 8];
+    const BYTE_SIZE: usize = 8;
 
     #[inline]
-    fn from_le_bytes(bytes: Self::OBytes) -> Self {
-        Self::from_le_bytes(bytes)
+    fn from_le_bytes(bytes: &[u8]) -> Self {
+        debug_assert!(Self::BYTE_SIZE == bytes.len());
+        Self::from_le_bytes([
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+        ])
     }
 }
 
-/// An iterator
 pub struct FloatIter<T: Float, R: std::io::Read> {
     reader: R,
     phantom: std::marker::PhantomData<T>,
 }
 
 impl<T: Float, R: std::io::Read> FloatIter<T, R> {
-    /// Returns a new [`FloatIter`]
-    #[inline]
     pub fn new(reader: R) -> Self {
         Self {
             reader,
@@ -72,29 +72,23 @@ impl<T: Float, R: std::io::Read> FloatIter<T, R> {
     }
 }
 
-impl<T: Float, R: std::io::Read> PrimitiveValueDecoder<T> for FloatIter<T, R> {}
+impl<T: Float, R: std::io::Read> PrimitiveValueDecoder<T> for FloatIter<T, R> {
+    fn decode(&mut self, out: &mut [T]) -> Result<()> {
+        let mut buf = vec![0; out.len() * T::BYTE_SIZE];
+        self.reader.read_exact(&mut buf).context(IoSnafu)?;
+        for (out_float, bytes) in out.iter_mut().zip(buf.chunks(T::BYTE_SIZE)) {
+            *out_float = T::from_le_bytes(bytes);
+        }
+        Ok(())
+    }
+}
 
+// TODO: remove this, currently only needed as we move from iterator to PrimitiveValueDecoder
 impl<T: Float, R: std::io::Read> Iterator for FloatIter<T, R> {
     type Item = Result<T>;
 
-    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let mut chunk: T::OBytes = Default::default();
-        match self
-            .reader
-            .read(chunk.as_mut())
-            .context(error::DecodeFloatSnafu)
-        {
-            Err(err) => {
-                return Some(Err(err));
-            }
-            Ok(n) => {
-                if n == 0 {
-                    return None;
-                }
-            }
-        };
-        Some(Ok(T::from_le_bytes(chunk)))
+        unimplemented!()
     }
 }
 
@@ -163,8 +157,9 @@ mod tests {
         let bytes = float_to_bytes(&input);
         let bytes = Cursor::new(bytes);
 
-        let iter = FloatIter::<F, _>::new(bytes);
-        let actual = iter.collect::<Result<Vec<_>>>().unwrap();
+        let mut iter = FloatIter::<F, _>::new(bytes);
+        let mut actual = vec![F::zero(); input.len()];
+        iter.decode(&mut actual).unwrap();
 
         assert_eq!(input, actual);
     }
@@ -194,9 +189,9 @@ mod tests {
         let bytes = float_to_bytes(&[f32::NAN]);
         let bytes = Cursor::new(bytes);
 
-        let iter = FloatIter::<f32, _>::new(bytes);
-        let actual = iter.collect::<Result<Vec<_>>>().unwrap();
-        assert_eq!(actual.len(), 1);
+        let mut iter = FloatIter::<f32, _>::new(bytes);
+        let mut actual = vec![0.0; 1];
+        iter.decode(&mut actual).unwrap();
         assert!(actual[0].is_nan());
     }
 
@@ -205,9 +200,9 @@ mod tests {
         let bytes = float_to_bytes(&[f64::NAN]);
         let bytes = Cursor::new(bytes);
 
-        let iter = FloatIter::<f64, _>::new(bytes);
-        let actual = iter.collect::<Result<Vec<_>>>().unwrap();
-        assert_eq!(actual.len(), 1);
+        let mut iter = FloatIter::<f64, _>::new(bytes);
+        let mut actual = vec![0.0; 1];
+        iter.decode(&mut actual).unwrap();
         assert!(actual[0].is_nan());
     }
 
