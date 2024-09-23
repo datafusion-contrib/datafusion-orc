@@ -28,7 +28,7 @@ use snafu::ResultExt;
 use crate::array_decoder::{create_null_buffer, derive_present_vec, populate_lengths_with_nulls};
 use crate::column::{get_present_vec, Column};
 use crate::compression::Decompressor;
-use crate::encoding::get_unsigned_rle_reader;
+use crate::encoding::{get_unsigned_rle_reader, PrimitiveValueDecoder};
 use crate::error::{ArrowSnafu, IoSnafu, Result};
 use crate::proto::column_encoding::Kind as ColumnEncodingKind;
 use crate::proto::stream::Kind;
@@ -90,7 +90,7 @@ pub type BinaryArrayDecoder = GenericByteArrayDecoder<GenericBinaryType<i32>>;
 
 pub struct GenericByteArrayDecoder<T: ByteArrayType> {
     bytes: Box<Decompressor>,
-    lengths: Box<dyn Iterator<Item = Result<i64>> + Send>,
+    lengths: Box<dyn PrimitiveValueDecoder<i64> + Send>,
     present: Option<Box<dyn Iterator<Item = bool> + Send>>,
     phantom: PhantomData<T>,
 }
@@ -98,7 +98,7 @@ pub struct GenericByteArrayDecoder<T: ByteArrayType> {
 impl<T: ByteArrayType> GenericByteArrayDecoder<T> {
     fn new(
         bytes: Box<Decompressor>,
-        lengths: Box<dyn Iterator<Item = Result<i64>> + Send>,
+        lengths: Box<dyn PrimitiveValueDecoder<i64> + Send>,
         present: Option<Box<dyn Iterator<Item = bool> + Send>>,
     ) -> Self {
         Self {

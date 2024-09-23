@@ -30,7 +30,7 @@ use self::{
 
 use super::{
     util::{calculate_percentile_bits, try_read_u8},
-    EncodingSign, NInt, PrimitiveValueEncoder, VarintSerde,
+    EncodingSign, NInt, PrimitiveValueDecoder, PrimitiveValueEncoder, VarintSerde,
 };
 
 pub mod delta;
@@ -117,6 +117,42 @@ impl<N: NInt, R: Read, S: EncodingSign> Iterator for RleReaderV2<N, R, S> {
         let result = self.decoded_ints[self.current_head];
         self.current_head += 1;
         Some(Ok(result))
+    }
+}
+
+impl<N: NInt, R: Read, S: EncodingSign> PrimitiveValueDecoder<N> for RleReaderV2<N, R, S> {
+    fn decode(&mut self, out: &mut [N]) -> Result<usize> {
+        let available = &self.decoded_ints[self.current_head..];
+        // If we have enough in buffer to copy over
+        if available.len() >= out.len() {
+            out.copy_from_slice(&available[..out.len()]);
+            self.current_head += out.len();
+            return Ok(out.len());
+        }
+
+        // Otherwise progressively copy over chunks
+        let len_to_copy = out.len();
+        let mut copied = 0;
+        while copied < len_to_copy {
+            let copying = self.decoded_ints.len() - self.current_head;
+            // At most, we fill to exact length of output buffer (don't overflow)
+            let copying = copying.min(len_to_copy - copied);
+
+            let target_out_slice = &mut out[copied..copied + copying];
+            target_out_slice.copy_from_slice(
+                &self.decoded_ints[self.current_head..self.current_head + copying],
+            );
+
+            copied += copying;
+            self.current_head += copying;
+
+            if self.current_head == self.decoded_ints.len() {
+                self.current_head = 0;
+                self.decoded_ints.clear();
+                self.decode_batch()?;
+            }
+        }
+        Ok(copied)
     }
 }
 

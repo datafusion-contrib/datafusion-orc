@@ -24,7 +24,7 @@ use snafu::ResultExt;
 
 use crate::array_decoder::{derive_present_vec, populate_lengths_with_nulls};
 use crate::column::{get_present_vec, Column};
-use crate::encoding::get_unsigned_rle_reader;
+use crate::encoding::{get_unsigned_rle_reader, PrimitiveValueDecoder};
 use crate::error::{ArrowSnafu, Result};
 use crate::proto::stream::Kind;
 use crate::stripe::Stripe;
@@ -35,7 +35,7 @@ pub struct MapArrayDecoder {
     keys: Box<dyn ArrayBatchDecoder>,
     values: Box<dyn ArrayBatchDecoder>,
     present: Option<Box<dyn Iterator<Item = bool> + Send>>,
-    lengths: Box<dyn Iterator<Item = Result<i64>> + Send>,
+    lengths: Box<dyn PrimitiveValueDecoder<i64> + Send>,
     fields: Fields,
 }
 

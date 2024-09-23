@@ -20,7 +20,7 @@ use bytes::{BufMut, BytesMut};
 use crate::{error::Result, memory::EstimateMemory};
 use std::io::Read;
 
-use super::{util::read_u8, PrimitiveValueEncoder};
+use super::{util::read_u8, PrimitiveValueDecoder, PrimitiveValueEncoder};
 
 const MAX_LITERAL_LENGTH: usize = 128;
 const MIN_REPEAT_LENGTH: usize = 3;
@@ -244,6 +244,8 @@ impl<R: Read> Iterator for ByteRleReader<R> {
         Some(Ok(result as i8))
     }
 }
+
+impl<R: Read> PrimitiveValueDecoder<i8> for ByteRleReader<R> {}
 
 #[cfg(test)]
 mod tests {

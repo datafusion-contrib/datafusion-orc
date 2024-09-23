@@ -19,7 +19,7 @@ use std::cmp::Ordering;
 
 use crate::column::get_present_vec;
 use crate::encoding::decimal::UnboundedVarintStreamDecoder;
-use crate::encoding::get_rle_reader;
+use crate::encoding::{get_rle_reader, PrimitiveValueDecoder};
 use crate::proto::stream::Kind;
 use crate::stripe::Stripe;
 use crate::{column::Column, error::Result};
@@ -65,7 +65,7 @@ pub fn new_decimal_decoder(
 /// varint basis, and needs to align with type specified scale
 struct DecimalScaleRepairIter {
     varint_iter: Box<dyn Iterator<Item = Result<i128>> + Send>,
-    scale_iter: Box<dyn Iterator<Item = Result<i32>> + Send>,
+    scale_iter: Box<dyn PrimitiveValueDecoder<i32> + Send>,
     fixed_scale: u32,
 }
 
@@ -87,6 +87,8 @@ impl Iterator for DecimalScaleRepairIter {
         self.next_helper(varint, scale).transpose()
     }
 }
+
+impl PrimitiveValueDecoder<i128> for DecimalScaleRepairIter {}
 
 fn fix_i128_scale(i: i128, fixed_scale: u32, varying_scale: i32) -> i128 {
     // TODO: Verify with C++ impl in ORC repo, which does this cast
