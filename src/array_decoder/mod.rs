@@ -17,7 +17,7 @@
 
 use std::sync::Arc;
 
-use arrow::array::{ArrayRef, BooleanArray, BooleanBuilder, PrimitiveArray, PrimitiveBuilder};
+use arrow::array::{ArrayRef, BooleanArray, BooleanBuilder, PrimitiveArray};
 use arrow::buffer::NullBuffer;
 use arrow::datatypes::ArrowNativeTypeOp;
 use arrow::datatypes::{ArrowPrimitiveType, Decimal128Type};
@@ -75,28 +75,14 @@ impl<T: ArrowPrimitiveType> PrimitiveArrayDecoder<T> {
         parent_present: Option<&[bool]>,
     ) -> Result<PrimitiveArray<T>> {
         let present = derive_present_vec(&mut self.present, parent_present, batch_size);
-
+        let mut data = vec![T::Native::ZERO; batch_size];
         match present {
             Some(present) => {
-                let count = present.iter().filter(|&&p| p).count();
-                let mut data = vec![T::Native::ZERO; count];
-                self.iter.decode(data.as_mut_slice())?;
-
-                let mut data = data.iter();
-                let mut builder = PrimitiveBuilder::<T>::with_capacity(batch_size);
-                for is_present in present {
-                    if is_present {
-                        // Safe unwrap as we guarantee length above
-                        builder.append_value(*data.next().unwrap());
-                    } else {
-                        builder.append_null();
-                    }
-                }
-                let array = builder.finish();
+                self.iter.decode_spaced(data.as_mut_slice(), &present)?;
+                let array = PrimitiveArray::<T>::new(data.into(), Some(present.into()));
                 Ok(array)
             }
             None => {
-                let mut data = vec![T::Native::ZERO; batch_size];
                 self.iter.decode(data.as_mut_slice())?;
                 let array = PrimitiveArray::<T>::from_iter_values(data);
                 Ok(array)

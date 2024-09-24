@@ -102,6 +102,31 @@ pub trait PrimitiveValueDecoder<V>: Iterator<Item = Result<V>> {
             Ok(())
         }
     }
+
+    /// Decode into out according to the true elements in present, which must be
+    /// the same length as out.
+    fn decode_spaced(&mut self, out: &mut [V], present: &[bool]) -> Result<()> {
+        debug_assert_eq!(out.len(), present.len());
+        for (out_n, _) in out
+            .iter_mut()
+            .zip(present.iter())
+            .filter(|(_, &is_present)| is_present)
+        {
+            match self.next() {
+                Some(r) => {
+                    *out_n = r?;
+                }
+                None => {
+                    // TODO: more descriptive error
+                    return OutOfSpecSnafu {
+                        msg: "Array length less than expected",
+                    }
+                    .fail();
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 pub fn get_unsigned_rle_reader<R: Read + Send + 'static>(
