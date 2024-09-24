@@ -58,13 +58,12 @@ impl Float for f64 {
     }
 }
 
-// TODO: rename to FloatDecoder
-pub struct FloatIter<T: Float, R: std::io::Read> {
+pub struct FloatDecoder<T: Float, R: std::io::Read> {
     reader: R,
     phantom: std::marker::PhantomData<T>,
 }
 
-impl<T: Float, R: std::io::Read> FloatIter<T, R> {
+impl<T: Float, R: std::io::Read> FloatDecoder<T, R> {
     pub fn new(reader: R) -> Self {
         Self {
             reader,
@@ -73,7 +72,7 @@ impl<T: Float, R: std::io::Read> FloatIter<T, R> {
     }
 }
 
-impl<T: Float, R: std::io::Read> PrimitiveValueDecoder<T> for FloatIter<T, R> {
+impl<T: Float, R: std::io::Read> PrimitiveValueDecoder<T> for FloatDecoder<T, R> {
     fn decode(&mut self, out: &mut [T]) -> Result<()> {
         let mut buf = vec![0; out.len() * T::BYTE_SIZE];
         self.reader.read_exact(&mut buf).context(IoSnafu)?;
@@ -99,7 +98,7 @@ impl<T: Float, R: std::io::Read> PrimitiveValueDecoder<T> for FloatIter<T, R> {
 }
 
 // TODO: remove this, currently only needed as we move from iterator to PrimitiveValueDecoder
-impl<T: Float, R: std::io::Read> Iterator for FloatIter<T, R> {
+impl<T: Float, R: std::io::Read> Iterator for FloatDecoder<T, R> {
     type Item = Result<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -172,7 +171,7 @@ mod tests {
         let bytes = float_to_bytes(&input);
         let bytes = Cursor::new(bytes);
 
-        let mut iter = FloatIter::<F, _>::new(bytes);
+        let mut iter = FloatDecoder::<F, _>::new(bytes);
         let mut actual = vec![F::zero(); input.len()];
         iter.decode(&mut actual).unwrap();
 
@@ -204,7 +203,7 @@ mod tests {
         let bytes = float_to_bytes(&[f32::NAN]);
         let bytes = Cursor::new(bytes);
 
-        let mut iter = FloatIter::<f32, _>::new(bytes);
+        let mut iter = FloatDecoder::<f32, _>::new(bytes);
         let mut actual = vec![0.0; 1];
         iter.decode(&mut actual).unwrap();
         assert!(actual[0].is_nan());
@@ -215,7 +214,7 @@ mod tests {
         let bytes = float_to_bytes(&[f64::NAN]);
         let bytes = Cursor::new(bytes);
 
-        let mut iter = FloatIter::<f64, _>::new(bytes);
+        let mut iter = FloatDecoder::<f64, _>::new(bytes);
         let mut actual = vec![0.0; 1];
         iter.decode(&mut actual).unwrap();
         assert!(actual[0].is_nan());
