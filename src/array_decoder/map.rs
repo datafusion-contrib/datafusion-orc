@@ -22,7 +22,7 @@ use arrow::buffer::{NullBuffer, OffsetBuffer};
 use arrow::datatypes::{Field, Fields};
 use snafu::ResultExt;
 
-use crate::array_decoder::{derive_present_vec, populate_lengths_with_nulls};
+use crate::array_decoder::derive_present_vec;
 use crate::column::{get_present_vec, Column};
 use crate::encoding::{get_unsigned_rle_reader, PrimitiveValueDecoder};
 use crate::error::{ArrowSnafu, Result};
@@ -78,22 +78,12 @@ impl ArrayBatchDecoder for MapArrayDecoder {
     ) -> Result<ArrayRef> {
         let present = derive_present_vec(&mut self.present, parent_present, batch_size);
 
-        // How many lengths we need to fetch
-        let elements_to_fetch = if let Some(present) = &present {
-            present.iter().filter(|&&is_present| is_present).count()
+        let mut lengths = vec![0; batch_size];
+        if let Some(present) = &present {
+            self.lengths.decode_spaced(&mut lengths, present)?;
         } else {
-            batch_size
-        };
-        let lengths = self
-            .lengths
-            .by_ref()
-            .take(elements_to_fetch)
-            .collect::<Result<Vec<_>>>()?;
-        debug_assert_eq!(
-            lengths.len(),
-            elements_to_fetch,
-            "less lengths than expected in MapArray"
-        );
+            self.lengths.decode(&mut lengths)?;
+        }
         let total_length: i64 = lengths.iter().sum();
         // Fetch key and value arrays, each with total_length elements
         // Fetch child array as one Array with total_length elements
@@ -103,8 +93,7 @@ impl ArrayBatchDecoder for MapArrayDecoder {
         let entries =
             StructArray::try_new(self.fields.clone(), vec![keys_array, values_array], None)
                 .context(ArrowSnafu)?;
-        let lengths = populate_lengths_with_nulls(lengths, batch_size, &present);
-        let offsets = OffsetBuffer::from_lengths(lengths);
+        let offsets = OffsetBuffer::from_lengths(lengths.into_iter().map(|l| l as usize));
         let null_buffer = present.map(NullBuffer::from);
 
         let field = Arc::new(Field::new_struct("entries", self.fields.clone(), false));
