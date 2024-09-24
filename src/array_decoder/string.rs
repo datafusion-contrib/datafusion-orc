@@ -25,7 +25,7 @@ use arrow::compute::kernels::cast;
 use arrow::datatypes::{ByteArrayType, DataType, GenericBinaryType, GenericStringType};
 use snafu::ResultExt;
 
-use crate::array_decoder::{create_null_buffer, derive_present_vec, populate_lengths_with_nulls};
+use crate::array_decoder::{create_null_buffer, derive_present_vec};
 use crate::column::{get_present_vec, Column};
 use crate::compression::Decompressor;
 use crate::encoding::{get_unsigned_rle_reader, PrimitiveValueDecoder};
@@ -116,14 +116,12 @@ impl<T: ByteArrayType> GenericByteArrayDecoder<T> {
     ) -> Result<GenericByteArray<T>> {
         let present = derive_present_vec(&mut self.present, parent_present, batch_size);
 
-        // How many lengths we need to fetch
-        let elements_to_fetch = if let Some(present) = &present {
-            present.iter().filter(|&&is_present| is_present).count()
+        let mut lengths = vec![0; batch_size];
+        if let Some(present) = &present {
+            self.lengths.decode_spaced(&mut lengths, present)?;
         } else {
-            batch_size
-        };
-        let mut lengths = vec![0; elements_to_fetch];
-        self.lengths.decode(&mut lengths)?;
+            self.lengths.decode(&mut lengths)?;
+        }
         let total_length: i64 = lengths.iter().sum();
         // Fetch all data bytes at once
         let mut bytes = Vec::with_capacity(total_length as usize);
@@ -133,8 +131,8 @@ impl<T: ByteArrayType> GenericByteArrayDecoder<T> {
             .read_to_end(&mut bytes)
             .context(IoSnafu)?;
         let bytes = Buffer::from(bytes);
-        let lengths = populate_lengths_with_nulls(lengths, batch_size, &present);
-        let offsets = OffsetBuffer::<T::Offset>::from_lengths(lengths);
+        let offsets =
+            OffsetBuffer::<T::Offset>::from_lengths(lengths.into_iter().map(|l| l as usize));
         let null_buffer = create_null_buffer(present);
 
         let array =

@@ -241,29 +241,6 @@ fn derive_present_vec(
     }
 }
 
-/// Fix the lengths to account for nulls (represented as 0 length)
-fn populate_lengths_with_nulls(
-    lengths: Vec<i64>,
-    batch_size: usize,
-    present: &Option<Vec<bool>>,
-) -> Vec<usize> {
-    if let Some(present) = present {
-        let mut lengths_with_nulls = Vec::with_capacity(batch_size);
-        let mut lengths = lengths.iter();
-        for &is_present in present {
-            if is_present {
-                let length = *lengths.next().unwrap();
-                lengths_with_nulls.push(length as usize);
-            } else {
-                lengths_with_nulls.push(0);
-            }
-        }
-        lengths_with_nulls
-    } else {
-        lengths.into_iter().map(|l| l as usize).collect()
-    }
-}
-
 fn create_null_buffer(present: Option<Vec<bool>>) -> Option<NullBuffer> {
     match present {
         // Edge case where keys of map cannot have a null buffer
