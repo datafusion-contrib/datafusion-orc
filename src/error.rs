@@ -26,6 +26,7 @@ use snafu::Location;
 use crate::proto;
 use crate::schema::DataType;
 
+// TODO: consolidate error types? better to have a smaller set?
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
 pub enum OrcError {

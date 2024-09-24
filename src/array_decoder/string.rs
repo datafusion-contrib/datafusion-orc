@@ -122,16 +122,8 @@ impl<T: ByteArrayType> GenericByteArrayDecoder<T> {
         } else {
             batch_size
         };
-        let lengths = self
-            .lengths
-            .by_ref()
-            .take(elements_to_fetch)
-            .collect::<Result<Vec<_>>>()?;
-        debug_assert_eq!(
-            lengths.len(),
-            elements_to_fetch,
-            "less lengths than expected in ByteArray"
-        );
+        let mut lengths = vec![0; elements_to_fetch];
+        self.lengths.decode(&mut lengths)?;
         let total_length: i64 = lengths.iter().sum();
         // Fetch all data bytes at once
         let mut bytes = Vec::with_capacity(total_length as usize);
