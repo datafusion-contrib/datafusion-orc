@@ -26,12 +26,12 @@ use bytes::Bytes;
 use crate::{error::Result, memory::EstimateMemory};
 
 use super::{
-    byte::{ByteRleReader, ByteRleWriter},
+    byte::{ByteRleDecoder, ByteRleWriter},
     PrimitiveValueEncoder,
 };
 
 pub struct BooleanIter<R: Read> {
-    iter: ByteRleReader<R>,
+    iter: ByteRleDecoder<R>,
     data: u8,
     bits_in_data: usize,
 }
@@ -39,7 +39,7 @@ pub struct BooleanIter<R: Read> {
 impl<R: Read> BooleanIter<R> {
     pub fn new(reader: R) -> Self {
         Self {
-            iter: ByteRleReader::new(reader),
+            iter: ByteRleDecoder::new(reader),
             bits_in_data: 0,
             data: 0,
         }
