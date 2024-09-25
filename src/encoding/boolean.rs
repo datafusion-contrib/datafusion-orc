@@ -26,7 +26,7 @@ use bytes::Bytes;
 use crate::{error::Result, memory::EstimateMemory};
 
 use super::{
-    byte::{ByteRleDecoder, ByteRleWriter},
+    byte::{ByteRleDecoder, ByteRleEncoder},
     PrimitiveValueEncoder,
 };
 
@@ -81,7 +81,7 @@ impl<R: Read> Iterator for BooleanIter<R> {
 /// further encoded via Byte RLE.
 pub struct BooleanEncoder {
     // TODO: can we refactor to not need two separate buffers?
-    byte_encoder: ByteRleWriter,
+    byte_encoder: ByteRleEncoder,
     builder: BooleanBufferBuilder,
 }
 
@@ -94,7 +94,7 @@ impl EstimateMemory for BooleanEncoder {
 impl BooleanEncoder {
     pub fn new() -> Self {
         Self {
-            byte_encoder: ByteRleWriter::new(),
+            byte_encoder: ByteRleEncoder::new(),
             builder: BooleanBufferBuilder::new(8),
         }
     }

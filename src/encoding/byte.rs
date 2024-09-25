@@ -26,7 +26,7 @@ const MAX_LITERAL_LENGTH: usize = 128;
 const MIN_REPEAT_LENGTH: usize = 3;
 const MAX_REPEAT_LENGTH: usize = 130;
 
-pub struct ByteRleWriter {
+pub struct ByteRleEncoder {
     writer: BytesMut,
     /// Literal values to encode.
     literals: [u8; MAX_LITERAL_LENGTH],
@@ -40,7 +40,7 @@ pub struct ByteRleWriter {
     run_value: Option<u8>,
 }
 
-impl ByteRleWriter {
+impl ByteRleEncoder {
     /// Incrementally encode bytes using Run Length Encoding, where the subencodings are:
     ///   - Run: at least 3 repeated values in sequence (up to `MAX_REPEAT_LENGTH`)
     ///   - Literals: disparate values (up to `MAX_LITERAL_LENGTH` length)
@@ -138,14 +138,14 @@ impl ByteRleWriter {
     }
 }
 
-impl EstimateMemory for ByteRleWriter {
+impl EstimateMemory for ByteRleEncoder {
     fn estimate_memory_size(&self) -> usize {
         self.writer.len() + self.num_literals
     }
 }
 
 /// i8 to match with Arrow Int8 type.
-impl PrimitiveValueEncoder<i8> for ByteRleWriter {
+impl PrimitiveValueEncoder<i8> for ByteRleEncoder {
     fn new() -> Self {
         Self {
             writer: BytesMut::new(),
@@ -280,7 +280,7 @@ mod tests {
     }
 
     fn roundtrip_byte_rle_helper(values: &[i8]) -> Result<Vec<i8>> {
-        let mut writer = ByteRleWriter::new();
+        let mut writer = ByteRleEncoder::new();
         writer.write_slice(values);
         writer.flush();
 
