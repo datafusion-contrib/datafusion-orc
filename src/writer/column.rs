@@ -28,7 +28,7 @@ use bytes::{BufMut, BytesMut};
 
 use crate::{
     encoding::{
-        boolean::BooleanEncoder, byte::ByteRleWriter, float::FloatValueEncoder,
+        boolean::BooleanEncoder, byte::ByteRleEncoder, float::FloatValueEncoder,
         rle_v2::RleWriterV2, NInt, PrimitiveValueEncoder, SignedEncoding, UnsignedEncoding,
     },
     error::Result,
@@ -389,7 +389,7 @@ where
 
 pub type FloatColumnEncoder = PrimitiveColumnEncoder<Float32Type, FloatValueEncoder<Float32Type>>;
 pub type DoubleColumnEncoder = PrimitiveColumnEncoder<Float64Type, FloatValueEncoder<Float64Type>>;
-pub type ByteColumnEncoder = PrimitiveColumnEncoder<Int8Type, ByteRleWriter>;
+pub type ByteColumnEncoder = PrimitiveColumnEncoder<Int8Type, ByteRleEncoder>;
 pub type Int16ColumnEncoder = PrimitiveColumnEncoder<Int16Type, RleWriterV2<i16, SignedEncoding>>;
 pub type Int32ColumnEncoder = PrimitiveColumnEncoder<Int32Type, RleWriterV2<i32, SignedEncoding>>;
 pub type Int64ColumnEncoder = PrimitiveColumnEncoder<Int64Type, RleWriterV2<i64, SignedEncoding>>;
