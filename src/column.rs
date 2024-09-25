@@ -20,7 +20,7 @@ use std::sync::Arc;
 use bytes::Bytes;
 use snafu::ResultExt;
 
-use crate::encoding::boolean::BooleanIter;
+use crate::encoding::boolean::BooleanDecoder;
 use crate::error::{IoSnafu, Result};
 use crate::proto::stream::Kind;
 use crate::proto::{ColumnEncoding, StripeFooter};
@@ -162,6 +162,6 @@ pub fn get_present_vec(column: &Column, stripe: &Stripe) -> Result<Option<Vec<bo
     stripe
         .stream_map()
         .get_opt(column, Kind::Present)
-        .map(|reader| BooleanIter::new(reader).collect::<Result<Vec<_>>>())
+        .map(|reader| BooleanDecoder::new(reader).collect::<Result<Vec<_>>>())
         .transpose()
 }
