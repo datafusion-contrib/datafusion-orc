@@ -30,7 +30,7 @@ use snafu::{ensure, ResultExt};
 
 use crate::column::{get_present_vec, Column};
 use crate::encoding::boolean::BooleanIter;
-use crate::encoding::byte::ByteRleReader;
+use crate::encoding::byte::ByteRleDecoder;
 use crate::encoding::float::FloatDecoder;
 use crate::encoding::{get_rle_reader, PrimitiveValueDecoder};
 use crate::error::{
@@ -325,7 +325,7 @@ pub fn array_decoder_factory(
                 }
             );
             let iter = stripe.stream_map().get(column, Kind::Data);
-            let iter = Box::new(ByteRleReader::new(iter));
+            let iter = Box::new(ByteRleDecoder::new(iter));
             let present = get_present_vec(column, stripe)?
                 .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
             Box::new(Int8ArrayDecoder::new(iter, present))

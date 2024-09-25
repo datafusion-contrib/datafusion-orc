@@ -188,7 +188,7 @@ fn write_literals(writer: &mut BytesMut, literals: &[u8]) {
     writer.put_slice(literals);
 }
 
-pub struct ByteRleReader<R> {
+pub struct ByteRleDecoder<R> {
     reader: R,
     literals: [u8; MAX_LITERAL_LENGTH],
     num_literals: usize,
@@ -196,7 +196,7 @@ pub struct ByteRleReader<R> {
     repeat: bool,
 }
 
-impl<R: Read> ByteRleReader<R> {
+impl<R: Read> ByteRleDecoder<R> {
     pub fn new(reader: R) -> Self {
         Self {
             reader,
@@ -227,7 +227,7 @@ impl<R: Read> ByteRleReader<R> {
     }
 }
 
-impl<R: Read> Iterator for ByteRleReader<R> {
+impl<R: Read> Iterator for ByteRleDecoder<R> {
     type Item = Result<i8>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -245,7 +245,7 @@ impl<R: Read> Iterator for ByteRleReader<R> {
     }
 }
 
-impl<R: Read> PrimitiveValueDecoder<i8> for ByteRleReader<R> {}
+impl<R: Read> PrimitiveValueDecoder<i8> for ByteRleDecoder<R> {}
 
 #[cfg(test)]
 mod tests {
@@ -259,21 +259,21 @@ mod tests {
     fn reader_test() {
         let data = [0x61u8, 0x00];
         let data = &mut data.as_ref();
-        let iter = ByteRleReader::new(data)
+        let iter = ByteRleDecoder::new(data)
             .collect::<Result<Vec<_>>>()
             .unwrap();
         assert_eq!(iter, vec![0; 100]);
 
         let data = [0x01, 0x01];
         let data = &mut data.as_ref();
-        let iter = ByteRleReader::new(data)
+        let iter = ByteRleDecoder::new(data)
             .collect::<Result<Vec<_>>>()
             .unwrap();
         assert_eq!(iter, vec![1; 4]);
 
         let data = [0xfe, 0x44, 0x45];
         let data = &mut data.as_ref();
-        let iter = ByteRleReader::new(data)
+        let iter = ByteRleDecoder::new(data)
             .collect::<Result<Vec<_>>>()
             .unwrap();
         assert_eq!(iter, vec![0x44, 0x45]);
@@ -286,7 +286,7 @@ mod tests {
 
         let buf = writer.take_inner();
         let mut cursor = Cursor::new(&buf);
-        let reader = ByteRleReader::new(&mut cursor);
+        let reader = ByteRleDecoder::new(&mut cursor);
         reader.into_iter().collect::<Result<Vec<_>>>()
     }
 
