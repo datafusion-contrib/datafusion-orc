@@ -16,8 +16,12 @@
 // under the License.
 
 use bytes::{BufMut, BytesMut};
+use snafu::ResultExt;
 
-use crate::{error::Result, memory::EstimateMemory};
+use crate::{
+    error::{IoSnafu, Result},
+    memory::EstimateMemory,
+};
 use std::io::Read;
 
 use super::{util::read_u8, PrimitiveValueDecoder, PrimitiveValueEncoder};
@@ -190,38 +194,38 @@ fn write_literals(writer: &mut BytesMut, literals: &[u8]) {
 
 pub struct ByteRleDecoder<R> {
     reader: R,
-    literals: [u8; MAX_LITERAL_LENGTH],
-    num_literals: usize,
-    used: usize,
-    repeat: bool,
+    /// Values that have been decoded but not yet emitted.
+    leftovers: Vec<u8>,
+    /// Index into leftovers to make it act like a queue; indicates the
+    /// next element available to read
+    index: usize,
 }
 
 impl<R: Read> ByteRleDecoder<R> {
     pub fn new(reader: R) -> Self {
         Self {
             reader,
-            literals: [0; MAX_LITERAL_LENGTH],
-            num_literals: 0,
-            used: 0,
-            repeat: false,
+            leftovers: Vec::with_capacity(MAX_REPEAT_LENGTH),
+            index: 0,
         }
     }
 
     fn read_values(&mut self) -> Result<()> {
-        let control = read_u8(&mut self.reader)?;
-        self.used = 0;
-        if control < 0x80 {
-            self.repeat = true;
-            self.num_literals = control as usize + MIN_REPEAT_LENGTH;
-            let val = read_u8(&mut self.reader)?;
-            self.literals[0] = val;
+        self.index = 0;
+        self.leftovers.clear();
+        let header = read_u8(&mut self.reader)?;
+        if header < 0x80 {
+            // Run of repeated value
+            let length = header as usize + MIN_REPEAT_LENGTH;
+            let value = read_u8(&mut self.reader)?;
+            self.leftovers.extend(std::iter::repeat(value).take(length));
         } else {
-            self.repeat = false;
-            self.num_literals = 0x100 - control as usize;
-            for i in 0..self.num_literals {
-                let result = read_u8(&mut self.reader)?;
-                self.literals[i] = result;
-            }
+            // List of values
+            let length = 0x100 - header as usize;
+            self.leftovers.resize(length, 0);
+            self.reader
+                .read_exact(&mut self.leftovers)
+                .context(IoSnafu)?;
         }
         Ok(())
     }
@@ -231,17 +235,12 @@ impl<R: Read> Iterator for ByteRleDecoder<R> {
     type Item = Result<i8>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.used == self.num_literals {
+        if self.index == self.leftovers.len() {
             self.read_values().ok()?;
         }
-
-        let result = if self.repeat {
-            self.literals[0]
-        } else {
-            self.literals[self.used]
-        };
-        self.used += 1;
-        Some(Ok(result as i8))
+        let value = self.leftovers[self.index] as i8;
+        self.index += 1;
+        Some(Ok(value))
     }
 }
 
