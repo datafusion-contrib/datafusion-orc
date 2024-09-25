@@ -17,7 +17,7 @@
 
 use std::sync::Arc;
 
-use arrow::array::{ArrayRef, BooleanArray, BooleanBuilder, PrimitiveArray};
+use arrow::array::{ArrayRef, BooleanArray, PrimitiveArray};
 use arrow::buffer::NullBuffer;
 use arrow::datatypes::ArrowNativeTypeOp;
 use arrow::datatypes::{ArrowPrimitiveType, Decimal128Type};
@@ -152,13 +152,13 @@ impl ArrayBatchDecoder for DecimalArrayDecoder {
 }
 
 struct BooleanArrayDecoder {
-    iter: Box<dyn Iterator<Item = Result<bool>> + Send>,
+    iter: Box<dyn PrimitiveValueDecoder<bool> + Send>,
     present: Option<Box<dyn Iterator<Item = bool> + Send>>,
 }
 
 impl BooleanArrayDecoder {
     pub fn new(
-        iter: Box<dyn Iterator<Item = Result<bool>> + Send>,
+        iter: Box<dyn PrimitiveValueDecoder<bool> + Send>,
         present: Option<Box<dyn Iterator<Item = bool> + Send>>,
     ) -> Self {
         Self { iter, present }
@@ -172,38 +172,18 @@ impl ArrayBatchDecoder for BooleanArrayDecoder {
         parent_present: Option<&[bool]>,
     ) -> Result<ArrayRef> {
         let present = derive_present_vec(&mut self.present, parent_present, batch_size);
-
-        match present {
+        let mut data = vec![false; batch_size];
+        let array = match present {
             Some(present) => {
-                let mut builder = BooleanBuilder::with_capacity(batch_size);
-                for is_present in present {
-                    if is_present {
-                        // TODO: return as error instead
-                        let val = self
-                            .iter
-                            .next()
-                            .transpose()?
-                            .expect("array less than expected length");
-                        builder.append_value(val);
-                    } else {
-                        builder.append_null();
-                    }
-                }
-                let array = builder.finish();
-                let array = Arc::new(array) as ArrayRef;
-                Ok(array)
+                self.iter.decode_spaced(data.as_mut_slice(), &present)?;
+                BooleanArray::new(data.into(), Some(present.into()))
             }
             None => {
-                let data = self
-                    .iter
-                    .by_ref()
-                    .take(batch_size)
-                    .collect::<Result<Vec<_>>>()?;
-                let array = BooleanArray::from(data);
-                let array = Arc::new(array) as ArrayRef;
-                Ok(array)
+                self.iter.decode(data.as_mut_slice())?;
+                BooleanArray::from(data)
             }
-        }
+        };
+        Ok(Arc::new(array))
     }
 }
 
