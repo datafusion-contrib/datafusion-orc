@@ -27,11 +27,11 @@ use crate::{error::Result, memory::EstimateMemory};
 
 use super::{
     byte::{ByteRleDecoder, ByteRleEncoder},
-    PrimitiveValueEncoder,
+    PrimitiveValueDecoder, PrimitiveValueEncoder,
 };
 
 pub struct BooleanDecoder<R: Read> {
-    iter: ByteRleDecoder<R>,
+    decoder: ByteRleDecoder<R>,
     data: u8,
     bits_in_data: usize,
 }
@@ -39,7 +39,7 @@ pub struct BooleanDecoder<R: Read> {
 impl<R: Read> BooleanDecoder<R> {
     pub fn new(reader: R) -> Self {
         Self {
-            iter: ByteRleDecoder::new(reader),
+            decoder: ByteRleDecoder::new(reader),
             bits_in_data: 0,
             data: 0,
         }
@@ -61,7 +61,7 @@ impl<R: Read> Iterator for BooleanDecoder<R> {
     fn next(&mut self) -> Option<Self::Item> {
         // read more data if necessary
         if self.bits_in_data == 0 {
-            match self.iter.next() {
+            match self.decoder.next() {
                 Some(Ok(data)) => {
                     self.data = data as u8;
                     self.bits_in_data = 8;
@@ -75,6 +75,8 @@ impl<R: Read> Iterator for BooleanDecoder<R> {
         }
     }
 }
+
+impl<R: Read> PrimitiveValueDecoder<bool> for BooleanDecoder<R> {}
 
 /// ORC encodes validity starting from MSB, whilst Arrow encodes it
 /// from LSB. After bytes are filled with the present bits, they are
