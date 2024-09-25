@@ -30,13 +30,13 @@ use super::{
     PrimitiveValueEncoder,
 };
 
-pub struct BooleanIter<R: Read> {
+pub struct BooleanDecoder<R: Read> {
     iter: ByteRleDecoder<R>,
     data: u8,
     bits_in_data: usize,
 }
 
-impl<R: Read> BooleanIter<R> {
+impl<R: Read> BooleanDecoder<R> {
     pub fn new(reader: R) -> Self {
         Self {
             iter: ByteRleDecoder::new(reader),
@@ -54,7 +54,7 @@ impl<R: Read> BooleanIter<R> {
     }
 }
 
-impl<R: Read> Iterator for BooleanIter<R> {
+impl<R: Read> Iterator for BooleanDecoder<R> {
     type Item = Result<bool>;
 
     #[inline]
@@ -142,7 +142,9 @@ mod tests {
 
         let data = &mut data.as_ref();
 
-        let iter = BooleanIter::new(data).collect::<Result<Vec<_>>>().unwrap();
+        let iter = BooleanDecoder::new(data)
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
         assert_eq!(iter, vec![false; 800])
     }
 
@@ -152,7 +154,9 @@ mod tests {
 
         let data = &mut data.as_ref();
 
-        let iter = BooleanIter::new(data).collect::<Result<Vec<_>>>().unwrap();
+        let iter = BooleanDecoder::new(data)
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
         assert_eq!(
             iter,
             vec![
@@ -169,7 +173,9 @@ mod tests {
 
         let data = &mut data.as_ref();
 
-        let iter = BooleanIter::new(data).collect::<Result<Vec<_>>>().unwrap();
+        let iter = BooleanDecoder::new(data)
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
         assert_eq!(
             iter,
             vec![true, false, false, false, false, false, false, false]
