@@ -287,8 +287,7 @@ impl<T: ArrowTimestampType> ArrayBatchDecoder for TimestampInstantArrayDecoder<T
 struct TimestampNanosecondAsDecimalWithTzDecoder(TimestampNanosecondAsDecimalDecoder, Tz);
 
 impl TimestampNanosecondAsDecimalWithTzDecoder {
-    fn next_inner(&self, ts: Result<i128>) -> Result<i128> {
-        let ts = ts?;
+    fn next_inner(&self, ts: i128) -> i128 {
         let seconds = ts.div_euclid(NANOSECONDS_IN_SECOND);
         let nanoseconds = ts.rem_euclid(NANOSECONDS_IN_SECOND);
 
@@ -300,19 +299,7 @@ impl TimestampNanosecondAsDecimalWithTzDecoder {
         .naive_local()
         .and_utc();
 
-        Ok(
-            (dt.timestamp() as i128) * NANOSECONDS_IN_SECOND
-                + (dt.timestamp_subsec_nanos() as i128),
-        )
-    }
-}
-
-impl Iterator for TimestampNanosecondAsDecimalWithTzDecoder {
-    type Item = Result<i128>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let ts = self.0.next()?;
-        Some(self.next_inner(ts))
+        (dt.timestamp() as i128) * NANOSECONDS_IN_SECOND + (dt.timestamp_subsec_nanos() as i128)
     }
 }
 
@@ -320,7 +307,7 @@ impl PrimitiveValueDecoder<i128> for TimestampNanosecondAsDecimalWithTzDecoder {
     fn decode(&mut self, out: &mut [i128]) -> Result<()> {
         self.0.decode(out)?;
         for x in out.iter_mut() {
-            *x = self.next_inner(Ok(*x))?;
+            *x = self.next_inner(*x);
         }
         Ok(())
     }

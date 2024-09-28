@@ -49,22 +49,6 @@ impl<T: ArrowTimestampType> TimestampDecoder<T> {
     }
 }
 
-// TODO: remove this
-impl<T: ArrowTimestampType> Iterator for TimestampDecoder<T> {
-    type Item = Result<i64>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // TODO: throw error for mismatched stream lengths?
-        let (seconds_since_orc_base, nanoseconds) =
-            self.data.by_ref().zip(self.secondary.by_ref()).next()?;
-        Some(decode_timestamp::<T>(
-            self.base_from_epoch,
-            seconds_since_orc_base,
-            nanoseconds,
-        ))
-    }
-}
-
 impl<T: ArrowTimestampType> PrimitiveValueDecoder<T::Native> for TimestampDecoder<T> {
     fn decode(&mut self, out: &mut [T::Native]) -> Result<()> {
         // TODO: can probably optimize, reuse buffers?
@@ -75,11 +59,8 @@ impl<T: ArrowTimestampType> PrimitiveValueDecoder<T::Native> for TimestampDecode
         for (index, (&seconds_since_orc_base, &nanoseconds)) in
             data.iter().zip(secondary.iter()).enumerate()
         {
-            out[index] = decode_timestamp::<T>(
-                self.base_from_epoch,
-                Ok(seconds_since_orc_base),
-                Ok(nanoseconds),
-            )?;
+            out[index] =
+                decode_timestamp::<T>(self.base_from_epoch, seconds_since_orc_base, nanoseconds)?;
         }
         Ok(())
     }
@@ -108,22 +89,6 @@ impl TimestampNanosecondAsDecimalDecoder {
     }
 }
 
-// TODO: remove this
-impl Iterator for TimestampNanosecondAsDecimalDecoder {
-    type Item = Result<i128>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // TODO: throw error for mismatched stream lengths?
-        let (seconds_since_orc_base, nanoseconds) =
-            self.data.by_ref().zip(self.secondary.by_ref()).next()?;
-        Some(decode_timestamp_as_i128(
-            self.base_from_epoch,
-            seconds_since_orc_base,
-            nanoseconds,
-        ))
-    }
-}
-
 impl PrimitiveValueDecoder<i128> for TimestampNanosecondAsDecimalDecoder {
     fn decode(&mut self, out: &mut [i128]) -> Result<()> {
         // TODO: can probably optimize, reuse buffers?
@@ -134,24 +99,17 @@ impl PrimitiveValueDecoder<i128> for TimestampNanosecondAsDecimalDecoder {
         for (index, (&seconds_since_orc_base, &nanoseconds)) in
             data.iter().zip(secondary.iter()).enumerate()
         {
-            out[index] = decode_timestamp_as_i128(
-                self.base_from_epoch,
-                Ok(seconds_since_orc_base),
-                Ok(nanoseconds),
-            )?;
+            out[index] =
+                decode_timestamp_as_i128(self.base_from_epoch, seconds_since_orc_base, nanoseconds);
         }
         Ok(())
     }
 }
 
-fn decode(
-    base: i64,
-    seconds_since_orc_base: Result<i64>,
-    nanoseconds: Result<i64>,
-) -> Result<(i128, i64, u64)> {
-    let data = seconds_since_orc_base?;
+fn decode(base: i64, seconds_since_orc_base: i64, nanoseconds: i64) -> (i128, i64, u64) {
+    let data = seconds_since_orc_base;
     // TODO: is this a safe cast?
-    let mut nanoseconds = nanoseconds? as u64;
+    let mut nanoseconds = nanoseconds as u64;
     // Last 3 bits indicate how many trailing zeros were truncated
     let zeros = nanoseconds & 0x7;
     nanoseconds >>= 3;
@@ -175,16 +133,16 @@ fn decode(
     // while we encode them as a single i64 of nanoseconds in Arrow.
     let nanoseconds_since_epoch =
         (seconds as i128 * NANOSECONDS_IN_SECOND as i128) + (nanoseconds as i128);
-    Ok((nanoseconds_since_epoch, seconds, nanoseconds))
+    (nanoseconds_since_epoch, seconds, nanoseconds)
 }
 
 fn decode_timestamp<T: ArrowTimestampType>(
     base: i64,
-    seconds_since_orc_base: Result<i64>,
-    nanoseconds: Result<i64>,
+    seconds_since_orc_base: i64,
+    nanoseconds: i64,
 ) -> Result<i64> {
     let (nanoseconds_since_epoch, seconds, nanoseconds) =
-        decode(base, seconds_since_orc_base, nanoseconds)?;
+        decode(base, seconds_since_orc_base, nanoseconds);
 
     let nanoseconds_in_timeunit = match T::UNIT {
         TimeUnit::Second => 1_000_000_000,
@@ -219,11 +177,7 @@ fn decode_timestamp<T: ArrowTimestampType>(
     Ok(num_since_epoch)
 }
 
-fn decode_timestamp_as_i128(
-    base: i64,
-    seconds_since_orc_base: Result<i64>,
-    nanoseconds: Result<i64>,
-) -> Result<i128> {
-    let (nanoseconds_since_epoch, _, _) = decode(base, seconds_since_orc_base, nanoseconds)?;
-    Ok(nanoseconds_since_epoch)
+fn decode_timestamp_as_i128(base: i64, seconds_since_orc_base: i64, nanoseconds: i64) -> i128 {
+    let (nanoseconds_since_epoch, _, _) = decode(base, seconds_since_orc_base, nanoseconds);
+    nanoseconds_since_epoch
 }

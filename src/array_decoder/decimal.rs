@@ -33,10 +33,7 @@ pub fn new_decimal_decoder(
     fixed_scale: u32,
 ) -> Result<Box<dyn ArrayBatchDecoder>> {
     let varint_iter = stripe.stream_map().get(column, Kind::Data);
-    let varint_iter = Box::new(UnboundedVarintStreamDecoder::new(
-        varint_iter,
-        stripe.number_of_rows(),
-    ));
+    let varint_iter = Box::new(UnboundedVarintStreamDecoder::new(varint_iter));
 
     // Scale is specified on a per varint basis (in addition to being encoded in the type)
     let scale_iter = stripe.stream_map().get(column, Kind::Secondary);
@@ -66,28 +63,6 @@ struct DecimalScaleRepairDecoder {
     varint_iter: Box<dyn PrimitiveValueDecoder<i128> + Send>,
     scale_iter: Box<dyn PrimitiveValueDecoder<i32> + Send>,
     fixed_scale: u32,
-}
-
-impl DecimalScaleRepairDecoder {
-    #[inline]
-    fn next_helper(&mut self, varint: Result<i128>, scale: Result<i32>) -> Result<i128> {
-        Ok(fix_i128_scale(varint?, self.fixed_scale, scale?))
-    }
-}
-
-// TODO: remove this
-impl Iterator for DecimalScaleRepairDecoder {
-    type Item = Result<i128>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // TODO: throw error for mismatched stream lengths?
-        let (varint, scale) = self
-            .varint_iter
-            .by_ref()
-            .zip(self.scale_iter.by_ref())
-            .next()?;
-        Some(self.next_helper(varint, scale))
-    }
 }
 
 impl PrimitiveValueDecoder<i128> for DecimalScaleRepairDecoder {

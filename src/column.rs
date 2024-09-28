@@ -21,6 +21,7 @@ use bytes::Bytes;
 use snafu::ResultExt;
 
 use crate::encoding::boolean::BooleanDecoder;
+use crate::encoding::PrimitiveValueDecoder;
 use crate::error::{IoSnafu, Result};
 use crate::proto::stream::Kind;
 use crate::proto::{ColumnEncoding, StripeFooter};
@@ -41,6 +42,8 @@ impl Column {
         name: &str,
         data_type: &DataType,
         footer: &Arc<StripeFooter>,
+        // TODO: inaccurate to grab this from stripe; consider list types
+        //       (inner list will have more values/rows than in actual stripe)
         number_of_rows: u64,
     ) -> Self {
         Self {
@@ -159,9 +162,16 @@ impl Column {
 ///
 /// Makes subsequent operations easier to handle.
 pub fn get_present_vec(column: &Column, stripe: &Stripe) -> Result<Option<Vec<bool>>> {
-    stripe
-        .stream_map()
-        .get_opt(column, Kind::Present)
-        .map(|reader| BooleanDecoder::new(reader).collect::<Result<Vec<_>>>())
-        .transpose()
+    if let Some(decoder) = stripe.stream_map().get_opt(column, Kind::Present) {
+        // TODO: this is very inefficient, need to refactor/optimize
+        let mut decoder = BooleanDecoder::new(decoder);
+        let mut one = [false];
+        let mut present = Vec::new();
+        while decoder.decode(&mut one).is_ok() {
+            present.push(one[0]);
+        }
+        Ok(Some(present))
+    } else {
+        Ok(None)
+    }
 }

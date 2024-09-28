@@ -231,21 +231,8 @@ impl<R: Read> ByteRleDecoder<R> {
     }
 }
 
-impl<R: Read> Iterator for ByteRleDecoder<R> {
-    type Item = Result<i8>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index == self.leftovers.len() {
-            self.read_values().ok()?;
-        }
-        let value = self.leftovers[self.index] as i8;
-        self.index += 1;
-        Some(Ok(value))
-    }
-}
-
 impl<R: Read> PrimitiveValueDecoder<i8> for ByteRleDecoder<R> {
-    // TODO: can probably implement this better, just copying from iter for now
+    // TODO: can probably implement this better
     fn decode(&mut self, out: &mut [i8]) -> Result<()> {
         for x in out.iter_mut() {
             if self.index == self.leftovers.len() {
@@ -266,28 +253,29 @@ mod tests {
 
     use proptest::prelude::*;
 
+    // TODO: have tests varying the out buffer, to ensure decode() is called
+    //       multiple times
+
+    fn test_helper(data: &[u8], expected: &[i8]) {
+        let mut reader = ByteRleDecoder::new(Cursor::new(data));
+        let mut actual = vec![0; expected.len()];
+        reader.decode(&mut actual).unwrap();
+        assert_eq!(actual, expected);
+    }
+
     #[test]
     fn reader_test() {
         let data = [0x61u8, 0x00];
-        let data = &mut data.as_ref();
-        let iter = ByteRleDecoder::new(data)
-            .collect::<Result<Vec<_>>>()
-            .unwrap();
-        assert_eq!(iter, vec![0; 100]);
+        let expected = [0; 100];
+        test_helper(&data, &expected);
 
         let data = [0x01, 0x01];
-        let data = &mut data.as_ref();
-        let iter = ByteRleDecoder::new(data)
-            .collect::<Result<Vec<_>>>()
-            .unwrap();
-        assert_eq!(iter, vec![1; 4]);
+        let expected = [1; 4];
+        test_helper(&data, &expected);
 
         let data = [0xfe, 0x44, 0x45];
-        let data = &mut data.as_ref();
-        let iter = ByteRleDecoder::new(data)
-            .collect::<Result<Vec<_>>>()
-            .unwrap();
-        assert_eq!(iter, vec![0x44, 0x45]);
+        let expected = [0x44, 0x45];
+        test_helper(&data, &expected);
     }
 
     fn roundtrip_byte_rle_helper(values: &[i8]) -> Result<Vec<i8>> {
@@ -297,8 +285,10 @@ mod tests {
 
         let buf = writer.take_inner();
         let mut cursor = Cursor::new(&buf);
-        let reader = ByteRleDecoder::new(&mut cursor);
-        reader.into_iter().collect::<Result<Vec<_>>>()
+        let mut reader = ByteRleDecoder::new(&mut cursor);
+        let mut actual = vec![0; values.len()];
+        reader.decode(&mut actual)?;
+        Ok(actual)
     }
 
     #[derive(Debug, Clone)]

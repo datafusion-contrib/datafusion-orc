@@ -23,10 +23,7 @@ use arrow::{
 };
 use bytes::Bytes;
 
-use crate::{
-    error::{OutOfSpecSnafu, Result},
-    memory::EstimateMemory,
-};
+use crate::{error::Result, memory::EstimateMemory};
 
 use super::{
     byte::{ByteRleDecoder, ByteRleEncoder},
@@ -57,48 +54,17 @@ impl<R: Read> BooleanDecoder<R> {
     }
 }
 
-impl<R: Read> Iterator for BooleanDecoder<R> {
-    type Item = Result<bool>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        // read more data if necessary
-        if self.bits_in_data == 0 {
-            match self.decoder.next() {
-                Some(Ok(data)) => {
-                    self.data = data as u8;
-                    self.bits_in_data = 8;
-                    Some(Ok(self.value()))
-                }
-                Some(Err(err)) => Some(Err(err)),
-                None => None,
-            }
-        } else {
-            Some(Ok(self.value()))
-        }
-    }
-}
-
 impl<R: Read> PrimitiveValueDecoder<bool> for BooleanDecoder<R> {
-    // TODO: can probably implement this better, just copying from iter for now
+    // TODO: can probably implement this better
     fn decode(&mut self, out: &mut [bool]) -> Result<()> {
         for x in out.iter_mut() {
             // read more data if necessary
             if self.bits_in_data == 0 {
-                match self.decoder.next() {
-                    Some(Ok(data)) => {
-                        self.data = data as u8;
-                        self.bits_in_data = 8;
-                        *x = self.value();
-                    }
-                    Some(Err(err)) => return Err(err),
-                    None => {
-                        return OutOfSpecSnafu {
-                            msg: "Array length less than expected",
-                        }
-                        .fail()
-                    }
-                }
+                let mut data = [0];
+                self.decoder.decode(&mut data)?;
+                self.data = data[0] as u8;
+                self.bits_in_data = 8;
+                *x = self.value();
             } else {
                 *x = self.value();
             }
@@ -169,47 +135,38 @@ mod tests {
 
     #[test]
     fn basic() {
+        let expected = vec![false; 800];
         let data = [0x61u8, 0x00];
-
         let data = &mut data.as_ref();
-
-        let iter = BooleanDecoder::new(data)
-            .collect::<Result<Vec<_>>>()
-            .unwrap();
-        assert_eq!(iter, vec![false; 800])
+        let mut decoder = BooleanDecoder::new(data);
+        let mut actual = vec![true; expected.len()];
+        decoder.decode(&mut actual).unwrap();
+        assert_eq!(actual, expected)
     }
 
     #[test]
     fn literals() {
+        let expected = vec![
+            false, true, false, false, false, true, false, false, // 0b01000100
+            false, true, false, false, false, true, false, true, // 0b01000101
+        ];
         let data = [0xfeu8, 0b01000100, 0b01000101];
-
         let data = &mut data.as_ref();
-
-        let iter = BooleanDecoder::new(data)
-            .collect::<Result<Vec<_>>>()
-            .unwrap();
-        assert_eq!(
-            iter,
-            vec![
-                false, true, false, false, false, true, false, false, // 0b01000100
-                false, true, false, false, false, true, false, true, // 0b01000101
-            ]
-        )
+        let mut decoder = BooleanDecoder::new(data);
+        let mut actual = vec![true; expected.len()];
+        decoder.decode(&mut actual).unwrap();
+        assert_eq!(actual, expected)
     }
 
     #[test]
     fn another() {
         // "For example, the byte sequence [0xff, 0x80] would be one true followed by seven false values."
+        let expected = vec![true, false, false, false, false, false, false, false];
         let data = [0xff, 0x80];
-
         let data = &mut data.as_ref();
-
-        let iter = BooleanDecoder::new(data)
-            .collect::<Result<Vec<_>>>()
-            .unwrap();
-        assert_eq!(
-            iter,
-            vec![true, false, false, false, false, false, false, false]
-        )
+        let mut decoder = BooleanDecoder::new(data);
+        let mut actual = vec![true; expected.len()];
+        decoder.decode(&mut actual).unwrap();
+        assert_eq!(actual, expected)
     }
 }

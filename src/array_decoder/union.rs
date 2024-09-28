@@ -24,6 +24,7 @@ use snafu::ResultExt;
 
 use crate::column::{get_present_vec, Column};
 use crate::encoding::byte::ByteRleDecoder;
+use crate::encoding::PrimitiveValueDecoder;
 use crate::error::ArrowSnafu;
 use crate::error::Result;
 use crate::proto::stream::Kind;
@@ -37,7 +38,7 @@ pub struct UnionArrayDecoder {
     // TODO: encode this assumption into types
     fields: UnionFields,
     variants: Vec<Box<dyn ArrayBatchDecoder>>,
-    tags: Box<dyn Iterator<Item = Result<i8>> + Send>,
+    tags: Box<dyn PrimitiveValueDecoder<i8> + Send>,
     present: Option<Box<dyn Iterator<Item = bool> + Send>>,
 }
 
@@ -72,30 +73,18 @@ impl ArrayBatchDecoder for UnionArrayDecoder {
         parent_present: Option<&[bool]>,
     ) -> Result<ArrayRef> {
         let present = derive_present_vec(&mut self.present, parent_present, batch_size);
+        let mut tags = vec![0; batch_size];
         let tags = match &present {
             Some(present) => {
                 // Since UnionArrays don't have nullability, we rely on child arrays.
                 // So we default to first child (tag 0) for any nulls from this parent Union.
-                let mut tags = vec![0; batch_size];
-                for index in present
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(index, &is_present)| is_present.then_some(index))
-                {
-                    // TODO: return as error instead
-                    tags[index] = self
-                        .tags
-                        .next()
-                        .transpose()?
-                        .expect("array less than expected length");
-                }
+                self.tags.decode_spaced(&mut tags, present)?;
                 tags
             }
-            None => self
-                .tags
-                .by_ref()
-                .take(batch_size)
-                .collect::<Result<Vec<_>>>()?,
+            None => {
+                self.tags.decode(&mut tags)?;
+                tags
+            }
         };
 
         // Calculate nullability for children

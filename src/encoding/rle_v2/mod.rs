@@ -101,29 +101,6 @@ impl<N: NInt, R: Read, S: EncodingSign> RleReaderV2<N, R, S> {
     }
 }
 
-// TODO: remove this, currently only needed as we move from iterator to PrimitiveValueDecoder
-impl<N: NInt, R: Read, S: EncodingSign> Iterator for RleReaderV2<N, R, S> {
-    type Item = Result<N>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.current_head >= self.decoded_ints.len() {
-            match self.decode_batch() {
-                Ok(more) => {
-                    if !more {
-                        return None;
-                    }
-                }
-                Err(err) => {
-                    return Some(Err(err));
-                }
-            }
-        }
-        let result = self.decoded_ints[self.current_head];
-        self.current_head += 1;
-        Some(Ok(result))
-    }
-}
-
 impl<N: NInt, R: Read, S: EncodingSign> PrimitiveValueDecoder<N> for RleReaderV2<N, R, S> {
     fn decode(&mut self, out: &mut [N]) -> Result<()> {
         let available = &self.decoded_ints[self.current_head..];
@@ -571,136 +548,88 @@ mod tests {
 
     use super::*;
 
+    // TODO: have tests varying the out buffer, to ensure decode() is called
+    //       multiple times
+
+    fn test_helper<S: EncodingSign>(data: &[u8], expected: &[i64]) {
+        let mut reader = RleReaderV2::<i64, _, S>::new(Cursor::new(data));
+        let mut actual = vec![0; expected.len()];
+        reader.decode(&mut actual).unwrap();
+        assert_eq!(actual, expected);
+    }
+
     #[test]
     fn reader_test() {
         let data = [2, 1, 64, 5, 80, 1, 1];
         let expected = [1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 0, 1, 1, 1, 1];
-
-        let cursor = Cursor::new(data);
-        let reader = RleReaderV2::<i64, _, UnsignedEncoding>::new(cursor);
-        let a = reader.collect::<Result<Vec<_>>>().unwrap();
-        assert_eq!(a, expected);
+        test_helper::<UnsignedEncoding>(&data, &expected);
 
         // direct
         let data = [0x5e, 0x03, 0x5c, 0xa1, 0xab, 0x1e, 0xde, 0xad, 0xbe, 0xef];
         let expected = [23713, 43806, 57005, 48879];
-
-        let cursor = Cursor::new(data);
-        let reader = RleReaderV2::<i64, _, UnsignedEncoding>::new(cursor);
-        let a = reader.collect::<Result<Vec<_>>>().unwrap();
-        assert_eq!(a, expected);
+        test_helper::<UnsignedEncoding>(&data, &expected);
 
         // patched base
         let data = [
             102, 9, 0, 126, 224, 7, 208, 0, 126, 79, 66, 64, 0, 127, 128, 8, 2, 0, 128, 192, 8, 22,
             0, 130, 0, 8, 42,
         ];
-
         let expected = [
             2030, 2000, 2020, 1000000, 2040, 2050, 2060, 2070, 2080, 2090,
         ];
-
-        let cursor = Cursor::new(data);
-        let reader = RleReaderV2::<i64, _, UnsignedEncoding>::new(cursor);
-        let a = reader.collect::<Result<Vec<_>>>().unwrap();
-        assert_eq!(a, expected);
+        test_helper::<UnsignedEncoding>(&data, &expected);
 
         let data = [196, 9, 2, 2, 74, 40, 166];
         let expected = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29];
-
-        let cursor = Cursor::new(data);
-        let reader = RleReaderV2::<i64, _, UnsignedEncoding>::new(cursor);
-        let a = reader.collect::<Result<Vec<_>>>().unwrap();
-        assert_eq!(a, expected);
+        test_helper::<UnsignedEncoding>(&data, &expected);
 
         let data = [0xc6, 0x09, 0x02, 0x02, 0x22, 0x42, 0x42, 0x46];
         let expected = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29];
-
-        let cursor = Cursor::new(data);
-        let reader = RleReaderV2::<i64, _, UnsignedEncoding>::new(cursor);
-        let a = reader.collect::<Result<Vec<_>>>().unwrap();
-        assert_eq!(a, expected);
+        test_helper::<UnsignedEncoding>(&data, &expected);
 
         let data = [7, 1];
         let expected = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
-
-        let cursor = Cursor::new(data);
-        let reader = RleReaderV2::<i64, _, UnsignedEncoding>::new(cursor);
-        let a = reader.collect::<Result<Vec<_>>>().unwrap();
-        assert_eq!(a, expected);
+        test_helper::<UnsignedEncoding>(&data, &expected);
     }
 
     #[test]
     fn short_repeat() {
-        // [10000, 10000, 10000, 10000, 10000]
-        let data: [u8; 3] = [0x0a, 0x27, 0x10];
-
-        let cursor = Cursor::new(data);
-        let reader = RleReaderV2::<i64, _, UnsignedEncoding>::new(cursor);
-        let a = reader.collect::<Result<Vec<_>>>().unwrap();
-
-        assert_eq!(a, vec![10000, 10000, 10000, 10000, 10000]);
+        let data = [0x0a, 0x27, 0x10];
+        let expected = [10000, 10000, 10000, 10000, 10000];
+        test_helper::<UnsignedEncoding>(&data, &expected);
     }
 
     #[test]
     fn direct() {
-        // [23713, 43806, 57005, 48879]
-        let data: [u8; 10] = [0x5e, 0x03, 0x5c, 0xa1, 0xab, 0x1e, 0xde, 0xad, 0xbe, 0xef];
-
-        let cursor = Cursor::new(data);
-        let reader = RleReaderV2::<i64, _, UnsignedEncoding>::new(cursor);
-        let a = reader.collect::<Result<Vec<_>>>().unwrap();
-
-        assert_eq!(a, vec![23713, 43806, 57005, 48879]);
+        let data = [0x5e, 0x03, 0x5c, 0xa1, 0xab, 0x1e, 0xde, 0xad, 0xbe, 0xef];
+        let expected = [23713, 43806, 57005, 48879];
+        test_helper::<UnsignedEncoding>(&data, &expected);
     }
 
     #[test]
     fn direct_signed() {
-        // [23713, 43806, 57005, 48879]
         let data = [110, 3, 0, 185, 66, 1, 86, 60, 1, 189, 90, 1, 125, 222];
-
-        let cursor = Cursor::new(data);
-        let reader = RleReaderV2::<i64, _, SignedEncoding>::new(cursor);
-        let a = reader.collect::<Result<Vec<_>>>().unwrap();
-
-        assert_eq!(a, vec![23713, 43806, 57005, 48879]);
+        let expected = [23713, 43806, 57005, 48879];
+        test_helper::<SignedEncoding>(&data, &expected);
     }
 
     #[test]
     fn delta() {
-        // [2, 3, 5, 7, 11, 13, 17, 19, 23, 29]
-        // 0x22 = 34
-        // 0x42 = 66
-        // 0x46 = 70
-        let data: [u8; 8] = [0xc6, 0x09, 0x02, 0x02, 0x22, 0x42, 0x42, 0x46];
-
-        let cursor = Cursor::new(data);
-        let reader = RleReaderV2::<i64, _, UnsignedEncoding>::new(cursor);
-        let a = reader.collect::<Result<Vec<_>>>().unwrap();
-
-        assert_eq!(a, vec![2, 3, 5, 7, 11, 13, 17, 19, 23, 29]);
+        let data = [0xc6, 0x09, 0x02, 0x02, 0x22, 0x42, 0x42, 0x46];
+        let expected = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29];
+        test_helper::<UnsignedEncoding>(&data, &expected);
     }
 
     #[test]
     fn patched_base() {
-        let data = vec![
+        let data = [
             0x8e, 0x09, 0x2b, 0x21, 0x07, 0xd0, 0x1e, 0x00, 0x14, 0x70, 0x28, 0x32, 0x3c, 0x46,
             0x50, 0x5a, 0xfc, 0xe8,
         ];
-
-        let expected = vec![
+        let expected = [
             2030, 2000, 2020, 1000000, 2040, 2050, 2060, 2070, 2080, 2090,
         ];
-
-        let cursor = Cursor::new(data);
-        let reader = RleReaderV2::<i64, _, UnsignedEncoding>::new(cursor);
-        let a = reader
-            .collect::<Result<Vec<_>>>()
-            .unwrap()
-            .into_iter()
-            .collect::<Vec<_>>();
-
-        assert_eq!(a, expected);
+        test_helper::<UnsignedEncoding>(&data, &expected);
     }
 
     #[test]
@@ -720,7 +649,6 @@ mod tests {
             91, 198, 1, 2, 0, 32, 144, 64, 0, 12, 2, 8, 24, 0, 64, 0, 1, 0, 0, 8, 48, 51, 128, 0,
             2, 12, 16, 32, 32, 71, 128, 19, 76,
         ];
-
         // expected data generated from Orc Java implementation
         let expected = vec![
             20, 2, 3, 2, 1, 3, 17, 71, 35, 2, 1, 139, 2, 2, 3, 1783, 475, 2, 1, 1, 3, 1, 3, 2, 32,
@@ -734,12 +662,7 @@ mod tests {
             2, 1, 5, 10, 3, 1, 1, 13, 2, 3, 4, 1, 3, 1, 1, 2, 1, 1, 2, 4, 2, 207, 1, 1, 2, 4, 3, 3,
             2, 2, 16,
         ];
-
-        let cursor = Cursor::new(data);
-        let reader = RleReaderV2::<i64, _, SignedEncoding>::new(cursor);
-        let a = reader.collect::<Result<Vec<_>>>().unwrap();
-
-        assert_eq!(a, expected);
+        test_helper::<SignedEncoding>(&data, &expected);
     }
 
     // TODO: be smarter about prop test here, generate different patterns of ints
@@ -752,11 +675,11 @@ mod tests {
         writer.write_slice(values);
         let data = writer.take_inner();
 
-        let cursor = Cursor::new(data);
-        let reader = RleReaderV2::<N, _, S>::new(cursor);
-        let out = reader.collect::<Result<Vec<_>>>()?;
+        let mut reader = RleReaderV2::<N, _, S>::new(Cursor::new(data));
+        let mut actual = vec![N::zero(); values.len()];
+        reader.decode(&mut actual).unwrap();
 
-        Ok(out)
+        Ok(actual)
     }
 
     proptest! {
