@@ -75,6 +75,7 @@ impl DecimalScaleRepairIter {
     }
 }
 
+// TODO: remove this
 impl Iterator for DecimalScaleRepairIter {
     type Item = Result<i128>;
 
@@ -89,7 +90,19 @@ impl Iterator for DecimalScaleRepairIter {
     }
 }
 
-impl PrimitiveValueDecoder<i128> for DecimalScaleRepairIter {}
+impl PrimitiveValueDecoder<i128> for DecimalScaleRepairIter {
+    fn decode(&mut self, out: &mut [i128]) -> Result<()> {
+        // TODO: can probably optimize, reuse buffers?
+        let mut varint = vec![0; out.len()];
+        let mut scale = vec![0; out.len()];
+        self.varint_iter.decode(&mut varint)?;
+        self.scale_iter.decode(&mut scale)?;
+        for (index, (&varint, &scale)) in varint.iter().zip(scale.iter()).enumerate() {
+            out[index] = fix_i128_scale(varint, self.fixed_scale, scale);
+        }
+        Ok(())
+    }
+}
 
 fn fix_i128_scale(i: i128, fixed_scale: u32, varying_scale: i32) -> i128 {
     // TODO: Verify with C++ impl in ORC repo, which does this cast
