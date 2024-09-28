@@ -68,13 +68,12 @@ impl<N: NInt, R: Read, S: EncodingSign> RleReaderV2<N, R, S> {
         }
     }
 
-    // Returns false if no more bytes
-    fn decode_batch(&mut self) -> Result<bool> {
+    fn decode_batch(&mut self) -> Result<()> {
         self.current_head = 0;
         self.decoded_ints.clear();
         let header = match try_read_u8(&mut self.reader)? {
             Some(byte) => byte,
-            None => return Ok(false),
+            None => return Ok(()),
         };
 
         match EncodingType::from_header(header) {
@@ -97,7 +96,7 @@ impl<N: NInt, R: Read, S: EncodingSign> RleReaderV2<N, R, S> {
             )?,
         }
 
-        Ok(true)
+        Ok(())
     }
 }
 

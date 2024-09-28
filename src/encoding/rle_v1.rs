@@ -48,8 +48,7 @@ impl<N: NInt, R: Read, S: EncodingSign> RleReaderV1<N, R, S> {
         }
     }
 
-    // Returns false if no more bytes
-    fn decode_batch(&mut self) -> Result<bool> {
+    fn decode_batch(&mut self) -> Result<()> {
         // Decode header byte to determine sub-encoding.
         // Runs start with a positive byte, and literals with a negative byte.
         match try_read_u8(&mut self.reader)?.map(|byte| byte as i8) {
@@ -60,7 +59,7 @@ impl<N: NInt, R: Read, S: EncodingSign> RleReaderV1<N, R, S> {
                     let lit = read_varint_zigzagged::<_, _, S>(&mut self.reader)?;
                     self.decoded_ints.push(lit);
                 }
-                Ok(true)
+                Ok(())
             }
             // Run
             Some(byte) => {
@@ -88,9 +87,9 @@ impl<N: NInt, R: Read, S: EncodingSign> RleReaderV1<N, R, S> {
                         self.decoded_ints.push(base);
                     }
                 }
-                Ok(true)
+                Ok(())
             }
-            None => Ok(false),
+            None => Ok(()),
         }
     }
 }
