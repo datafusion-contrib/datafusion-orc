@@ -45,7 +45,7 @@ pub fn new_decimal_decoder(
     let present = get_present_vec(column, stripe)?
         .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
 
-    let iter = DecimalScaleRepairIter {
+    let iter = DecimalScaleRepairDecoder {
         varint_iter,
         scale_iter,
         fixed_scale,
@@ -62,13 +62,13 @@ pub fn new_decimal_decoder(
 
 /// This iter fixes the scales of the varints decoded as scale is specified on a per
 /// varint basis, and needs to align with type specified scale
-struct DecimalScaleRepairIter {
+struct DecimalScaleRepairDecoder {
     varint_iter: Box<dyn PrimitiveValueDecoder<i128> + Send>,
     scale_iter: Box<dyn PrimitiveValueDecoder<i32> + Send>,
     fixed_scale: u32,
 }
 
-impl DecimalScaleRepairIter {
+impl DecimalScaleRepairDecoder {
     #[inline]
     fn next_helper(&mut self, varint: Result<i128>, scale: Result<i32>) -> Result<i128> {
         Ok(fix_i128_scale(varint?, self.fixed_scale, scale?))
@@ -76,7 +76,7 @@ impl DecimalScaleRepairIter {
 }
 
 // TODO: remove this
-impl Iterator for DecimalScaleRepairIter {
+impl Iterator for DecimalScaleRepairDecoder {
     type Item = Result<i128>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -90,7 +90,7 @@ impl Iterator for DecimalScaleRepairIter {
     }
 }
 
-impl PrimitiveValueDecoder<i128> for DecimalScaleRepairIter {
+impl PrimitiveValueDecoder<i128> for DecimalScaleRepairDecoder {
     fn decode(&mut self, out: &mut [i128]) -> Result<()> {
         // TODO: can probably optimize, reuse buffers?
         let mut varint = vec![0; out.len()];
