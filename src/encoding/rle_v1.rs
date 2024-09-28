@@ -119,7 +119,49 @@ impl<N: NInt, R: Read, S: EncodingSign> Iterator for RleReaderV1<N, R, S> {
     }
 }
 
-impl<N: NInt, R: Read, S: EncodingSign> PrimitiveValueDecoder<N> for RleReaderV1<N, R, S> {}
+impl<N: NInt, R: Read, S: EncodingSign> PrimitiveValueDecoder<N> for RleReaderV1<N, R, S> {
+    // TODO: this is exact duplicate from RLEv2 version; deduplicate it
+    fn decode(&mut self, out: &mut [N]) -> Result<()> {
+        let available = &self.decoded_ints[self.current_head..];
+        // If we have enough in buffer to copy over
+        if available.len() >= out.len() {
+            out.copy_from_slice(&available[..out.len()]);
+            self.current_head += out.len();
+            return Ok(());
+        }
+
+        // Otherwise progressively copy over chunks
+        let len_to_copy = out.len();
+        let mut copied = 0;
+        while copied < len_to_copy {
+            let copying = self.decoded_ints.len() - self.current_head;
+            // At most, we fill to exact length of output buffer (don't overflow)
+            let copying = copying.min(len_to_copy - copied);
+
+            let target_out_slice = &mut out[copied..copied + copying];
+            target_out_slice.copy_from_slice(
+                &self.decoded_ints[self.current_head..self.current_head + copying],
+            );
+
+            copied += copying;
+            self.current_head += copying;
+
+            if self.current_head == self.decoded_ints.len() {
+                self.decode_batch()?;
+            }
+        }
+
+        if copied != out.len() {
+            // TODO: more descriptive error
+            OutOfSpecSnafu {
+                msg: "Array length less than expected",
+            }
+            .fail()
+        } else {
+            Ok(())
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
