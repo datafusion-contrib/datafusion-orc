@@ -37,7 +37,6 @@ pub fn new_decimal_decoder(
         varint_iter,
         stripe.number_of_rows(),
     ));
-    let varint_iter = varint_iter as Box<dyn Iterator<Item = Result<i128>> + Send>;
 
     // Scale is specified on a per varint basis (in addition to being encoded in the type)
     let scale_iter = stripe.stream_map().get(column, Kind::Secondary);
@@ -64,7 +63,7 @@ pub fn new_decimal_decoder(
 /// This iter fixes the scales of the varints decoded as scale is specified on a per
 /// varint basis, and needs to align with type specified scale
 struct DecimalScaleRepairIter {
-    varint_iter: Box<dyn Iterator<Item = Result<i128>> + Send>,
+    varint_iter: Box<dyn PrimitiveValueDecoder<i128> + Send>,
     scale_iter: Box<dyn PrimitiveValueDecoder<i32> + Send>,
     fixed_scale: u32,
 }
