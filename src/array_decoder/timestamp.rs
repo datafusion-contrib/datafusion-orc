@@ -22,7 +22,7 @@ use crate::{
     column::{get_present_vec, Column},
     encoding::{
         get_rle_reader, get_unsigned_rle_reader,
-        timestamp::{TimestampDecoder, TimestampNanosecondAsDecimalIterator},
+        timestamp::{TimestampDecoder, TimestampNanosecondAsDecimalDecoder},
         PrimitiveValueDecoder,
     },
     error::{MismatchedSchemaSnafu, Result},
@@ -107,7 +107,7 @@ fn decimal128_decoder(
     let present = get_present_vec(column, stripe)?
         .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
 
-    let iter = TimestampNanosecondAsDecimalIterator::new(seconds_since_unix_epoch, data, secondary);
+    let iter = TimestampNanosecondAsDecimalDecoder::new(seconds_since_unix_epoch, data, secondary);
 
     let iter: Box<dyn PrimitiveValueDecoder<i128> + Send> = match writer_tz {
         Some(UTC) | None => Box::new(iter),
@@ -284,7 +284,7 @@ impl<T: ArrowTimestampType> ArrayBatchDecoder for TimestampInstantArrayDecoder<T
     }
 }
 
-struct TimestampNanosecondAsDecimalWithTzIterator(TimestampNanosecondAsDecimalIterator, Tz);
+struct TimestampNanosecondAsDecimalWithTzIterator(TimestampNanosecondAsDecimalDecoder, Tz);
 
 impl TimestampNanosecondAsDecimalWithTzIterator {
     fn next_inner(&self, ts: Result<i128>) -> Result<i128> {

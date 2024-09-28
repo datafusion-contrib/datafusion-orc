@@ -88,13 +88,13 @@ impl<T: ArrowTimestampType> PrimitiveValueDecoder<T::Native> for TimestampDecode
 /// Arrow TimestampNanosecond type cannot represent the full datetime range of
 /// the ORC Timestamp type, so this iterator provides the ability to decode the
 /// raw nanoseconds without restricting it to the Arrow TimestampNanosecond range.
-pub struct TimestampNanosecondAsDecimalIterator {
+pub struct TimestampNanosecondAsDecimalDecoder {
     base_from_epoch: i64,
     data: Box<dyn PrimitiveValueDecoder<i64> + Send>,
     secondary: Box<dyn PrimitiveValueDecoder<i64> + Send>,
 }
 
-impl TimestampNanosecondAsDecimalIterator {
+impl TimestampNanosecondAsDecimalDecoder {
     pub fn new(
         base_from_epoch: i64,
         data: Box<dyn PrimitiveValueDecoder<i64> + Send>,
@@ -109,7 +109,7 @@ impl TimestampNanosecondAsDecimalIterator {
 }
 
 // TODO: remove this
-impl Iterator for TimestampNanosecondAsDecimalIterator {
+impl Iterator for TimestampNanosecondAsDecimalDecoder {
     type Item = Result<i128>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -124,7 +124,7 @@ impl Iterator for TimestampNanosecondAsDecimalIterator {
     }
 }
 
-impl PrimitiveValueDecoder<i128> for TimestampNanosecondAsDecimalIterator {
+impl PrimitiveValueDecoder<i128> for TimestampNanosecondAsDecimalDecoder {
     fn decode(&mut self, out: &mut [i128]) -> Result<()> {
         // TODO: can probably optimize, reuse buffers?
         let mut data = vec![0; out.len()];
