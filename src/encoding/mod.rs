@@ -82,6 +82,7 @@ pub trait PrimitiveValueDecoder<V>: Iterator<Item = Result<V>> {
     /// By default it relies on Iterator::next(), but hopefully this can be
     /// refactored away when it is properly implemented for all the decoders.
     fn decode(&mut self, out: &mut [V]) -> Result<()> {
+        // TODO: eventually remove this as each decoder implements for themselves
         let mut len = 0;
         for n in out.iter_mut() {
             match self.next() {
@@ -103,28 +104,43 @@ pub trait PrimitiveValueDecoder<V>: Iterator<Item = Result<V>> {
         }
     }
 
-    /// Decode into out according to the true elements in present, which must be
-    /// the same length as out.
+    /// Decode into `out` according to the `true` elements in `present`.
+    ///
+    /// `present` must be the same length as `out`.
     fn decode_spaced(&mut self, out: &mut [V], present: &[bool]) -> Result<()> {
         debug_assert_eq!(out.len(), present.len());
-        for (out_n, _) in out
-            .iter_mut()
-            .zip(present.iter())
-            .filter(|(_, &is_present)| is_present)
-        {
-            match self.next() {
-                Some(r) => {
-                    *out_n = r?;
-                }
-                None => {
-                    // TODO: more descriptive error
-                    return OutOfSpecSnafu {
-                        msg: "Array length less than expected",
-                    }
-                    .fail();
-                }
-            }
+
+        // First get all the non-null values into a contiguous range.
+        // TODO: be able to get present count externally
+        let non_null_count = present.iter().filter(|&&present| present).count();
+        if non_null_count == 0 {
+            return Ok(());
         }
+        self.decode(&mut out[..non_null_count])?;
+        if non_null_count == present.len() {
+            return Ok(());
+        }
+
+        // Then from the tail we swap with the null elements to ensure it matches
+        // with the present buffer.
+        //
+        // actual_index: index in final buffer where the non-null value belongs.
+        // contiguous_range_end_index: points to last element of the contiguous
+        //                             range read by decode() above.
+        //
+        // We use step to keep going back on this end to represent it shrinking
+        // as we swap elements.
+        let contiguous_range_end_index = non_null_count - 1;
+        for (step, (actual_index, _)) in present
+            .iter()
+            .enumerate()
+            .rev()
+            .filter(|(_, &is_present)| is_present)
+            .enumerate()
+        {
+            out.swap(actual_index, contiguous_range_end_index - step);
+        }
+
         Ok(())
     }
 }
@@ -404,5 +420,77 @@ impl NInt for i64 {
     #[inline]
     fn as_i64(self) -> i64 {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    /// Emits numbers increasing from 0.
+    struct DummyDecoder;
+
+    // TODO: remove this eventually
+    impl Iterator for DummyDecoder {
+        type Item = Result<i32>;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            todo!()
+        }
+    }
+
+    impl PrimitiveValueDecoder<i32> for DummyDecoder {
+        fn decode(&mut self, out: &mut [i32]) -> Result<()> {
+            let values = (0..out.len()).map(|x| x as i32).collect::<Vec<_>>();
+            out.copy_from_slice(&values);
+            Ok(())
+        }
+    }
+
+    fn gen_spaced_dummy_decoder_expected(present: &[bool]) -> Vec<i32> {
+        let mut value = 0;
+        let mut expected = vec![];
+        for &is_present in present {
+            if is_present {
+                expected.push(value);
+                value += 1;
+            } else {
+                expected.push(-1);
+            }
+        }
+        expected
+    }
+
+    proptest! {
+        #[test]
+        fn decode_spaced_proptest(present: Vec<bool>) {
+            let mut decoder = DummyDecoder;
+            let mut out = vec![-1; present.len()];
+            decoder.decode_spaced(&mut out, &present).unwrap();
+            let expected = gen_spaced_dummy_decoder_expected(&present);
+            prop_assert_eq!(out, expected);
+        }
+    }
+
+    #[test]
+    fn decode_spaced_edge_cases() {
+        let mut decoder = DummyDecoder;
+        let len = 10;
+
+        // all present
+        let mut out = vec![-1; len];
+        let present = vec![true; len];
+        decoder.decode_spaced(&mut out, &present).unwrap();
+        let expected: Vec<_> = (0..len).map(|i| i as i32).collect();
+        assert_eq!(out, expected);
+
+        // all null
+        let mut out = vec![-1; len];
+        let present = vec![false; len];
+        decoder.decode_spaced(&mut out, &present).unwrap();
+        let expected = vec![-1; len];
+        assert_eq!(out, expected);
     }
 }
