@@ -100,11 +100,11 @@ pub trait PrimitiveValueDecoder<V> {
         // Then from the tail we swap with the null elements to ensure it matches
         // with the present buffer.
         let tail_indices = (0..non_null_count).rev();
-        for ((correct_index, _), tail_index) in present
+        for (correct_index, tail_index) in present
             .iter()
             .enumerate()
             .rev()
-            .filter(|(_, &is_present)| is_present)
+            .filter_map(|(idx, &is_present)| is_present.then_some(idx))
             .zip(tail_indices)
         {
             // tail_index points to the value we need to move to correct_index
