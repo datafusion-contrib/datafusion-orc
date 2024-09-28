@@ -18,7 +18,6 @@
 use std::sync::Arc;
 
 use arrow::array::{ArrayRef, BooleanArray, PrimitiveArray};
-use arrow::buffer::NullBuffer;
 use arrow::datatypes::ArrowNativeTypeOp;
 use arrow::datatypes::{ArrowPrimitiveType, Decimal128Type};
 use arrow::datatypes::{DataType as ArrowDataType, Field};
@@ -218,15 +217,6 @@ fn derive_present_vec(
         (Some(present), None) => Some(present.by_ref().take(batch_size).collect::<Vec<_>>()),
         (None, Some(parent_present)) => Some(parent_present.to_vec()),
         (None, None) => None,
-    }
-}
-
-fn create_null_buffer(present: Option<Vec<bool>>) -> Option<NullBuffer> {
-    match present {
-        // Edge case where keys of map cannot have a null buffer
-        Some(present) if present.iter().all(|&p| p) => None,
-        Some(present) => Some(NullBuffer::from(present)),
-        None => None,
     }
 }
 

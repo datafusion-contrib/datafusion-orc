@@ -20,12 +20,12 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use arrow::array::{ArrayRef, DictionaryArray, GenericByteArray, StringArray};
-use arrow::buffer::{Buffer, OffsetBuffer};
+use arrow::buffer::{Buffer, NullBuffer, OffsetBuffer};
 use arrow::compute::kernels::cast;
 use arrow::datatypes::{ByteArrayType, DataType, GenericBinaryType, GenericStringType};
 use snafu::ResultExt;
 
-use crate::array_decoder::{create_null_buffer, derive_present_vec};
+use crate::array_decoder::derive_present_vec;
 use crate::column::{get_present_vec, Column};
 use crate::compression::Decompressor;
 use crate::encoding::{get_unsigned_rle_reader, PrimitiveValueDecoder};
@@ -117,11 +117,18 @@ impl<T: ByteArrayType> GenericByteArrayDecoder<T> {
         let present = derive_present_vec(&mut self.present, parent_present, batch_size);
 
         let mut lengths = vec![0; batch_size];
-        if let Some(present) = &present {
+        let null_buffer = if let Some(present) = &present {
             self.lengths.decode_spaced(&mut lengths, present)?;
+            if present.iter().all(|&p| p) {
+                // Edge case where keys of map cannot have a null buffer
+                None
+            } else {
+                Some(NullBuffer::from(present.as_slice()))
+            }
         } else {
             self.lengths.decode(&mut lengths)?;
-        }
+            None
+        };
         let total_length: i64 = lengths.iter().sum();
         // Fetch all data bytes at once
         let mut bytes = Vec::with_capacity(total_length as usize);
@@ -133,7 +140,6 @@ impl<T: ByteArrayType> GenericByteArrayDecoder<T> {
         let bytes = Buffer::from(bytes);
         let offsets =
             OffsetBuffer::<T::Offset>::from_lengths(lengths.into_iter().map(|l| l as usize));
-        let null_buffer = create_null_buffer(present);
 
         let array =
             GenericByteArray::<T>::try_new(offsets, bytes, null_buffer).context(ArrowSnafu)?;
