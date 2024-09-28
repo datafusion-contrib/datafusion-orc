@@ -244,7 +244,19 @@ impl<R: Read> Iterator for ByteRleDecoder<R> {
     }
 }
 
-impl<R: Read> PrimitiveValueDecoder<i8> for ByteRleDecoder<R> {}
+impl<R: Read> PrimitiveValueDecoder<i8> for ByteRleDecoder<R> {
+    // TODO: can probably implement this better, just copying from iter for now
+    fn decode(&mut self, out: &mut [i8]) -> Result<()> {
+        for x in out.iter_mut() {
+            if self.index == self.leftovers.len() {
+                self.read_values()?;
+            }
+            *x = self.leftovers[self.index] as i8;
+            self.index += 1;
+        }
+        Ok(())
+    }
+}
 
 #[cfg(test)]
 mod tests {
