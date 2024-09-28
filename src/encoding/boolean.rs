@@ -64,10 +64,8 @@ impl<R: Read> PrimitiveValueDecoder<bool> for BooleanDecoder<R> {
                 self.decoder.decode(&mut data)?;
                 self.data = data[0] as u8;
                 self.bits_in_data = 8;
-                *x = self.value();
-            } else {
-                *x = self.value();
             }
+            *x = self.value();
         }
         Ok(())
     }
