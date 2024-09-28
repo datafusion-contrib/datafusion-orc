@@ -99,22 +99,16 @@ pub trait PrimitiveValueDecoder<V> {
 
         // Then from the tail we swap with the null elements to ensure it matches
         // with the present buffer.
-        //
-        // actual_index: index in final buffer where the non-null value belongs.
-        // contiguous_range_end_index: points to last element of the contiguous
-        //                             range read by decode() above.
-        //
-        // We use step to keep going back on this end to represent it shrinking
-        // as we swap elements.
-        let contiguous_range_end_index = non_null_count - 1;
-        for (step, (actual_index, _)) in present
+        let tail_indices = (0..non_null_count).rev();
+        for ((correct_index, _), tail_index) in present
             .iter()
             .enumerate()
             .rev()
             .filter(|(_, &is_present)| is_present)
-            .enumerate()
+            .zip(tail_indices)
         {
-            out.swap(actual_index, contiguous_range_end_index - step);
+            // tail_index points to the value we need to move to correct_index
+            out.swap(correct_index, tail_index);
         }
 
         Ok(())
