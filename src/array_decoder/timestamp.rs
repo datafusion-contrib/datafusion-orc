@@ -316,4 +316,12 @@ impl Iterator for TimestampNanosecondAsDecimalWithTzIterator {
     }
 }
 
-impl PrimitiveValueDecoder<i128> for TimestampNanosecondAsDecimalWithTzIterator {}
+impl PrimitiveValueDecoder<i128> for TimestampNanosecondAsDecimalWithTzIterator {
+    fn decode(&mut self, out: &mut [i128]) -> Result<()> {
+        self.0.decode(out)?;
+        for x in out.iter_mut() {
+            *x = self.next_inner(Ok(*x))?;
+        }
+        Ok(())
+    }
+}
