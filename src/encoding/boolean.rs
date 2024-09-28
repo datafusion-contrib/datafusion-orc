@@ -23,7 +23,10 @@ use arrow::{
 };
 use bytes::Bytes;
 
-use crate::{error::Result, memory::EstimateMemory};
+use crate::{
+    error::{OutOfSpecSnafu, Result},
+    memory::EstimateMemory,
+};
 
 use super::{
     byte::{ByteRleDecoder, ByteRleEncoder},
@@ -76,7 +79,33 @@ impl<R: Read> Iterator for BooleanDecoder<R> {
     }
 }
 
-impl<R: Read> PrimitiveValueDecoder<bool> for BooleanDecoder<R> {}
+impl<R: Read> PrimitiveValueDecoder<bool> for BooleanDecoder<R> {
+    // TODO: can probably implement this better, just copying from iter for now
+    fn decode(&mut self, out: &mut [bool]) -> Result<()> {
+        for x in out.iter_mut() {
+            // read more data if necessary
+            if self.bits_in_data == 0 {
+                match self.decoder.next() {
+                    Some(Ok(data)) => {
+                        self.data = data as u8;
+                        self.bits_in_data = 8;
+                        *x = self.value();
+                    }
+                    Some(Err(err)) => return Err(err),
+                    None => {
+                        return OutOfSpecSnafu {
+                            msg: "Array length less than expected",
+                        }
+                        .fail()
+                    }
+                }
+            } else {
+                *x = self.value();
+            }
+        }
+        Ok(())
+    }
+}
 
 /// ORC encodes validity starting from MSB, whilst Arrow encodes it
 /// from LSB. After bytes are filled with the present bits, they are
