@@ -49,6 +49,7 @@ impl<T: ArrowTimestampType> TimestampIterator<T> {
     }
 }
 
+// TODO: remove this
 impl<T: ArrowTimestampType> Iterator for TimestampIterator<T> {
     type Item = Result<i64>;
 
@@ -64,7 +65,25 @@ impl<T: ArrowTimestampType> Iterator for TimestampIterator<T> {
     }
 }
 
-impl<T: ArrowTimestampType> PrimitiveValueDecoder<T::Native> for TimestampIterator<T> {}
+impl<T: ArrowTimestampType> PrimitiveValueDecoder<T::Native> for TimestampIterator<T> {
+    fn decode(&mut self, out: &mut [T::Native]) -> Result<()> {
+        // TODO: can probably optimize, reuse buffers?
+        let mut data = vec![0; out.len()];
+        let mut secondary = vec![0; out.len()];
+        self.data.decode(&mut data)?;
+        self.secondary.decode(&mut secondary)?;
+        for (index, (&seconds_since_orc_base, &nanoseconds)) in
+            data.iter().zip(secondary.iter()).enumerate()
+        {
+            out[index] = decode_timestamp::<T>(
+                self.base_from_epoch,
+                Ok(seconds_since_orc_base),
+                Ok(nanoseconds),
+            )?;
+        }
+        Ok(())
+    }
+}
 
 /// Arrow TimestampNanosecond type cannot represent the full datetime range of
 /// the ORC Timestamp type, so this iterator provides the ability to decode the
@@ -89,6 +108,7 @@ impl TimestampNanosecondAsDecimalIterator {
     }
 }
 
+// TODO: remove this
 impl Iterator for TimestampNanosecondAsDecimalIterator {
     type Item = Result<i128>;
 
@@ -104,7 +124,25 @@ impl Iterator for TimestampNanosecondAsDecimalIterator {
     }
 }
 
-impl PrimitiveValueDecoder<i128> for TimestampNanosecondAsDecimalIterator {}
+impl PrimitiveValueDecoder<i128> for TimestampNanosecondAsDecimalIterator {
+    fn decode(&mut self, out: &mut [i128]) -> Result<()> {
+        // TODO: can probably optimize, reuse buffers?
+        let mut data = vec![0; out.len()];
+        let mut secondary = vec![0; out.len()];
+        self.data.decode(&mut data)?;
+        self.secondary.decode(&mut secondary)?;
+        for (index, (&seconds_since_orc_base, &nanoseconds)) in
+            data.iter().zip(secondary.iter()).enumerate()
+        {
+            out[index] = decode_timestamp_as_i128(
+                self.base_from_epoch,
+                Ok(seconds_since_orc_base),
+                Ok(nanoseconds),
+            )?;
+        }
+        Ok(())
+    }
+}
 
 fn decode(
     base: i64,
