@@ -111,7 +111,7 @@ fn decimal128_decoder(
 
     let iter: Box<dyn PrimitiveValueDecoder<i128> + Send> = match writer_tz {
         Some(UTC) | None => Box::new(iter),
-        Some(writer_tz) => Box::new(TimestampNanosecondAsDecimalWithTzIterator(iter, writer_tz)),
+        Some(writer_tz) => Box::new(TimestampNanosecondAsDecimalWithTzDecoder(iter, writer_tz)),
     };
 
     Ok(DecimalArrayDecoder::new(
@@ -284,9 +284,9 @@ impl<T: ArrowTimestampType> ArrayBatchDecoder for TimestampInstantArrayDecoder<T
     }
 }
 
-struct TimestampNanosecondAsDecimalWithTzIterator(TimestampNanosecondAsDecimalDecoder, Tz);
+struct TimestampNanosecondAsDecimalWithTzDecoder(TimestampNanosecondAsDecimalDecoder, Tz);
 
-impl TimestampNanosecondAsDecimalWithTzIterator {
+impl TimestampNanosecondAsDecimalWithTzDecoder {
     fn next_inner(&self, ts: Result<i128>) -> Result<i128> {
         let ts = ts?;
         let seconds = ts.div_euclid(NANOSECONDS_IN_SECOND);
@@ -307,7 +307,7 @@ impl TimestampNanosecondAsDecimalWithTzIterator {
     }
 }
 
-impl Iterator for TimestampNanosecondAsDecimalWithTzIterator {
+impl Iterator for TimestampNanosecondAsDecimalWithTzDecoder {
     type Item = Result<i128>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -316,7 +316,7 @@ impl Iterator for TimestampNanosecondAsDecimalWithTzIterator {
     }
 }
 
-impl PrimitiveValueDecoder<i128> for TimestampNanosecondAsDecimalWithTzIterator {
+impl PrimitiveValueDecoder<i128> for TimestampNanosecondAsDecimalWithTzDecoder {
     fn decode(&mut self, out: &mut [i128]) -> Result<()> {
         self.0.decode(out)?;
         for x in out.iter_mut() {
