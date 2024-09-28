@@ -31,23 +31,14 @@ use crate::stripe::Stripe;
 
 #[derive(Clone, Debug)]
 pub struct Column {
-    number_of_rows: u64,
     footer: Arc<StripeFooter>,
     name: String,
     data_type: DataType,
 }
 
 impl Column {
-    pub fn new(
-        name: &str,
-        data_type: &DataType,
-        footer: &Arc<StripeFooter>,
-        // TODO: inaccurate to grab this from stripe; consider list types
-        //       (inner list will have more values/rows than in actual stripe)
-        number_of_rows: u64,
-    ) -> Self {
+    pub fn new(name: &str, data_type: &DataType, footer: &Arc<StripeFooter>) -> Self {
         Self {
-            number_of_rows,
             footer: footer.clone(),
             data_type: data_type.clone(),
             name: name.to_string(),
@@ -98,7 +89,6 @@ impl Column {
             DataType::Struct { children, .. } => children
                 .iter()
                 .map(|col| Column {
-                    number_of_rows: self.number_of_rows,
                     footer: self.footer.clone(),
                     name: col.name().to_string(),
                     data_type: col.data_type().clone(),
@@ -106,7 +96,6 @@ impl Column {
                 .collect(),
             DataType::List { child, .. } => {
                 vec![Column {
-                    number_of_rows: self.number_of_rows,
                     footer: self.footer.clone(),
                     name: "item".to_string(),
                     data_type: *child.clone(),
@@ -115,13 +104,11 @@ impl Column {
             DataType::Map { key, value, .. } => {
                 vec![
                     Column {
-                        number_of_rows: self.number_of_rows,
                         footer: self.footer.clone(),
                         name: "key".to_string(),
                         data_type: *key.clone(),
                     },
                     Column {
-                        number_of_rows: self.number_of_rows,
                         footer: self.footer.clone(),
                         name: "value".to_string(),
                         data_type: *value.clone(),
@@ -134,7 +121,6 @@ impl Column {
                     .iter()
                     .enumerate()
                     .map(|(index, data_type)| Column {
-                        number_of_rows: self.number_of_rows,
                         footer: self.footer.clone(),
                         name: format!("{index}"),
                         data_type: data_type.clone(),
