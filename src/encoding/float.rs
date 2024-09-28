@@ -81,20 +81,6 @@ impl<T: Float, R: std::io::Read> PrimitiveValueDecoder<T> for FloatDecoder<T, R>
         }
         Ok(())
     }
-
-    fn decode_spaced(&mut self, out: &mut [T], present: &[bool]) -> Result<()> {
-        debug_assert_eq!(out.len(), present.len());
-        let mut buf = vec![0; T::BYTE_SIZE];
-        for (out_float, _) in out
-            .iter_mut()
-            .zip(present.iter())
-            .filter(|(_, &is_present)| is_present)
-        {
-            self.reader.read_exact(&mut buf).context(IoSnafu)?;
-            *out_float = T::from_le_bytes(&buf);
-        }
-        Ok(())
-    }
 }
 
 // TODO: remove this, currently only needed as we move from iterator to PrimitiveValueDecoder
