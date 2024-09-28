@@ -27,14 +27,14 @@ use crate::{
 
 const NANOSECONDS_IN_SECOND: i64 = 1_000_000_000;
 
-pub struct TimestampIterator<T: ArrowTimestampType> {
+pub struct TimestampDecoder<T: ArrowTimestampType> {
     base_from_epoch: i64,
     data: Box<dyn PrimitiveValueDecoder<i64> + Send>,
     secondary: Box<dyn PrimitiveValueDecoder<i64> + Send>,
     _marker: PhantomData<T>,
 }
 
-impl<T: ArrowTimestampType> TimestampIterator<T> {
+impl<T: ArrowTimestampType> TimestampDecoder<T> {
     pub fn new(
         base_from_epoch: i64,
         data: Box<dyn PrimitiveValueDecoder<i64> + Send>,
@@ -50,7 +50,7 @@ impl<T: ArrowTimestampType> TimestampIterator<T> {
 }
 
 // TODO: remove this
-impl<T: ArrowTimestampType> Iterator for TimestampIterator<T> {
+impl<T: ArrowTimestampType> Iterator for TimestampDecoder<T> {
     type Item = Result<i64>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -65,7 +65,7 @@ impl<T: ArrowTimestampType> Iterator for TimestampIterator<T> {
     }
 }
 
-impl<T: ArrowTimestampType> PrimitiveValueDecoder<T::Native> for TimestampIterator<T> {
+impl<T: ArrowTimestampType> PrimitiveValueDecoder<T::Native> for TimestampDecoder<T> {
     fn decode(&mut self, out: &mut [T::Native]) -> Result<()> {
         // TODO: can probably optimize, reuse buffers?
         let mut data = vec![0; out.len()];

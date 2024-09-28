@@ -22,7 +22,7 @@ use crate::{
     column::{get_present_vec, Column},
     encoding::{
         get_rle_reader, get_unsigned_rle_reader,
-        timestamp::{TimestampIterator, TimestampNanosecondAsDecimalIterator},
+        timestamp::{TimestampDecoder, TimestampNanosecondAsDecimalIterator},
         PrimitiveValueDecoder,
     },
     error::{MismatchedSchemaSnafu, Result},
@@ -62,7 +62,7 @@ fn get_inner_timestamp_decoder<T: ArrowTimestampType + Send>(
     let present = get_present_vec(column, stripe)?
         .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
 
-    let iter = Box::new(TimestampIterator::<T>::new(
+    let iter = Box::new(TimestampDecoder::<T>::new(
         seconds_since_unix_epoch,
         data,
         secondary,
