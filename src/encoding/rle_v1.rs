@@ -95,30 +95,6 @@ impl<N: NInt, R: Read, S: EncodingSign> RleReaderV1<N, R, S> {
     }
 }
 
-impl<N: NInt, R: Read, S: EncodingSign> Iterator for RleReaderV1<N, R, S> {
-    type Item = Result<N>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.current_head >= self.decoded_ints.len() {
-            self.current_head = 0;
-            self.decoded_ints.clear();
-            match self.decode_batch() {
-                Ok(more) => {
-                    if !more {
-                        return None;
-                    }
-                }
-                Err(err) => {
-                    return Some(Err(err));
-                }
-            }
-        }
-        let result = self.decoded_ints[self.current_head];
-        self.current_head += 1;
-        Some(Ok(result))
-    }
-}
-
 impl<N: NInt, R: Read, S: EncodingSign> PrimitiveValueDecoder<N> for RleReaderV1<N, R, S> {
     // TODO: this is exact duplicate from RLEv2 version; deduplicate it
     fn decode(&mut self, out: &mut [N]) -> Result<()> {
@@ -171,30 +147,31 @@ mod tests {
 
     use super::*;
 
+    fn test_helper(data: &[u8], expected: &[i64]) {
+        let mut reader = RleReaderV1::<i64, _, UnsignedEncoding>::new(Cursor::new(data));
+        let mut actual = vec![0; expected.len()];
+        reader.decode(&mut actual).unwrap();
+        assert_eq!(actual, expected);
+    }
+
     #[test]
     fn test_run() -> Result<()> {
-        let input = [0x61, 0x00, 0x07];
-        let decoder = RleReaderV1::<i64, _, UnsignedEncoding>::new(Cursor::new(&input));
-        let expected = vec![7; 100];
-        let actual = decoder.collect::<Result<Vec<_>>>()?;
-        assert_eq!(actual, expected);
+        let data = [0x61, 0x00, 0x07];
+        let expected = [7; 100];
+        test_helper(&data, &expected);
 
-        let input = [0x61, 0xff, 0x64];
-        let decoder = RleReaderV1::<i64, _, UnsignedEncoding>::new(Cursor::new(&input));
+        let data = [0x61, 0xff, 0x64];
         let expected = (1..=100).rev().collect::<Vec<_>>();
-        let actual = decoder.collect::<Result<Vec<_>>>()?;
-        assert_eq!(actual, expected);
+        test_helper(&data, &expected);
 
         Ok(())
     }
 
     #[test]
     fn test_literal() -> Result<()> {
-        let input = [0xfb, 0x02, 0x03, 0x06, 0x07, 0xb];
-        let decoder = RleReaderV1::<i64, _, UnsignedEncoding>::new(Cursor::new(&input));
+        let data = [0xfb, 0x02, 0x03, 0x06, 0x07, 0xb];
         let expected = vec![2, 3, 6, 7, 11];
-        let actual = decoder.collect::<Result<Vec<_>>>()?;
-        assert_eq!(actual, expected);
+        test_helper(&data, &expected);
 
         Ok(())
     }

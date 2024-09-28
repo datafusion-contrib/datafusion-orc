@@ -83,15 +83,6 @@ impl<T: Float, R: std::io::Read> PrimitiveValueDecoder<T> for FloatDecoder<T, R>
     }
 }
 
-// TODO: remove this, currently only needed as we move from iterator to PrimitiveValueDecoder
-impl<T: Float, R: std::io::Read> Iterator for FloatDecoder<T, R> {
-    type Item = Result<T>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        unimplemented!()
-    }
-}
-
 /// No special run encoding for floats/doubles, they are stored as their IEEE 754 floating
 /// point bit layout. This encoder simply copies incoming floats/doubles to its internal
 /// byte buffer.

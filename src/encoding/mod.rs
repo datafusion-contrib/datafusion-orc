@@ -75,7 +75,7 @@ where
     fn take_inner(&mut self) -> Bytes;
 }
 
-pub trait PrimitiveValueDecoder<V>: Iterator<Item = Result<V>> {
+pub trait PrimitiveValueDecoder<V> {
     /// Decode out.len() values into out at a time, failing if it cannot fill
     /// the buffer.
     fn decode(&mut self, out: &mut [V]) -> Result<()>;
@@ -407,15 +407,6 @@ mod tests {
 
     /// Emits numbers increasing from 0.
     struct DummyDecoder;
-
-    // TODO: remove this eventually
-    impl Iterator for DummyDecoder {
-        type Item = Result<i32>;
-
-        fn next(&mut self) -> Option<Self::Item> {
-            todo!()
-        }
-    }
 
     impl PrimitiveValueDecoder<i32> for DummyDecoder {
         fn decode(&mut self, out: &mut [i32]) -> Result<()> {
