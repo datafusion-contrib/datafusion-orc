@@ -26,7 +26,7 @@ use arrow::datatypes::{ByteArrayType, DataType, GenericBinaryType, GenericString
 use snafu::ResultExt;
 
 use crate::array_decoder::derive_present_vec;
-use crate::column::{get_present_vec, Column};
+use crate::column::Column;
 use crate::compression::Decompressor;
 use crate::encoding::{get_unsigned_rle_reader, PrimitiveValueDecoder};
 use crate::error::{ArrowSnafu, IoSnafu, Result};
@@ -34,12 +34,11 @@ use crate::proto::column_encoding::Kind as ColumnEncodingKind;
 use crate::proto::stream::Kind;
 use crate::stripe::Stripe;
 
-use super::{ArrayBatchDecoder, Int64ArrayDecoder};
+use super::{ArrayBatchDecoder, Int64ArrayDecoder, PresentDecoder};
 
 // TODO: reduce duplication with string below
 pub fn new_binary_decoder(column: &Column, stripe: &Stripe) -> Result<Box<dyn ArrayBatchDecoder>> {
-    let present = get_present_vec(column, stripe)?
-        .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+    let present = PresentDecoder::from_stripe(stripe, column);
 
     let lengths = stripe.stream_map().get(column, Kind::Length);
     let lengths = get_unsigned_rle_reader(column, lengths);
@@ -50,8 +49,7 @@ pub fn new_binary_decoder(column: &Column, stripe: &Stripe) -> Result<Box<dyn Ar
 
 pub fn new_string_decoder(column: &Column, stripe: &Stripe) -> Result<Box<dyn ArrayBatchDecoder>> {
     let kind = column.encoding().kind();
-    let present = get_present_vec(column, stripe)?
-        .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+    let present = PresentDecoder::from_stripe(stripe, column);
 
     let lengths = stripe.stream_map().get(column, Kind::Length);
     let lengths = get_unsigned_rle_reader(column, lengths);
@@ -91,7 +89,7 @@ pub type BinaryArrayDecoder = GenericByteArrayDecoder<GenericBinaryType<i32>>;
 pub struct GenericByteArrayDecoder<T: ByteArrayType> {
     bytes: Box<Decompressor>,
     lengths: Box<dyn PrimitiveValueDecoder<i64> + Send>,
-    present: Option<Box<dyn Iterator<Item = bool> + Send>>,
+    present: Option<PresentDecoder>,
     phantom: PhantomData<T>,
 }
 
@@ -99,7 +97,7 @@ impl<T: ByteArrayType> GenericByteArrayDecoder<T> {
     fn new(
         bytes: Box<Decompressor>,
         lengths: Box<dyn PrimitiveValueDecoder<i64> + Send>,
-        present: Option<Box<dyn Iterator<Item = bool> + Send>>,
+        present: Option<PresentDecoder>,
     ) -> Self {
         Self {
             bytes,
@@ -112,23 +110,17 @@ impl<T: ByteArrayType> GenericByteArrayDecoder<T> {
     fn next_byte_batch(
         &mut self,
         batch_size: usize,
-        parent_present: Option<&[bool]>,
+        parent_present: Option<&NullBuffer>,
     ) -> Result<GenericByteArray<T>> {
-        let present = derive_present_vec(&mut self.present, parent_present, batch_size);
+        let present =
+            derive_present_vec(&mut self.present, parent_present, batch_size).transpose()?;
 
         let mut lengths = vec![0; batch_size];
-        let null_buffer = if let Some(present) = &present {
+        if let Some(present) = &present {
             self.lengths.decode_spaced(&mut lengths, present)?;
-            if present.iter().all(|&p| p) {
-                // Edge case where keys of map cannot have a null buffer
-                None
-            } else {
-                Some(NullBuffer::from(present.as_slice()))
-            }
         } else {
             self.lengths.decode(&mut lengths)?;
-            None
-        };
+        }
         let total_length: i64 = lengths.iter().sum();
         // Fetch all data bytes at once
         let mut bytes = Vec::with_capacity(total_length as usize);
@@ -141,6 +133,11 @@ impl<T: ByteArrayType> GenericByteArrayDecoder<T> {
         let offsets =
             OffsetBuffer::<T::Offset>::from_lengths(lengths.into_iter().map(|l| l as usize));
 
+        let null_buffer = match present {
+            // Edge case where keys of map cannot have a null buffer
+            Some(present) if present.null_count() == 0 => None,
+            _ => present,
+        };
         let array =
             GenericByteArray::<T>::try_new(offsets, bytes, null_buffer).context(ArrowSnafu)?;
         Ok(array)
@@ -151,7 +148,7 @@ impl<T: ByteArrayType> ArrayBatchDecoder for GenericByteArrayDecoder<T> {
     fn next_batch(
         &mut self,
         batch_size: usize,
-        parent_present: Option<&[bool]>,
+        parent_present: Option<&NullBuffer>,
     ) -> Result<ArrayRef> {
         let array = self.next_byte_batch(batch_size, parent_present)?;
         let array = Arc::new(array) as ArrayRef;
@@ -177,7 +174,7 @@ impl ArrayBatchDecoder for DictionaryStringArrayDecoder {
     fn next_batch(
         &mut self,
         batch_size: usize,
-        parent_present: Option<&[bool]>,
+        parent_present: Option<&NullBuffer>,
     ) -> Result<ArrayRef> {
         let keys = self
             .indexes

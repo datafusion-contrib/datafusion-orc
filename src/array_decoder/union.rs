@@ -17,12 +17,12 @@
 
 use std::sync::Arc;
 
-use arrow::array::{ArrayRef, UnionArray};
-use arrow::buffer::Buffer;
+use arrow::array::{ArrayRef, BooleanBufferBuilder, UnionArray};
+use arrow::buffer::{Buffer, NullBuffer};
 use arrow::datatypes::UnionFields;
 use snafu::ResultExt;
 
-use crate::column::{get_present_vec, Column};
+use crate::column::Column;
 use crate::encoding::byte::ByteRleDecoder;
 use crate::encoding::PrimitiveValueDecoder;
 use crate::error::ArrowSnafu;
@@ -30,7 +30,7 @@ use crate::error::Result;
 use crate::proto::stream::Kind;
 use crate::stripe::Stripe;
 
-use super::{array_decoder_factory, derive_present_vec, ArrayBatchDecoder};
+use super::{array_decoder_factory, derive_present_vec, ArrayBatchDecoder, PresentDecoder};
 
 /// Decode ORC Union column into batches of Arrow Sparse UnionArrays.
 pub struct UnionArrayDecoder {
@@ -39,13 +39,12 @@ pub struct UnionArrayDecoder {
     fields: UnionFields,
     variants: Vec<Box<dyn ArrayBatchDecoder>>,
     tags: Box<dyn PrimitiveValueDecoder<i8> + Send>,
-    present: Option<Box<dyn Iterator<Item = bool> + Send>>,
+    present: Option<PresentDecoder>,
 }
 
 impl UnionArrayDecoder {
     pub fn new(column: &Column, fields: UnionFields, stripe: &Stripe) -> Result<Self> {
-        let present = get_present_vec(column, stripe)?
-            .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+        let present = PresentDecoder::from_stripe(stripe, column);
 
         let tags = stripe.stream_map().get(column, Kind::Data);
         let tags = Box::new(ByteRleDecoder::new(tags));
@@ -70,27 +69,27 @@ impl ArrayBatchDecoder for UnionArrayDecoder {
     fn next_batch(
         &mut self,
         batch_size: usize,
-        parent_present: Option<&[bool]>,
+        parent_present: Option<&NullBuffer>,
     ) -> Result<ArrayRef> {
-        let present = derive_present_vec(&mut self.present, parent_present, batch_size);
+        let present =
+            derive_present_vec(&mut self.present, parent_present, batch_size).transpose()?;
         let mut tags = vec![0; batch_size];
-        let tags = match &present {
+        match &present {
             Some(present) => {
                 // Since UnionArrays don't have nullability, we rely on child arrays.
                 // So we default to first child (tag 0) for any nulls from this parent Union.
                 self.tags.decode_spaced(&mut tags, present)?;
-                tags
             }
             None => {
                 self.tags.decode(&mut tags)?;
-                tags
             }
-        };
+        }
 
         // Calculate nullability for children
         let mut children_nullability = (0..self.variants.len())
             .map(|index| {
-                let mut child_present = vec![false; batch_size];
+                let mut child_present = BooleanBufferBuilder::new(batch_size);
+                child_present.append_n(batch_size, false);
                 for idx in tags
                     .iter()
                     .enumerate()
@@ -98,7 +97,7 @@ impl ArrayBatchDecoder for UnionArrayDecoder {
                     // Otherwise for the sparse spots, we leave as null in children.
                     .filter_map(|(idx, &tag)| (tag as usize == index).then_some(idx))
                 {
-                    child_present[idx] = true;
+                    child_present.set_bit(idx, true);
                 }
                 child_present
             })
@@ -108,12 +107,13 @@ impl ArrayBatchDecoder for UnionArrayDecoder {
         // nullability and rely on their children. We default to first child to encode this
         // information so need to enforce that here.
         if let Some(present) = &present {
-            for child_present in children_nullability[0]
-                .iter_mut()
-                .zip(present)
-                .filter_map(|(child, &parent_present)| (!parent_present).then_some(child))
+            let first_child = &mut children_nullability[0];
+            for idx in present
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, parent_present)| (!parent_present).then_some(idx))
             {
-                *child_present = false;
+                first_child.set_bit(idx, false);
             }
         }
 
@@ -121,7 +121,10 @@ impl ArrayBatchDecoder for UnionArrayDecoder {
             .variants
             .iter_mut()
             .zip(children_nullability)
-            .map(|(decoder, present)| decoder.next_batch(batch_size, Some(&present)))
+            .map(|(decoder, mut present)| {
+                let present = NullBuffer::from(present.finish());
+                decoder.next_batch(batch_size, Some(&present))
+            })
             .collect::<Result<Vec<_>>>()?;
 
         // Currently default to decoding as Sparse UnionArray so no value offsets

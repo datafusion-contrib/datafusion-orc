@@ -20,14 +20,10 @@ use std::sync::Arc;
 use bytes::Bytes;
 use snafu::ResultExt;
 
-use crate::encoding::boolean::BooleanDecoder;
-use crate::encoding::PrimitiveValueDecoder;
 use crate::error::{IoSnafu, Result};
-use crate::proto::stream::Kind;
 use crate::proto::{ColumnEncoding, StripeFooter};
 use crate::reader::ChunkReader;
 use crate::schema::DataType;
-use crate::stripe::Stripe;
 
 #[derive(Clone, Debug)]
 pub struct Column {
@@ -141,23 +137,5 @@ impl Column {
         length: u64,
     ) -> Result<Bytes> {
         reader.get_bytes(start, length).await.context(IoSnafu)
-    }
-}
-
-/// Prefetch present stream for entire column in stripe.
-///
-/// Makes subsequent operations easier to handle.
-pub fn get_present_vec(column: &Column, stripe: &Stripe) -> Result<Option<Vec<bool>>> {
-    if let Some(decoder) = stripe.stream_map().get_opt(column, Kind::Present) {
-        // TODO: this is very inefficient, need to refactor/optimize
-        let mut decoder = BooleanDecoder::new(decoder);
-        let mut one = [false];
-        let mut present = Vec::new();
-        while decoder.decode(&mut one).is_ok() {
-            present.push(one[0]);
-        }
-        Ok(Some(present))
-    } else {
-        Ok(None)
     }
 }
