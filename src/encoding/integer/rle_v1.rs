@@ -60,14 +60,14 @@ impl EncodingType {
 }
 
 /// Decodes a stream of Integer Run Length Encoded version 1 bytes.
-pub struct RleReaderV1<N: NInt, R: Read, S: EncodingSign> {
+pub struct RleV1Decoder<N: NInt, R: Read, S: EncodingSign> {
     reader: R,
     decoded_ints: Vec<N>,
     current_head: usize,
     sign: PhantomData<S>,
 }
 
-impl<N: NInt, R: Read, S: EncodingSign> RleReaderV1<N, R, S> {
+impl<N: NInt, R: Read, S: EncodingSign> RleV1Decoder<N, R, S> {
     pub fn new(reader: R) -> Self {
         Self {
             reader,
@@ -137,7 +137,7 @@ fn read_run<N: NInt, R: Read, S: EncodingSign>(
     Ok(())
 }
 
-impl<N: NInt, R: Read, S: EncodingSign> PrimitiveValueDecoder<N> for RleReaderV1<N, R, S> {
+impl<N: NInt, R: Read, S: EncodingSign> PrimitiveValueDecoder<N> for RleV1Decoder<N, R, S> {
     // TODO: this is exact duplicate from RLEv2 version; deduplicate it
     fn decode(&mut self, out: &mut [N]) -> Result<()> {
         let available = &self.decoded_ints[self.current_head..];
@@ -190,7 +190,7 @@ mod tests {
     use super::*;
 
     fn test_helper(data: &[u8], expected: &[i64]) {
-        let mut reader = RleReaderV1::<i64, _, UnsignedEncoding>::new(Cursor::new(data));
+        let mut reader = RleV1Decoder::<i64, _, UnsignedEncoding>::new(Cursor::new(data));
         let mut actual = vec![0; expected.len()];
         reader.decode(&mut actual).unwrap();
         assert_eq!(actual, expected);

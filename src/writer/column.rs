@@ -31,7 +31,7 @@ use crate::{
         boolean::BooleanEncoder,
         byte::ByteRleEncoder,
         float::FloatValueEncoder,
-        integer::{rle_v2::RleWriterV2, NInt, SignedEncoding, UnsignedEncoding},
+        integer::{rle_v2::RleV2Encoder, NInt, SignedEncoding, UnsignedEncoding},
         PrimitiveValueEncoder,
     },
     error::Result,
@@ -263,7 +263,7 @@ where
     T::Offset: NInt,
 {
     string_bytes: BytesMut,
-    length_encoder: RleWriterV2<T::Offset, UnsignedEncoding>,
+    length_encoder: RleV2Encoder<T::Offset, UnsignedEncoding>,
     present: Option<BooleanEncoder>,
     encoded_count: usize,
 }
@@ -275,7 +275,7 @@ where
     pub fn new() -> Self {
         Self {
             string_bytes: BytesMut::new(),
-            length_encoder: RleWriterV2::new(),
+            length_encoder: RleV2Encoder::new(),
             present: None,
             encoded_count: 0,
         }
@@ -393,9 +393,9 @@ where
 pub type FloatColumnEncoder = PrimitiveColumnEncoder<Float32Type, FloatValueEncoder<Float32Type>>;
 pub type DoubleColumnEncoder = PrimitiveColumnEncoder<Float64Type, FloatValueEncoder<Float64Type>>;
 pub type ByteColumnEncoder = PrimitiveColumnEncoder<Int8Type, ByteRleEncoder>;
-pub type Int16ColumnEncoder = PrimitiveColumnEncoder<Int16Type, RleWriterV2<i16, SignedEncoding>>;
-pub type Int32ColumnEncoder = PrimitiveColumnEncoder<Int32Type, RleWriterV2<i32, SignedEncoding>>;
-pub type Int64ColumnEncoder = PrimitiveColumnEncoder<Int64Type, RleWriterV2<i64, SignedEncoding>>;
+pub type Int16ColumnEncoder = PrimitiveColumnEncoder<Int16Type, RleV2Encoder<i16, SignedEncoding>>;
+pub type Int32ColumnEncoder = PrimitiveColumnEncoder<Int32Type, RleV2Encoder<i32, SignedEncoding>>;
+pub type Int64ColumnEncoder = PrimitiveColumnEncoder<Int64Type, RleV2Encoder<i64, SignedEncoding>>;
 pub type StringColumnEncoder = GenericBinaryColumnEncoder<GenericStringType<i32>>;
 pub type LargeStringColumnEncoder = GenericBinaryColumnEncoder<GenericStringType<i64>>;
 pub type BinaryColumnEncoder = GenericBinaryColumnEncoder<GenericBinaryType<i32>>;

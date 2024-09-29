@@ -24,8 +24,8 @@ use std::{
 };
 
 use num::{traits::CheckedShl, PrimInt, Signed};
-use rle_v1::RleReaderV1;
-use rle_v2::RleReaderV2;
+use rle_v1::RleV1Decoder;
+use rle_v2::RleV2Decoder;
 use snafu::ResultExt;
 use util::{
     get_closest_aligned_bit_width, signed_msb_decode, signed_zigzag_decode, signed_zigzag_encode,
@@ -52,10 +52,10 @@ pub fn get_unsigned_rle_reader<R: Read + Send + 'static>(
 ) -> Box<dyn PrimitiveValueDecoder<i64> + Send> {
     match column.encoding().kind() {
         ProtoColumnKind::Direct | ProtoColumnKind::Dictionary => {
-            Box::new(RleReaderV1::<i64, _, UnsignedEncoding>::new(reader))
+            Box::new(RleV1Decoder::<i64, _, UnsignedEncoding>::new(reader))
         }
         ProtoColumnKind::DirectV2 | ProtoColumnKind::DictionaryV2 => {
-            Box::new(RleReaderV2::<i64, _, UnsignedEncoding>::new(reader))
+            Box::new(RleV2Decoder::<i64, _, UnsignedEncoding>::new(reader))
         }
     }
 }
@@ -65,8 +65,10 @@ pub fn get_rle_reader<N: NInt, R: Read + Send + 'static>(
     reader: R,
 ) -> Result<Box<dyn PrimitiveValueDecoder<N> + Send>> {
     match column.encoding().kind() {
-        ProtoColumnKind::Direct => Ok(Box::new(RleReaderV1::<N, _, SignedEncoding>::new(reader))),
-        ProtoColumnKind::DirectV2 => Ok(Box::new(RleReaderV2::<N, _, SignedEncoding>::new(reader))),
+        ProtoColumnKind::Direct => Ok(Box::new(RleV1Decoder::<N, _, SignedEncoding>::new(reader))),
+        ProtoColumnKind::DirectV2 => {
+            Ok(Box::new(RleV2Decoder::<N, _, SignedEncoding>::new(reader)))
+        }
         k => InvalidColumnEncodingSnafu {
             name: column.name(),
             encoding: k,
