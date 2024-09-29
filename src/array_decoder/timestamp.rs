@@ -38,7 +38,9 @@ use chrono::offset::TimeZone;
 use chrono::TimeDelta;
 use chrono_tz::{Tz, UTC};
 
-use super::{ArrayBatchDecoder, DecimalArrayDecoder, PresentDecoder, PrimitiveArrayDecoder};
+use super::{
+    decimal::DecimalArrayDecoder, ArrayBatchDecoder, PresentDecoder, PrimitiveArrayDecoder,
+};
 use crate::error::UnsupportedTypeVariantSnafu;
 
 const NANOSECONDS_IN_SECOND: i128 = 1_000_000_000;
