@@ -151,11 +151,15 @@ impl FileOpener for OrcOpener {
         // Offset by 1 since index 0 is the root
         let projection = self.projection.iter().map(|i| i + 1).collect::<Vec<_>>();
         Ok(Box::pin(async move {
-            let builder = ArrowReaderBuilder::try_new_async(reader)
+            let mut builder = ArrowReaderBuilder::try_new_async(reader)
                 .await
                 .map_err(ArrowError::from)?;
             let projection_mask =
                 ProjectionMask::roots(builder.file_metadata().root_data_type(), projection);
+            if let Some(range) = file_meta.range.clone() {
+                let range = range.start as usize..range.end as usize;
+                builder = builder.with_file_byte_range(range);
+            }
             let reader = builder
                 .with_batch_size(batch_size)
                 .with_projection(projection_mask)
