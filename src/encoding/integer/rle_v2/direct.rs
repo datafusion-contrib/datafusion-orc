@@ -21,11 +21,14 @@ use bytes::{BufMut, BytesMut};
 
 use crate::{
     encoding::{
-        integer::rle_v2::{EncodingType, MAX_RUN_LENGTH},
-        util::{
-            extract_run_length_from_header, read_ints, read_u8, rle_v2_decode_bit_width,
-            rle_v2_encode_bit_width, write_aligned_packed_ints,
+        integer::{
+            rle_v2::{EncodingType, MAX_RUN_LENGTH},
+            util::{
+                extract_run_length_from_header, read_ints, rle_v2_decode_bit_width,
+                rle_v2_encode_bit_width, write_aligned_packed_ints,
+            },
         },
+        util::read_u8,
         EncodingSign,
     },
     error::{OutOfSpecSnafu, Result},

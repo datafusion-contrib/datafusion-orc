@@ -19,3 +19,5 @@
 
 pub mod rle_v1;
 pub mod rle_v2;
+// TODO: make private?
+pub mod util;
