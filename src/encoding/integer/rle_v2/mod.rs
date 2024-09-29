@@ -79,7 +79,7 @@ impl EncodingType {
     }
 }
 
-pub struct RleReaderV2<N: NInt, R: Read, S: EncodingSign> {
+pub struct RleV2Decoder<N: NInt, R: Read, S: EncodingSign> {
     reader: R,
     decoded_ints: Vec<N>,
     /// Indexes into decoded_ints to make it act like a queue
@@ -88,7 +88,7 @@ pub struct RleReaderV2<N: NInt, R: Read, S: EncodingSign> {
     sign: PhantomData<S>,
 }
 
-impl<N: NInt, R: Read, S: EncodingSign> RleReaderV2<N, R, S> {
+impl<N: NInt, R: Read, S: EncodingSign> RleV2Decoder<N, R, S> {
     pub fn new(reader: R) -> Self {
         Self {
             reader,
@@ -131,7 +131,7 @@ impl<N: NInt, R: Read, S: EncodingSign> RleReaderV2<N, R, S> {
     }
 }
 
-impl<N: NInt, R: Read, S: EncodingSign> PrimitiveValueDecoder<N> for RleReaderV2<N, R, S> {
+impl<N: NInt, R: Read, S: EncodingSign> PrimitiveValueDecoder<N> for RleV2Decoder<N, R, S> {
     fn decode(&mut self, out: &mut [N]) -> Result<()> {
         let available = &self.decoded_ints[self.current_head..];
         // If we have enough in buffer to copy over
@@ -256,7 +256,7 @@ impl<N: NInt> Default for RleV2EncodingState<N> {
     }
 }
 
-pub struct RleWriterV2<N: NInt, S: EncodingSign> {
+pub struct RleV2Encoder<N: NInt, S: EncodingSign> {
     /// Stores the run length encoded sequences.
     data: BytesMut,
     /// Used in state machine for determining which sub-encoding
@@ -265,7 +265,7 @@ pub struct RleWriterV2<N: NInt, S: EncodingSign> {
     phantom: PhantomData<S>,
 }
 
-impl<N: NInt, S: EncodingSign> RleWriterV2<N, S> {
+impl<N: NInt, S: EncodingSign> RleV2Encoder<N, S> {
     // Algorithm adapted from:
     // https://github.com/apache/orc/blob/main/java/core/src/java/org/apache/orc/impl/RunLengthIntegerWriterV2.java
 
@@ -398,13 +398,13 @@ impl<N: NInt, S: EncodingSign> RleWriterV2<N, S> {
     }
 }
 
-impl<N: NInt, S: EncodingSign> EstimateMemory for RleWriterV2<N, S> {
+impl<N: NInt, S: EncodingSign> EstimateMemory for RleV2Encoder<N, S> {
     fn estimate_memory_size(&self) -> usize {
         self.data.len()
     }
 }
 
-impl<N: NInt, S: EncodingSign> PrimitiveValueEncoder<N> for RleWriterV2<N, S> {
+impl<N: NInt, S: EncodingSign> PrimitiveValueEncoder<N> for RleV2Encoder<N, S> {
     fn new() -> Self {
         Self {
             data: BytesMut::new(),
@@ -549,7 +549,7 @@ mod tests {
     //       multiple times
 
     fn test_helper<S: EncodingSign>(data: &[u8], expected: &[i64]) {
-        let mut reader = RleReaderV2::<i64, _, S>::new(Cursor::new(data));
+        let mut reader = RleV2Decoder::<i64, _, S>::new(Cursor::new(data));
         let mut actual = vec![0; expected.len()];
         reader.decode(&mut actual).unwrap();
         assert_eq!(actual, expected);
@@ -668,11 +668,11 @@ mod tests {
     //       currently 99% of the time here the subencoding will be Direct due to random generation
 
     fn roundtrip_helper<N: NInt, S: EncodingSign>(values: &[N]) -> Result<Vec<N>> {
-        let mut writer = RleWriterV2::<N, S>::new();
+        let mut writer = RleV2Encoder::<N, S>::new();
         writer.write_slice(values);
         let data = writer.take_inner();
 
-        let mut reader = RleReaderV2::<N, _, S>::new(Cursor::new(data));
+        let mut reader = RleV2Decoder::<N, _, S>::new(Cursor::new(data));
         let mut actual = vec![N::zero(); values.len()];
         reader.decode(&mut actual).unwrap();
 
