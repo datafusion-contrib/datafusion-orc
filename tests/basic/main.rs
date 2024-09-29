@@ -16,6 +16,7 @@
 // under the License.
 
 use std::fs::File;
+use std::ops::Range;
 use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Decimal128Type, DecimalType, Field, Schema, TimeUnit};
@@ -48,9 +49,30 @@ async fn new_arrow_stream_reader_root(path: &str) -> ArrowStreamReader<tokio::fs
         .build_async()
 }
 
+#[cfg(feature = "async")]
+async fn new_arrow_stream_reader_range(
+    path: &str,
+    range: Range<usize>,
+) -> ArrowStreamReader<tokio::fs::File> {
+    let f = tokio::fs::File::open(path).await.unwrap();
+    ArrowReaderBuilder::try_new_async(f)
+        .await
+        .unwrap()
+        .with_file_byte_range(range)
+        .build_async()
+}
+
 fn new_arrow_reader_root(path: &str) -> ArrowReader<File> {
     let f = File::open(path).expect("no file found");
     ArrowReaderBuilder::try_new(f).unwrap().build()
+}
+
+fn new_arrow_reader_range(path: &str, range: Range<usize>) -> ArrowReader<File> {
+    let f = File::open(path).expect("no file found");
+    ArrowReaderBuilder::try_new(f)
+        .unwrap()
+        .with_file_byte_range(range)
+        .build()
 }
 
 fn basic_path(path: &str) -> String {
@@ -358,6 +380,44 @@ pub fn basic_test_0() {
         "+-----+-------+------------+-----+-----+-------+--------------------+------------------------+-----------+---------------+------------+----------------+---------------+-------------------+--------------+---------------+---------------+----------------------------+-------------+----------------+",
     ];
     assert_batches_eq(&batch, &expected);
+}
+
+#[test]
+pub fn basic_test_with_range() {
+    let path = basic_path("test.orc");
+    let reader = new_arrow_reader_range(&path, 0..2000);
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
+
+    assert_eq!(5, batch[0].column(0).len());
+}
+
+#[test]
+pub fn basic_test_with_range_without_data() {
+    let path = basic_path("test.orc");
+    let reader = new_arrow_reader_range(&path, 100..2000);
+    let batch = reader.collect::<Result<Vec<_>, _>>().unwrap();
+
+    assert_eq!(0, batch.len());
+}
+
+#[cfg(feature = "async")]
+#[tokio::test]
+pub async fn async_basic_test_with_range() {
+    let path = basic_path("test.orc");
+    let reader = new_arrow_stream_reader_range(&path, 0..2000).await;
+    let batch = reader.try_collect::<Vec<_>>().await.unwrap();
+
+    assert_eq!(5, batch[0].column(0).len());
+}
+
+#[cfg(feature = "async")]
+#[tokio::test]
+pub async fn async_basic_test_with_range_without_data() {
+    let path = basic_path("test.orc");
+    let reader = new_arrow_stream_reader_range(&path, 100..2000).await;
+    let batch = reader.try_collect::<Vec<_>>().await.unwrap();
+
+    assert_eq!(0, batch.len());
 }
 
 #[cfg(feature = "async")]
