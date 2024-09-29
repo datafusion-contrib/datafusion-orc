@@ -254,182 +254,83 @@ pub fn array_decoder_factory(
     field: Arc<Field>,
     stripe: &Stripe,
 ) -> Result<Box<dyn ArrayBatchDecoder>> {
-    let field_type = field.data_type().clone();
-    let decoder: Box<dyn ArrayBatchDecoder> = match column.data_type() {
+    let decoder: Box<dyn ArrayBatchDecoder> = match (column.data_type(), field.data_type()) {
         // TODO: try make branches more generic, reduce duplication
-        DataType::Boolean { .. } => {
-            ensure!(
-                field_type == ArrowDataType::Boolean,
-                MismatchedSchemaSnafu {
-                    orc_type: column.data_type().clone(),
-                    arrow_type: field_type
-                }
-            );
+        (DataType::Boolean { .. }, ArrowDataType::Boolean) => {
             let iter = stripe.stream_map().get(column, Kind::Data);
             let iter = Box::new(BooleanDecoder::new(iter));
             let present = PresentDecoder::from_stripe(stripe, column);
             Box::new(BooleanArrayDecoder::new(iter, present))
         }
-        DataType::Byte { .. } => {
-            ensure!(
-                field_type == ArrowDataType::Int8,
-                MismatchedSchemaSnafu {
-                    orc_type: column.data_type().clone(),
-                    arrow_type: field_type
-                }
-            );
+        (DataType::Byte { .. }, ArrowDataType::Int8) => {
             let iter = stripe.stream_map().get(column, Kind::Data);
             let iter = Box::new(ByteRleDecoder::new(iter));
             let present = PresentDecoder::from_stripe(stripe, column);
             Box::new(Int8ArrayDecoder::new(iter, present))
         }
-        DataType::Short { .. } => {
-            ensure!(
-                field_type == ArrowDataType::Int16,
-                MismatchedSchemaSnafu {
-                    orc_type: column.data_type().clone(),
-                    arrow_type: field_type
-                }
-            );
+        (DataType::Short { .. }, ArrowDataType::Int16) => {
             let iter = stripe.stream_map().get(column, Kind::Data);
             let iter = get_rle_reader(column, iter)?;
             let present = PresentDecoder::from_stripe(stripe, column);
             Box::new(Int16ArrayDecoder::new(iter, present))
         }
-        DataType::Int { .. } => {
-            ensure!(
-                field_type == ArrowDataType::Int32,
-                MismatchedSchemaSnafu {
-                    orc_type: column.data_type().clone(),
-                    arrow_type: field_type
-                }
-            );
+        (DataType::Int { .. }, ArrowDataType::Int32) => {
             let iter = stripe.stream_map().get(column, Kind::Data);
             let iter = get_rle_reader(column, iter)?;
             let present = PresentDecoder::from_stripe(stripe, column);
             Box::new(Int32ArrayDecoder::new(iter, present))
         }
-        DataType::Long { .. } => {
-            ensure!(
-                field_type == ArrowDataType::Int64,
-                MismatchedSchemaSnafu {
-                    orc_type: column.data_type().clone(),
-                    arrow_type: field_type
-                }
-            );
+        (DataType::Long { .. }, ArrowDataType::Int64) => {
             let iter = stripe.stream_map().get(column, Kind::Data);
             let iter = get_rle_reader(column, iter)?;
             let present = PresentDecoder::from_stripe(stripe, column);
             Box::new(Int64ArrayDecoder::new(iter, present))
         }
-        DataType::Float { .. } => {
-            ensure!(
-                field_type == ArrowDataType::Float32,
-                MismatchedSchemaSnafu {
-                    orc_type: column.data_type().clone(),
-                    arrow_type: field_type
-                }
-            );
+        (DataType::Float { .. }, ArrowDataType::Float32) => {
             let iter = stripe.stream_map().get(column, Kind::Data);
             let iter = Box::new(FloatDecoder::new(iter));
             let present = PresentDecoder::from_stripe(stripe, column);
             Box::new(Float32ArrayDecoder::new(iter, present))
         }
-        DataType::Double { .. } => {
-            ensure!(
-                field_type == ArrowDataType::Float64,
-                MismatchedSchemaSnafu {
-                    orc_type: column.data_type().clone(),
-                    arrow_type: field_type
-                }
-            );
+        (DataType::Double { .. }, ArrowDataType::Float64) => {
             let iter = stripe.stream_map().get(column, Kind::Data);
             let iter = Box::new(FloatDecoder::new(iter));
             let present = PresentDecoder::from_stripe(stripe, column);
             Box::new(Float64ArrayDecoder::new(iter, present))
         }
-        DataType::String { .. } | DataType::Varchar { .. } | DataType::Char { .. } => {
-            ensure!(
-                field_type == ArrowDataType::Utf8,
-                MismatchedSchemaSnafu {
-                    orc_type: column.data_type().clone(),
-                    arrow_type: field_type
-                }
-            );
-            new_string_decoder(column, stripe)?
-        }
-        DataType::Binary { .. } => {
-            ensure!(
-                field_type == ArrowDataType::Binary,
-                MismatchedSchemaSnafu {
-                    orc_type: column.data_type().clone(),
-                    arrow_type: field_type
-                }
-            );
-            new_binary_decoder(column, stripe)?
-        }
-        DataType::Decimal {
-            precision, scale, ..
-        } => {
-            ensure!(
-                field_type == ArrowDataType::Decimal128(*precision as u8, *scale as i8),
-                MismatchedSchemaSnafu {
-                    orc_type: column.data_type().clone(),
-                    arrow_type: field_type
-                }
-            );
+        (DataType::String { .. }, ArrowDataType::Utf8)
+        | (DataType::Varchar { .. }, ArrowDataType::Utf8)
+        | (DataType::Char { .. }, ArrowDataType::Utf8) => new_string_decoder(column, stripe)?,
+        (DataType::Binary { .. }, ArrowDataType::Binary) => new_binary_decoder(column, stripe)?,
+        (
+            DataType::Decimal {
+                precision, scale, ..
+            },
+            ArrowDataType::Decimal128(a_precision, a_scale),
+        ) if *precision as u8 == *a_precision && *scale as i8 == *a_scale => {
             new_decimal_decoder(column, stripe, *precision, *scale)?
         }
-        DataType::Timestamp { .. } => new_timestamp_decoder(column, field_type, stripe)?,
-        DataType::TimestampWithLocalTimezone { .. } => {
-            new_timestamp_instant_decoder(column, field_type, stripe)?
+        (DataType::Timestamp { .. }, field_type) => {
+            new_timestamp_decoder(column, field_type.clone(), stripe)?
         }
-
-        DataType::Date { .. } => {
+        (DataType::TimestampWithLocalTimezone { .. }, field_type) => {
+            new_timestamp_instant_decoder(column, field_type.clone(), stripe)?
+        }
+        (DataType::Date { .. }, ArrowDataType::Date32) => {
             // TODO: allow Date64
-            ensure!(
-                field_type == ArrowDataType::Date32,
-                MismatchedSchemaSnafu {
-                    orc_type: column.data_type().clone(),
-                    arrow_type: field_type
-                }
-            );
             let iter = stripe.stream_map().get(column, Kind::Data);
             let iter = get_rle_reader(column, iter)?;
             let present = PresentDecoder::from_stripe(stripe, column);
             Box::new(DateArrayDecoder::new(iter, present))
         }
-        DataType::Struct { .. } => match field_type {
-            ArrowDataType::Struct(fields) => {
-                Box::new(StructArrayDecoder::new(column, fields, stripe)?)
-            }
-            _ => MismatchedSchemaSnafu {
-                orc_type: column.data_type().clone(),
-                arrow_type: field_type,
-            }
-            .fail()?,
-        },
-        DataType::List { .. } => {
-            match field_type {
-                ArrowDataType::List(field) => {
-                    Box::new(ListArrayDecoder::new(column, field, stripe)?)
-                }
-                // TODO: add support for ArrowDataType::LargeList
-                _ => MismatchedSchemaSnafu {
-                    orc_type: column.data_type().clone(),
-                    arrow_type: field_type,
-                }
-                .fail()?,
-            }
+        (DataType::Struct { .. }, ArrowDataType::Struct(fields)) => {
+            Box::new(StructArrayDecoder::new(column, fields.clone(), stripe)?)
         }
-        DataType::Map { .. } => {
-            let ArrowDataType::Map(entries, sorted) = field_type else {
-                MismatchedSchemaSnafu {
-                    orc_type: column.data_type().clone(),
-                    arrow_type: field_type,
-                }
-                .fail()?
-            };
+        (DataType::List { .. }, ArrowDataType::List(field)) => {
+            // TODO: add support for ArrowDataType::LargeList
+            Box::new(ListArrayDecoder::new(column, field.clone(), stripe)?)
+        }
+        (DataType::Map { .. }, ArrowDataType::Map(entries, sorted)) => {
             ensure!(!sorted, UnsupportedTypeVariantSnafu { msg: "Sorted map" });
             let ArrowDataType::Struct(entries) = entries.data_type() else {
                 UnexpectedSnafu {
@@ -456,16 +357,16 @@ pub fn array_decoder_factory(
                 stripe,
             )?)
         }
-        DataType::Union { .. } => match field_type {
-            ArrowDataType::Union(fields, _) => {
-                Box::new(UnionArrayDecoder::new(column, fields, stripe)?)
+        (DataType::Union { .. }, ArrowDataType::Union(fields, _)) => {
+            Box::new(UnionArrayDecoder::new(column, fields.clone(), stripe)?)
+        }
+        (data_type, field_type) => {
+            return MismatchedSchemaSnafu {
+                orc_type: data_type.clone(),
+                arrow_type: field_type.clone(),
             }
-            _ => MismatchedSchemaSnafu {
-                orc_type: column.data_type().clone(),
-                arrow_type: field_type,
-            }
-            .fail()?,
-        },
+            .fail()
+        }
     };
 
     Ok(decoder)
