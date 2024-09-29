@@ -47,14 +47,47 @@ const SHORT_REPEAT_MIN_LENGTH: usize = 3;
 const SHORT_REPEAT_MAX_LENGTH: usize = 10;
 const BASE_VALUE_LIMIT: i64 = 1 << 56;
 
-// TODO: switch to read from Bytes directly?
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+// TODO: put header data in here, e.g. base value, len, etc.
+enum EncodingType {
+    ShortRepeat,
+    Direct,
+    PatchedBase,
+    Delta,
+}
+
+impl EncodingType {
+    /// Checking highest two bits for encoding type.
+    #[inline]
+    fn from_header(header: u8) -> Self {
+        match header & 0b_1100_0000 {
+            0b_1100_0000 => Self::Delta,
+            0b_1000_0000 => Self::PatchedBase,
+            0b_0100_0000 => Self::Direct,
+            0b_0000_0000 => Self::ShortRepeat,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Return byte with highest two bits set according to variant.
+    #[inline]
+    fn to_header(self) -> u8 {
+        match self {
+            EncodingType::Delta => 0b_1100_0000,
+            EncodingType::PatchedBase => 0b_1000_0000,
+            EncodingType::Direct => 0b_0100_0000,
+            EncodingType::ShortRepeat => 0b_0000_0000,
+        }
+    }
+}
+
 pub struct RleReaderV2<N: NInt, R: Read, S: EncodingSign> {
     reader: R,
     decoded_ints: Vec<N>,
     /// Indexes into decoded_ints to make it act like a queue
     current_head: usize,
     deltas: Vec<i64>,
-    phantom: PhantomData<S>,
+    sign: PhantomData<S>,
 }
 
 impl<N: NInt, R: Read, S: EncodingSign> RleReaderV2<N, R, S> {
@@ -64,7 +97,7 @@ impl<N: NInt, R: Read, S: EncodingSign> RleReaderV2<N, R, S> {
             decoded_ints: Vec::with_capacity(MAX_RUN_LENGTH),
             current_head: 0,
             deltas: Vec::with_capacity(MAX_RUN_LENGTH),
-            phantom: Default::default(),
+            sign: Default::default(),
         }
     }
 
@@ -500,39 +533,6 @@ fn determine_variable_run_encoding<N: NInt, S: EncodingSign>(
     } else {
         // TODO: pass through the 100p here
         write_direct(writer, &zigzag_literals, None);
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum EncodingType {
-    ShortRepeat,
-    Direct,
-    PatchedBase,
-    Delta,
-}
-
-impl EncodingType {
-    /// Checking highest two bits for encoding type.
-    #[inline]
-    fn from_header(header: u8) -> Self {
-        match header & 0b_1100_0000 {
-            0b_1100_0000 => Self::Delta,
-            0b_1000_0000 => Self::PatchedBase,
-            0b_0100_0000 => Self::Direct,
-            0b_0000_0000 => Self::ShortRepeat,
-            _ => unreachable!(),
-        }
-    }
-
-    /// Return byte with highest two bits set according to variant.
-    #[inline]
-    fn to_header(self) -> u8 {
-        match self {
-            EncodingType::Delta => 0b_1100_0000,
-            EncodingType::PatchedBase => 0b_1000_0000,
-            EncodingType::Direct => 0b_0100_0000,
-            EncodingType::ShortRepeat => 0b_0000_0000,
-        }
     }
 }
 

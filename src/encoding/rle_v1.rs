@@ -30,12 +30,36 @@ use super::{
 
 const MAX_RUN_LENGTH: usize = 130;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+// TODO: put header data in here, e.g. base value, len, etc.
+enum EncodingType {
+    Run { length: usize },
+    Literals { length: usize },
+}
+
+impl EncodingType {
+    /// Decode header byte to determine sub-encoding.
+    /// Runs start with a positive byte, and literals with a negative byte.
+    #[inline]
+    fn from_header(header: u8) -> Self {
+        let header = header as i8;
+        if header < 0 {
+            let length = header.unsigned_abs() as usize;
+            Self::Literals { length }
+        } else {
+            // Technically +3 but we subtract 1 for the base
+            let length = header as u8 as usize + 2;
+            Self::Run { length }
+        }
+    }
+}
+
 /// Decodes a stream of Integer Run Length Encoded version 1 bytes.
 pub struct RleReaderV1<N: NInt, R: Read, S: EncodingSign> {
     reader: R,
     decoded_ints: Vec<N>,
     current_head: usize,
-    phantom: PhantomData<S>,
+    sign: PhantomData<S>,
 }
 
 impl<N: NInt, R: Read, S: EncodingSign> RleReaderV1<N, R, S> {
@@ -44,54 +68,69 @@ impl<N: NInt, R: Read, S: EncodingSign> RleReaderV1<N, R, S> {
             reader,
             decoded_ints: Vec::with_capacity(MAX_RUN_LENGTH),
             current_head: 0,
-            phantom: Default::default(),
+            sign: Default::default(),
         }
     }
 
     fn decode_batch(&mut self) -> Result<()> {
         self.current_head = 0;
         self.decoded_ints.clear();
-        match try_read_u8(&mut self.reader)?.map(|byte| byte as i8) {
-            // Literals
-            Some(byte) if byte < 0 => {
-                let length = byte.unsigned_abs();
-                for _ in 0..length {
-                    let lit = read_varint_zigzagged::<_, _, S>(&mut self.reader)?;
-                    self.decoded_ints.push(lit);
-                }
-                Ok(())
+        let header = match try_read_u8(&mut self.reader)? {
+            Some(byte) => byte,
+            None => return Ok(()),
+        };
+
+        match EncodingType::from_header(header) {
+            EncodingType::Literals { length } => {
+                read_literals::<_, _, S>(&mut self.reader, &mut self.decoded_ints, length)
             }
-            // Run
-            Some(byte) => {
-                let byte = byte as u8;
-                let length = byte + 2; // Technically +3, but we subtract 1 for the base
-                let delta = read_u8(&mut self.reader)? as i8;
-                let mut base = read_varint_zigzagged::<_, _, S>(&mut self.reader)?;
-                self.decoded_ints.push(base);
-                if delta < 0 {
-                    let delta = delta.unsigned_abs();
-                    let delta = N::from_u8(delta);
-                    for _ in 0..length {
-                        base = base.checked_sub(&delta).context(OutOfSpecSnafu {
-                            msg: "over/underflow when decoding patched base integer",
-                        })?;
-                        self.decoded_ints.push(base);
-                    }
-                } else {
-                    let delta = delta as u8;
-                    let delta = N::from_u8(delta);
-                    for _ in 0..length {
-                        base = base.checked_add(&delta).context(OutOfSpecSnafu {
-                            msg: "over/underflow when decoding patched base integer",
-                        })?;
-                        self.decoded_ints.push(base);
-                    }
-                }
-                Ok(())
+            EncodingType::Run { length } => {
+                read_run::<_, _, S>(&mut self.reader, &mut self.decoded_ints, length)
             }
-            None => Ok(()),
         }
     }
+}
+
+fn read_literals<N: NInt, R: Read, S: EncodingSign>(
+    reader: &mut R,
+    out_ints: &mut Vec<N>,
+    length: usize,
+) -> Result<()> {
+    for _ in 0..length {
+        let lit = read_varint_zigzagged::<_, _, S>(reader)?;
+        out_ints.push(lit);
+    }
+    Ok(())
+}
+
+fn read_run<N: NInt, R: Read, S: EncodingSign>(
+    reader: &mut R,
+    out_ints: &mut Vec<N>,
+    length: usize,
+) -> Result<()> {
+    let delta = read_u8(reader)? as i8;
+    let mut base = read_varint_zigzagged::<_, _, S>(reader)?;
+    out_ints.push(base);
+    if delta < 0 {
+        let delta = delta.unsigned_abs();
+        let delta = N::from_u8(delta);
+        for _ in 0..length {
+            base = base.checked_sub(&delta).context(OutOfSpecSnafu {
+                msg: "over/underflow when decoding patched base integer",
+            })?;
+            out_ints.push(base);
+        }
+    } else {
+        let delta = delta as u8;
+        let delta = N::from_u8(delta);
+        for _ in 0..length {
+            base = base.checked_add(&delta).context(OutOfSpecSnafu {
+                msg: "over/underflow when decoding patched base integer",
+            })?;
+            out_ints.push(base);
+        }
+    }
+    Ok(())
 }
 
 impl<N: NInt, R: Read, S: EncodingSign> PrimitiveValueDecoder<N> for RleReaderV1<N, R, S> {
