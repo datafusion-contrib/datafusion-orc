@@ -49,8 +49,8 @@ impl<N: NInt, R: Read, S: EncodingSign> RleReaderV1<N, R, S> {
     }
 
     fn decode_batch(&mut self) -> Result<()> {
-        // Decode header byte to determine sub-encoding.
-        // Runs start with a positive byte, and literals with a negative byte.
+        self.current_head = 0;
+        self.decoded_ints.clear();
         match try_read_u8(&mut self.reader)?.map(|byte| byte as i8) {
             // Literals
             Some(byte) if byte < 0 => {
