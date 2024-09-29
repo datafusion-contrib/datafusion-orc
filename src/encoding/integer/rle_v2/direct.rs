@@ -27,9 +27,9 @@ use crate::{
                 extract_run_length_from_header, read_ints, rle_v2_decode_bit_width,
                 rle_v2_encode_bit_width, write_aligned_packed_ints,
             },
+            EncodingSign,
         },
         util::read_u8,
-        EncodingSign,
     },
     error::{OutOfSpecSnafu, Result},
 };
@@ -100,7 +100,7 @@ mod tests {
 
     use proptest::prelude::*;
 
-    use crate::encoding::{SignedEncoding, UnsignedEncoding};
+    use crate::encoding::integer::{SignedEncoding, UnsignedEncoding};
 
     use super::*;
 

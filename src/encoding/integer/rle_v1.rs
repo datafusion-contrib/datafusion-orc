@@ -23,11 +23,13 @@ use snafu::OptionExt;
 
 use crate::{
     encoding::{
-        util::{read_u8, read_varint_zigzagged, try_read_u8},
-        EncodingSign, NInt, PrimitiveValueDecoder,
+        util::{read_u8, try_read_u8},
+        PrimitiveValueDecoder,
     },
     error::{OutOfSpecSnafu, Result},
 };
+
+use super::{util::read_varint_zigzagged, EncodingSign, NInt};
 
 const MAX_RUN_LENGTH: usize = 130;
 
@@ -182,7 +184,7 @@ impl<N: NInt, R: Read, S: EncodingSign> PrimitiveValueDecoder<N> for RleReaderV1
 mod tests {
     use std::io::Cursor;
 
-    use crate::encoding::UnsignedEncoding;
+    use crate::encoding::integer::UnsignedEncoding;
 
     use super::*;
 

@@ -24,7 +24,8 @@ use snafu::ResultExt;
 
 use crate::array_decoder::derive_present_vec;
 use crate::column::Column;
-use crate::encoding::{get_unsigned_rle_reader, PrimitiveValueDecoder};
+use crate::encoding::integer::get_unsigned_rle_reader;
+use crate::encoding::PrimitiveValueDecoder;
 use crate::proto::stream::Kind;
 
 use crate::error::{ArrowSnafu, Result};

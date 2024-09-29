@@ -32,7 +32,8 @@ use crate::column::Column;
 use crate::encoding::boolean::BooleanDecoder;
 use crate::encoding::byte::ByteRleDecoder;
 use crate::encoding::float::FloatDecoder;
-use crate::encoding::{get_rle_reader, PrimitiveValueDecoder};
+use crate::encoding::integer::get_rle_reader;
+use crate::encoding::PrimitiveValueDecoder;
 use crate::error::{
     self, MismatchedSchemaSnafu, Result, UnexpectedSnafu, UnsupportedTypeVariantSnafu,
 };
