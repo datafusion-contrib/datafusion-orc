@@ -34,10 +34,10 @@ use self::{
 
 use super::{util::calculate_percentile_bits, EncodingSign, NInt, VarintSerde};
 
-pub mod delta;
-pub mod direct;
-pub mod patched_base;
-pub mod short_repeat;
+mod delta;
+mod direct;
+mod patched_base;
+mod short_repeat;
 
 const MAX_RUN_LENGTH: usize = 512;
 /// Minimum number of repeated values required to use Short Repeat sub-encoding
