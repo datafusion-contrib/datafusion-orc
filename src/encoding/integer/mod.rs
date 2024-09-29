@@ -43,6 +43,7 @@ pub mod rle_v1;
 pub mod rle_v2;
 mod util;
 
+// TODO: consider having a separate varint.rs
 pub use util::read_varint_zigzagged;
 
 pub fn get_unsigned_rle_reader<R: Read + Send + 'static>(
