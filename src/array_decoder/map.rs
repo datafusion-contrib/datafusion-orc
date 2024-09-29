@@ -23,18 +23,18 @@ use arrow::datatypes::{Field, Fields};
 use snafu::ResultExt;
 
 use crate::array_decoder::derive_present_vec;
-use crate::column::{get_present_vec, Column};
+use crate::column::Column;
 use crate::encoding::{get_unsigned_rle_reader, PrimitiveValueDecoder};
 use crate::error::{ArrowSnafu, Result};
 use crate::proto::stream::Kind;
 use crate::stripe::Stripe;
 
-use super::{array_decoder_factory, ArrayBatchDecoder};
+use super::{array_decoder_factory, ArrayBatchDecoder, PresentDecoder};
 
 pub struct MapArrayDecoder {
     keys: Box<dyn ArrayBatchDecoder>,
     values: Box<dyn ArrayBatchDecoder>,
-    present: Option<Box<dyn Iterator<Item = bool> + Send>>,
+    present: Option<PresentDecoder>,
     lengths: Box<dyn PrimitiveValueDecoder<i64> + Send>,
     fields: Fields,
 }
@@ -46,8 +46,7 @@ impl MapArrayDecoder {
         values_field: Arc<Field>,
         stripe: &Stripe,
     ) -> Result<Self> {
-        let present = get_present_vec(column, stripe)?
-            .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+        let present = PresentDecoder::from_stripe(stripe, column);
 
         let keys_column = &column.children()[0];
         let keys = array_decoder_factory(keys_column, keys_field.clone(), stripe)?;
@@ -74,9 +73,10 @@ impl ArrayBatchDecoder for MapArrayDecoder {
     fn next_batch(
         &mut self,
         batch_size: usize,
-        parent_present: Option<&[bool]>,
+        parent_present: Option<&NullBuffer>,
     ) -> Result<ArrayRef> {
-        let present = derive_present_vec(&mut self.present, parent_present, batch_size);
+        let present =
+            derive_present_vec(&mut self.present, parent_present, batch_size).transpose()?;
 
         let mut lengths = vec![0; batch_size];
         if let Some(present) = &present {
@@ -94,11 +94,10 @@ impl ArrayBatchDecoder for MapArrayDecoder {
             StructArray::try_new(self.fields.clone(), vec![keys_array, values_array], None)
                 .context(ArrowSnafu)?;
         let offsets = OffsetBuffer::from_lengths(lengths.into_iter().map(|l| l as usize));
-        let null_buffer = present.map(NullBuffer::from);
 
         let field = Arc::new(Field::new_struct("entries", self.fields.clone(), false));
         let array =
-            MapArray::try_new(field, offsets, entries, null_buffer, false).context(ArrowSnafu)?;
+            MapArray::try_new(field, offsets, entries, present, false).context(ArrowSnafu)?;
         let array = Arc::new(array);
         Ok(array)
     }

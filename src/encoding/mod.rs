@@ -24,6 +24,7 @@ use std::{
     ops::{BitOrAssign, ShlAssign},
 };
 
+use arrow::buffer::NullBuffer;
 use bytes::Bytes;
 use num::{traits::CheckedShl, PrimInt, Signed};
 use snafu::ResultExt;
@@ -83,32 +84,30 @@ pub trait PrimitiveValueDecoder<V> {
     /// Decode into `out` according to the `true` elements in `present`.
     ///
     /// `present` must be the same length as `out`.
-    fn decode_spaced(&mut self, out: &mut [V], present: &[bool]) -> Result<()> {
+    fn decode_spaced(&mut self, out: &mut [V], present: &NullBuffer) -> Result<()> {
         debug_assert_eq!(out.len(), present.len());
 
         // First get all the non-null values into a contiguous range.
-        // TODO: be able to get present count externally
-        let non_null_count = present.iter().filter(|&&present| present).count();
+        let non_null_count = present.len() - present.null_count();
         if non_null_count == 0 {
+            // All nulls, don't bother decoding anything
             return Ok(());
         }
-        self.decode(&mut out[..non_null_count])?;
+        // We read into the back because valid_indices() below is not reversible,
+        // so we just reverse our algorithm.
+        let range_start = out.len() - non_null_count;
+        self.decode(&mut out[range_start..])?;
         if non_null_count == present.len() {
+            // No nulls, don't need to space out
             return Ok(());
         }
 
-        // Then from the tail we swap with the null elements to ensure it matches
-        // with the present buffer.
-        let tail_indices = (0..non_null_count).rev();
-        for (correct_index, tail_index) in present
-            .iter()
-            .enumerate()
-            .rev()
-            .filter_map(|(idx, &is_present)| is_present.then_some(idx))
-            .zip(tail_indices)
-        {
-            // tail_index points to the value we need to move to correct_index
-            out.swap(correct_index, tail_index);
+        // From the head of the contiguous range (at the end of the buffer) we swap
+        // with the null elements to ensure it matches with the present buffer.
+        let head_indices = range_start..out.len();
+        for (correct_index, head_index) in present.valid_indices().zip(head_indices) {
+            // head_index points to the value we need to move to correct_index
+            out.swap(correct_index, head_index);
         }
 
         Ok(())
@@ -429,7 +428,7 @@ mod tests {
         fn decode_spaced_proptest(present: Vec<bool>) {
             let mut decoder = DummyDecoder;
             let mut out = vec![-1; present.len()];
-            decoder.decode_spaced(&mut out, &present).unwrap();
+            decoder.decode_spaced(&mut out, &NullBuffer::from(present.clone())).unwrap();
             let expected = gen_spaced_dummy_decoder_expected(&present);
             prop_assert_eq!(out, expected);
         }
@@ -443,6 +442,7 @@ mod tests {
         // all present
         let mut out = vec![-1; len];
         let present = vec![true; len];
+        let present = NullBuffer::from(present);
         decoder.decode_spaced(&mut out, &present).unwrap();
         let expected: Vec<_> = (0..len).map(|i| i as i32).collect();
         assert_eq!(out, expected);
@@ -450,6 +450,7 @@ mod tests {
         // all null
         let mut out = vec![-1; len];
         let present = vec![false; len];
+        let present = NullBuffer::from(present);
         decoder.decode_spaced(&mut out, &present).unwrap();
         let expected = vec![-1; len];
         assert_eq!(out, expected);

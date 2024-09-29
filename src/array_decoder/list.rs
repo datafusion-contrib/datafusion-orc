@@ -23,26 +23,25 @@ use arrow::datatypes::{Field, FieldRef};
 use snafu::ResultExt;
 
 use crate::array_decoder::derive_present_vec;
-use crate::column::{get_present_vec, Column};
+use crate::column::Column;
 use crate::encoding::{get_unsigned_rle_reader, PrimitiveValueDecoder};
 use crate::proto::stream::Kind;
 
 use crate::error::{ArrowSnafu, Result};
 use crate::stripe::Stripe;
 
-use super::{array_decoder_factory, ArrayBatchDecoder};
+use super::{array_decoder_factory, ArrayBatchDecoder, PresentDecoder};
 
 pub struct ListArrayDecoder {
     inner: Box<dyn ArrayBatchDecoder>,
-    present: Option<Box<dyn Iterator<Item = bool> + Send>>,
+    present: Option<PresentDecoder>,
     lengths: Box<dyn PrimitiveValueDecoder<i64> + Send>,
     field: FieldRef,
 }
 
 impl ListArrayDecoder {
     pub fn new(column: &Column, field: Arc<Field>, stripe: &Stripe) -> Result<Self> {
-        let present = get_present_vec(column, stripe)?
-            .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+        let present = PresentDecoder::from_stripe(stripe, column);
 
         let child = &column.children()[0];
         let inner = array_decoder_factory(child, field.clone(), stripe)?;
@@ -63,9 +62,10 @@ impl ArrayBatchDecoder for ListArrayDecoder {
     fn next_batch(
         &mut self,
         batch_size: usize,
-        parent_present: Option<&[bool]>,
+        parent_present: Option<&NullBuffer>,
     ) -> Result<ArrayRef> {
-        let present = derive_present_vec(&mut self.present, parent_present, batch_size);
+        let present =
+            derive_present_vec(&mut self.present, parent_present, batch_size).transpose()?;
 
         let mut lengths = vec![0; batch_size];
         if let Some(present) = &present {

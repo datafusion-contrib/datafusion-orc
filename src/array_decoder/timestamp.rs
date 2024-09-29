@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use crate::{
     array_decoder::ArrowDataType,
-    column::{get_present_vec, Column},
+    column::Column,
     encoding::{
         get_rle_reader, get_unsigned_rle_reader,
         timestamp::{TimestampDecoder, TimestampNanosecondAsDecimalDecoder},
@@ -29,16 +29,16 @@ use crate::{
     proto::stream::Kind,
     stripe::Stripe,
 };
-use arrow::array::ArrayRef;
 use arrow::datatypes::{
     ArrowTimestampType, Decimal128Type, DecimalType, TimeUnit, TimestampMicrosecondType,
     TimestampMillisecondType, TimestampNanosecondType, TimestampSecondType,
 };
+use arrow::{array::ArrayRef, buffer::NullBuffer};
 use chrono::offset::TimeZone;
 use chrono::TimeDelta;
 use chrono_tz::{Tz, UTC};
 
-use super::{ArrayBatchDecoder, DecimalArrayDecoder, PrimitiveArrayDecoder};
+use super::{ArrayBatchDecoder, DecimalArrayDecoder, PresentDecoder, PrimitiveArrayDecoder};
 use crate::error::UnsupportedTypeVariantSnafu;
 
 const NANOSECONDS_IN_SECOND: i128 = 1_000_000_000;
@@ -59,8 +59,7 @@ fn get_inner_timestamp_decoder<T: ArrowTimestampType + Send>(
     let secondary = stripe.stream_map().get(column, Kind::Secondary);
     let secondary = get_unsigned_rle_reader(column, secondary);
 
-    let present = get_present_vec(column, stripe)?
-        .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+    let present = PresentDecoder::from_stripe(stripe, column);
 
     let iter = Box::new(TimestampDecoder::<T>::new(
         seconds_since_unix_epoch,
@@ -104,8 +103,7 @@ fn decimal128_decoder(
     let secondary = stripe.stream_map().get(column, Kind::Secondary);
     let secondary = get_rle_reader(column, secondary)?;
 
-    let present = get_present_vec(column, stripe)?
-        .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+    let present = PresentDecoder::from_stripe(stripe, column);
 
     let iter = TimestampNanosecondAsDecimalDecoder::new(seconds_since_unix_epoch, data, secondary);
 
@@ -238,7 +236,7 @@ impl<T: ArrowTimestampType> ArrayBatchDecoder for TimestampOffsetArrayDecoder<T>
     fn next_batch(
         &mut self,
         batch_size: usize,
-        parent_present: Option<&[bool]>,
+        parent_present: Option<&NullBuffer>,
     ) -> Result<ArrayRef> {
         let array = self
             .inner
@@ -273,7 +271,7 @@ impl<T: ArrowTimestampType> ArrayBatchDecoder for TimestampInstantArrayDecoder<T
     fn next_batch(
         &mut self,
         batch_size: usize,
-        parent_present: Option<&[bool]>,
+        parent_present: Option<&NullBuffer>,
     ) -> Result<ArrayRef> {
         let array = self
             .0

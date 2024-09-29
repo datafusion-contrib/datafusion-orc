@@ -17,7 +17,8 @@
 
 use std::sync::Arc;
 
-use arrow::array::{ArrayRef, BooleanArray, PrimitiveArray};
+use arrow::array::{ArrayRef, BooleanArray, BooleanBufferBuilder, PrimitiveArray};
+use arrow::buffer::NullBuffer;
 use arrow::datatypes::ArrowNativeTypeOp;
 use arrow::datatypes::{ArrowPrimitiveType, Decimal128Type};
 use arrow::datatypes::{DataType as ArrowDataType, Field};
@@ -27,7 +28,7 @@ use arrow::datatypes::{
 use arrow::record_batch::{RecordBatch, RecordBatchOptions};
 use snafu::{ensure, ResultExt};
 
-use crate::column::{get_present_vec, Column};
+use crate::column::Column;
 use crate::encoding::boolean::BooleanDecoder;
 use crate::encoding::byte::ByteRleDecoder;
 use crate::encoding::float::FloatDecoder;
@@ -57,13 +58,13 @@ mod union;
 
 struct PrimitiveArrayDecoder<T: ArrowPrimitiveType> {
     iter: Box<dyn PrimitiveValueDecoder<T::Native> + Send>,
-    present: Option<Box<dyn Iterator<Item = bool> + Send>>,
+    present: Option<PresentDecoder>,
 }
 
 impl<T: ArrowPrimitiveType> PrimitiveArrayDecoder<T> {
     pub fn new(
         iter: Box<dyn PrimitiveValueDecoder<T::Native> + Send>,
-        present: Option<Box<dyn Iterator<Item = bool> + Send>>,
+        present: Option<PresentDecoder>,
     ) -> Self {
         Self { iter, present }
     }
@@ -71,14 +72,15 @@ impl<T: ArrowPrimitiveType> PrimitiveArrayDecoder<T> {
     fn next_primitive_batch(
         &mut self,
         batch_size: usize,
-        parent_present: Option<&[bool]>,
+        parent_present: Option<&NullBuffer>,
     ) -> Result<PrimitiveArray<T>> {
-        let present = derive_present_vec(&mut self.present, parent_present, batch_size);
+        let present =
+            derive_present_vec(&mut self.present, parent_present, batch_size).transpose()?;
         let mut data = vec![T::Native::ZERO; batch_size];
         match present {
             Some(present) => {
                 self.iter.decode_spaced(data.as_mut_slice(), &present)?;
-                let array = PrimitiveArray::<T>::new(data.into(), Some(present.into()));
+                let array = PrimitiveArray::<T>::new(data.into(), Some(present));
                 Ok(array)
             }
             None => {
@@ -94,7 +96,7 @@ impl<T: ArrowPrimitiveType> ArrayBatchDecoder for PrimitiveArrayDecoder<T> {
     fn next_batch(
         &mut self,
         batch_size: usize,
-        parent_present: Option<&[bool]>,
+        parent_present: Option<&NullBuffer>,
     ) -> Result<ArrayRef> {
         let array = self.next_primitive_batch(batch_size, parent_present)?;
         let array = Arc::new(array) as ArrayRef;
@@ -112,6 +114,7 @@ type DateArrayDecoder = PrimitiveArrayDecoder<Date32Type>; // TODO: does ORC enc
 
 /// Wrapper around PrimitiveArrayDecoder to allow specifying the precision and scale
 /// of the output decimal array.
+// TODO: move into array_decoder/decimal.rs
 struct DecimalArrayDecoder {
     precision: u8,
     scale: i8,
@@ -123,7 +126,7 @@ impl DecimalArrayDecoder {
         precision: u8,
         scale: i8,
         iter: Box<dyn PrimitiveValueDecoder<i128> + Send>,
-        present: Option<Box<dyn Iterator<Item = bool> + Send>>,
+        present: Option<PresentDecoder>,
     ) -> Self {
         let inner = PrimitiveArrayDecoder::<Decimal128Type>::new(iter, present);
         Self {
@@ -138,7 +141,7 @@ impl ArrayBatchDecoder for DecimalArrayDecoder {
     fn next_batch(
         &mut self,
         batch_size: usize,
-        parent_present: Option<&[bool]>,
+        parent_present: Option<&NullBuffer>,
     ) -> Result<ArrayRef> {
         let array = self
             .inner
@@ -152,13 +155,13 @@ impl ArrayBatchDecoder for DecimalArrayDecoder {
 
 struct BooleanArrayDecoder {
     iter: Box<dyn PrimitiveValueDecoder<bool> + Send>,
-    present: Option<Box<dyn Iterator<Item = bool> + Send>>,
+    present: Option<PresentDecoder>,
 }
 
 impl BooleanArrayDecoder {
     pub fn new(
         iter: Box<dyn PrimitiveValueDecoder<bool> + Send>,
-        present: Option<Box<dyn Iterator<Item = bool> + Send>>,
+        present: Option<PresentDecoder>,
     ) -> Self {
         Self { iter, present }
     }
@@ -168,14 +171,15 @@ impl ArrayBatchDecoder for BooleanArrayDecoder {
     fn next_batch(
         &mut self,
         batch_size: usize,
-        parent_present: Option<&[bool]>,
+        parent_present: Option<&NullBuffer>,
     ) -> Result<ArrayRef> {
-        let present = derive_present_vec(&mut self.present, parent_present, batch_size);
+        let present =
+            derive_present_vec(&mut self.present, parent_present, batch_size).transpose()?;
         let mut data = vec![false; batch_size];
         let array = match present {
             Some(present) => {
                 self.iter.decode_spaced(data.as_mut_slice(), &present)?;
-                BooleanArray::new(data.into(), Some(present.into()))
+                BooleanArray::new(data.into(), Some(present))
             }
             None => {
                 self.iter.decode(data.as_mut_slice())?;
@@ -186,36 +190,58 @@ impl ArrayBatchDecoder for BooleanArrayDecoder {
     }
 }
 
-fn merge_parent_present(
-    parent_present: &[bool],
-    present: impl IntoIterator<Item = bool> + Send,
-) -> Vec<bool> {
-    // present must have len <= parent_present
-    let mut present = present.into_iter();
-    let mut merged_present = Vec::with_capacity(parent_present.len());
-    for &is_present in parent_present {
-        if is_present {
-            let p = present.next().expect("array less than expected length");
-            merged_present.push(p);
-        } else {
-            merged_present.push(false);
-        }
+struct PresentDecoder {
+    // TODO: ideally directly reference BooleanDecoder, doing this way to avoid
+    //       the generic propagation that would be required (BooleanDecoder<R: Read>)
+    inner: Box<dyn PrimitiveValueDecoder<bool> + Send>,
+}
+
+impl PresentDecoder {
+    fn from_stripe(stripe: &Stripe, column: &Column) -> Option<Self> {
+        stripe
+            .stream_map()
+            .get_opt(column, Kind::Present)
+            .map(|stream| {
+                let inner = Box::new(BooleanDecoder::new(stream));
+                PresentDecoder { inner }
+            })
     }
-    merged_present
+
+    fn next_buffer(&mut self, size: usize) -> Result<NullBuffer> {
+        let mut data = vec![false; size];
+        self.inner.decode(&mut data)?;
+        Ok(NullBuffer::from(data))
+    }
+}
+
+fn merge_parent_present(
+    parent_present: &NullBuffer,
+    present: Result<NullBuffer>,
+) -> Result<NullBuffer> {
+    let present = present?;
+    let non_null_count = parent_present.len() - parent_present.null_count();
+    debug_assert!(present.len() == non_null_count);
+    let mut builder = BooleanBufferBuilder::new(parent_present.len());
+    builder.append_n(parent_present.len(), false);
+    for (idx, p) in parent_present.valid_indices().zip(present.iter()) {
+        builder.set_bit(idx, p);
+    }
+    Ok(builder.finish().into())
 }
 
 fn derive_present_vec(
-    present: &mut Option<Box<dyn Iterator<Item = bool> + Send>>,
-    parent_present: Option<&[bool]>,
+    present: &mut Option<PresentDecoder>,
+    parent_present: Option<&NullBuffer>,
     batch_size: usize,
-) -> Option<Vec<bool>> {
+) -> Option<Result<NullBuffer>> {
     match (present, parent_present) {
         (Some(present), Some(parent_present)) => {
-            let present = present.by_ref().take(batch_size);
+            let element_count = parent_present.len() - parent_present.null_count();
+            let present = present.next_buffer(element_count);
             Some(merge_parent_present(parent_present, present))
         }
-        (Some(present), None) => Some(present.by_ref().take(batch_size).collect::<Vec<_>>()),
-        (None, Some(parent_present)) => Some(parent_present.to_vec()),
+        (Some(present), None) => Some(present.next_buffer(batch_size)),
+        (None, Some(parent_present)) => Some(Ok(parent_present.clone())),
         (None, None) => None,
     }
 }
@@ -260,7 +286,7 @@ pub trait ArrayBatchDecoder: Send {
     fn next_batch(
         &mut self,
         batch_size: usize,
-        parent_present: Option<&[bool]>,
+        parent_present: Option<&NullBuffer>,
     ) -> Result<ArrayRef>;
 }
 
@@ -282,8 +308,7 @@ pub fn array_decoder_factory(
             );
             let iter = stripe.stream_map().get(column, Kind::Data);
             let iter = Box::new(BooleanDecoder::new(iter));
-            let present = get_present_vec(column, stripe)?
-                .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+            let present = PresentDecoder::from_stripe(stripe, column);
             Box::new(BooleanArrayDecoder::new(iter, present))
         }
         DataType::Byte { .. } => {
@@ -296,8 +321,7 @@ pub fn array_decoder_factory(
             );
             let iter = stripe.stream_map().get(column, Kind::Data);
             let iter = Box::new(ByteRleDecoder::new(iter));
-            let present = get_present_vec(column, stripe)?
-                .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+            let present = PresentDecoder::from_stripe(stripe, column);
             Box::new(Int8ArrayDecoder::new(iter, present))
         }
         DataType::Short { .. } => {
@@ -310,8 +334,7 @@ pub fn array_decoder_factory(
             );
             let iter = stripe.stream_map().get(column, Kind::Data);
             let iter = get_rle_reader(column, iter)?;
-            let present = get_present_vec(column, stripe)?
-                .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+            let present = PresentDecoder::from_stripe(stripe, column);
             Box::new(Int16ArrayDecoder::new(iter, present))
         }
         DataType::Int { .. } => {
@@ -324,8 +347,7 @@ pub fn array_decoder_factory(
             );
             let iter = stripe.stream_map().get(column, Kind::Data);
             let iter = get_rle_reader(column, iter)?;
-            let present = get_present_vec(column, stripe)?
-                .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+            let present = PresentDecoder::from_stripe(stripe, column);
             Box::new(Int32ArrayDecoder::new(iter, present))
         }
         DataType::Long { .. } => {
@@ -338,8 +360,7 @@ pub fn array_decoder_factory(
             );
             let iter = stripe.stream_map().get(column, Kind::Data);
             let iter = get_rle_reader(column, iter)?;
-            let present = get_present_vec(column, stripe)?
-                .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+            let present = PresentDecoder::from_stripe(stripe, column);
             Box::new(Int64ArrayDecoder::new(iter, present))
         }
         DataType::Float { .. } => {
@@ -352,8 +373,7 @@ pub fn array_decoder_factory(
             );
             let iter = stripe.stream_map().get(column, Kind::Data);
             let iter = Box::new(FloatDecoder::new(iter));
-            let present = get_present_vec(column, stripe)?
-                .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+            let present = PresentDecoder::from_stripe(stripe, column);
             Box::new(Float32ArrayDecoder::new(iter, present))
         }
         DataType::Double { .. } => {
@@ -366,8 +386,7 @@ pub fn array_decoder_factory(
             );
             let iter = stripe.stream_map().get(column, Kind::Data);
             let iter = Box::new(FloatDecoder::new(iter));
-            let present = get_present_vec(column, stripe)?
-                .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+            let present = PresentDecoder::from_stripe(stripe, column);
             Box::new(Float64ArrayDecoder::new(iter, present))
         }
         DataType::String { .. } | DataType::Varchar { .. } | DataType::Char { .. } => {
@@ -418,8 +437,7 @@ pub fn array_decoder_factory(
             );
             let iter = stripe.stream_map().get(column, Kind::Data);
             let iter = get_rle_reader(column, iter)?;
-            let present = get_present_vec(column, stripe)?
-                .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+            let present = PresentDecoder::from_stripe(stripe, column);
             Box::new(DateArrayDecoder::new(iter, present))
         }
         DataType::Struct { .. } => match field_type {

@@ -17,14 +17,13 @@
 
 use std::cmp::Ordering;
 
-use crate::column::get_present_vec;
 use crate::encoding::decimal::UnboundedVarintStreamDecoder;
 use crate::encoding::{get_rle_reader, PrimitiveValueDecoder};
 use crate::proto::stream::Kind;
 use crate::stripe::Stripe;
 use crate::{column::Column, error::Result};
 
-use super::{ArrayBatchDecoder, DecimalArrayDecoder};
+use super::{ArrayBatchDecoder, DecimalArrayDecoder, PresentDecoder};
 
 pub fn new_decimal_decoder(
     column: &Column,
@@ -39,8 +38,7 @@ pub fn new_decimal_decoder(
     let scale_iter = stripe.stream_map().get(column, Kind::Secondary);
     let scale_iter = get_rle_reader::<i32, _>(column, scale_iter)?;
 
-    let present = get_present_vec(column, stripe)?
-        .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+    let present = PresentDecoder::from_stripe(stripe, column);
 
     let iter = DecimalScaleRepairDecoder {
         varint_iter,
