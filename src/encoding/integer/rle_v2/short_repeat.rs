@@ -20,7 +20,7 @@ use std::io::Read;
 use bytes::{BufMut, BytesMut};
 
 use crate::{
-    encoding::{rle_v2::EncodingType, EncodingSign},
+    encoding::{integer::rle_v2::EncodingType, EncodingSign},
     error::{OutOfSpecSnafu, Result},
 };
 

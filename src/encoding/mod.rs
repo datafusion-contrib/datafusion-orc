@@ -26,6 +26,7 @@ use std::{
 
 use arrow::buffer::NullBuffer;
 use bytes::Bytes;
+use integer::{rle_v1::RleReaderV1, rle_v2::RleReaderV2};
 use num::{traits::CheckedShl, PrimInt, Signed};
 use snafu::ResultExt;
 
@@ -36,21 +37,15 @@ use crate::{
     proto::column_encoding::Kind as ProtoColumnKind,
 };
 
-use self::{
-    rle_v1::RleReaderV1,
-    rle_v2::RleReaderV2,
-    util::{
-        get_closest_aligned_bit_width, signed_msb_decode, signed_zigzag_decode,
-        signed_zigzag_encode,
-    },
+use self::util::{
+    get_closest_aligned_bit_width, signed_msb_decode, signed_zigzag_decode, signed_zigzag_encode,
 };
 
 pub mod boolean;
 pub mod byte;
 pub mod decimal;
 pub mod float;
-pub mod rle_v1;
-pub mod rle_v2;
+pub mod integer;
 pub mod timestamp;
 mod util;
 

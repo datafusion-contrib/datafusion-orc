@@ -20,6 +20,10 @@ use std::{io::Read, marker::PhantomData};
 use bytes::BytesMut;
 
 use crate::{
+    encoding::{
+        util::{calculate_percentile_bits, try_read_u8},
+        EncodingSign, NInt, PrimitiveValueDecoder, PrimitiveValueEncoder, VarintSerde,
+    },
     error::{OutOfSpecSnafu, Result},
     memory::EstimateMemory,
 };
@@ -29,11 +33,6 @@ use self::{
     direct::{read_direct_values, write_direct},
     patched_base::{read_patched_base, write_patched_base},
     short_repeat::{read_short_repeat_values, write_short_repeat},
-};
-
-use super::{
-    util::{calculate_percentile_bits, try_read_u8},
-    EncodingSign, NInt, PrimitiveValueDecoder, PrimitiveValueEncoder, VarintSerde,
 };
 
 pub mod delta;
