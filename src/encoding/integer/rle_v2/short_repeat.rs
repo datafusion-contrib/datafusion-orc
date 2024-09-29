@@ -20,7 +20,7 @@ use std::io::Read;
 use bytes::{BufMut, BytesMut};
 
 use crate::{
-    encoding::{integer::rle_v2::EncodingType, EncodingSign},
+    encoding::integer::{rle_v2::EncodingType, EncodingSign},
     error::{OutOfSpecSnafu, Result},
 };
 
@@ -86,7 +86,7 @@ mod tests {
 
     use proptest::prelude::*;
 
-    use crate::encoding::{SignedEncoding, UnsignedEncoding};
+    use crate::encoding::integer::{SignedEncoding, UnsignedEncoding};
 
     use super::*;
 

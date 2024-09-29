@@ -25,12 +25,13 @@ use crate::{
         integer::{
             rle_v2::{EncodingType, MAX_RUN_LENGTH},
             util::{
-                extract_run_length_from_header, read_ints, rle_v2_decode_bit_width,
-                rle_v2_encode_bit_width, write_aligned_packed_ints,
+                extract_run_length_from_header, read_ints, read_varint_zigzagged,
+                rle_v2_decode_bit_width, rle_v2_encode_bit_width, write_aligned_packed_ints,
+                write_varint_zigzagged,
             },
+            EncodingSign, SignedEncoding, VarintSerde,
         },
-        util::{read_u8, read_varint_zigzagged, write_varint_zigzagged},
-        EncodingSign, SignedEncoding, VarintSerde,
+        util::read_u8,
     },
     error::{OrcError, OutOfSpecSnafu, Result},
 };
@@ -184,7 +185,7 @@ fn derive_delta_header(delta_width: usize, run_length: usize) -> [u8; 2] {
 mod tests {
     use std::io::Cursor;
 
-    use crate::encoding::UnsignedEncoding;
+    use crate::encoding::integer::UnsignedEncoding;
 
     use super::*;
 

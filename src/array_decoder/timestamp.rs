@@ -21,7 +21,7 @@ use crate::{
     array_decoder::ArrowDataType,
     column::Column,
     encoding::{
-        get_rle_reader, get_unsigned_rle_reader,
+        integer::{get_rle_reader, get_unsigned_rle_reader},
         timestamp::{TimestampDecoder, TimestampNanosecondAsDecimalDecoder},
         PrimitiveValueDecoder,
     },

@@ -20,10 +20,7 @@ use std::{io::Read, marker::PhantomData};
 use bytes::BytesMut;
 
 use crate::{
-    encoding::{
-        util::try_read_u8, EncodingSign, NInt, PrimitiveValueDecoder, PrimitiveValueEncoder,
-        VarintSerde,
-    },
+    encoding::{util::try_read_u8, PrimitiveValueDecoder, PrimitiveValueEncoder},
     error::{OutOfSpecSnafu, Result},
     memory::EstimateMemory,
 };
@@ -35,7 +32,7 @@ use self::{
     short_repeat::{read_short_repeat_values, write_short_repeat},
 };
 
-use super::util::calculate_percentile_bits;
+use super::{util::calculate_percentile_bits, EncodingSign, NInt, VarintSerde};
 
 pub mod delta;
 pub mod direct;
@@ -544,7 +541,7 @@ mod tests {
 
     use proptest::prelude::*;
 
-    use crate::encoding::{SignedEncoding, UnsignedEncoding};
+    use crate::encoding::integer::{SignedEncoding, UnsignedEncoding};
 
     use super::*;
 

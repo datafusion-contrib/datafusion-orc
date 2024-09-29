@@ -24,7 +24,8 @@ use arrow::datatypes::Decimal128Type;
 use snafu::ResultExt;
 
 use crate::encoding::decimal::UnboundedVarintStreamDecoder;
-use crate::encoding::{get_rle_reader, PrimitiveValueDecoder};
+use crate::encoding::integer::get_rle_reader;
+use crate::encoding::PrimitiveValueDecoder;
 use crate::error::ArrowSnafu;
 use crate::proto::stream::Kind;
 use crate::stripe::Stripe;
