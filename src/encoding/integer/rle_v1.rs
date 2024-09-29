@@ -21,11 +21,12 @@ use std::{io::Read, marker::PhantomData};
 
 use snafu::OptionExt;
 
-use crate::error::{OutOfSpecSnafu, Result};
-
-use super::{
-    util::{read_u8, read_varint_zigzagged, try_read_u8},
-    EncodingSign, NInt, PrimitiveValueDecoder,
+use crate::{
+    encoding::{
+        util::{read_u8, read_varint_zigzagged, try_read_u8},
+        EncodingSign, NInt, PrimitiveValueDecoder,
+    },
+    error::{OutOfSpecSnafu, Result},
 };
 
 const MAX_RUN_LENGTH: usize = 130;

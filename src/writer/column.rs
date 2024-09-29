@@ -29,7 +29,8 @@ use bytes::{BufMut, BytesMut};
 use crate::{
     encoding::{
         boolean::BooleanEncoder, byte::ByteRleEncoder, float::FloatValueEncoder,
-        rle_v2::RleWriterV2, NInt, PrimitiveValueEncoder, SignedEncoding, UnsignedEncoding,
+        integer::rle_v2::RleWriterV2, NInt, PrimitiveValueEncoder, SignedEncoding,
+        UnsignedEncoding,
     },
     error::Result,
     memory::EstimateMemory,
