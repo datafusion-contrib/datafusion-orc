@@ -16,14 +16,21 @@
 // under the License.
 
 use std::cmp::Ordering;
+use std::sync::Arc;
+
+use arrow::array::ArrayRef;
+use arrow::buffer::NullBuffer;
+use arrow::datatypes::Decimal128Type;
+use snafu::ResultExt;
 
 use crate::encoding::decimal::UnboundedVarintStreamDecoder;
 use crate::encoding::{get_rle_reader, PrimitiveValueDecoder};
+use crate::error::ArrowSnafu;
 use crate::proto::stream::Kind;
 use crate::stripe::Stripe;
 use crate::{column::Column, error::Result};
 
-use super::{ArrayBatchDecoder, DecimalArrayDecoder, PresentDecoder};
+use super::{ArrayBatchDecoder, PresentDecoder, PrimitiveArrayDecoder};
 
 pub fn new_decimal_decoder(
     column: &Column,
@@ -53,6 +60,46 @@ pub fn new_decimal_decoder(
         iter,
         present,
     )))
+}
+
+/// Wrapper around PrimitiveArrayDecoder to allow specifying the precision and scale
+/// of the output decimal array.
+pub struct DecimalArrayDecoder {
+    precision: u8,
+    scale: i8,
+    inner: PrimitiveArrayDecoder<Decimal128Type>,
+}
+
+impl DecimalArrayDecoder {
+    pub fn new(
+        precision: u8,
+        scale: i8,
+        iter: Box<dyn PrimitiveValueDecoder<i128> + Send>,
+        present: Option<PresentDecoder>,
+    ) -> Self {
+        let inner = PrimitiveArrayDecoder::<Decimal128Type>::new(iter, present);
+        Self {
+            precision,
+            scale,
+            inner,
+        }
+    }
+}
+
+impl ArrayBatchDecoder for DecimalArrayDecoder {
+    fn next_batch(
+        &mut self,
+        batch_size: usize,
+        parent_present: Option<&NullBuffer>,
+    ) -> Result<ArrayRef> {
+        let array = self
+            .inner
+            .next_primitive_batch(batch_size, parent_present)?
+            .with_precision_and_scale(self.precision, self.scale)
+            .context(ArrowSnafu)?;
+        let array = Arc::new(array) as ArrayRef;
+        Ok(array)
+    }
 }
 
 /// This iter fixes the scales of the varints decoded as scale is specified on a per
