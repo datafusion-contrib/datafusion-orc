@@ -20,7 +20,7 @@ use std::io::Read;
 use crate::error::Result;
 
 use super::{
-    integer::{util::read_varint_zigzagged, SignedEncoding},
+    integer::{read_varint_zigzagged, SignedEncoding},
     PrimitiveValueDecoder,
 };
 

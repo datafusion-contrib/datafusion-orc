@@ -41,8 +41,9 @@ use super::PrimitiveValueDecoder;
 
 pub mod rle_v1;
 pub mod rle_v2;
-// TODO: make private?
-pub mod util;
+mod util;
+
+pub use util::read_varint_zigzagged;
 
 pub fn get_unsigned_rle_reader<R: Read + Send + 'static>(
     column: &Column,
