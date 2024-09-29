@@ -21,8 +21,8 @@ use bytes::BytesMut;
 
 use crate::{
     encoding::{
-        util::{calculate_percentile_bits, try_read_u8},
-        EncodingSign, NInt, PrimitiveValueDecoder, PrimitiveValueEncoder, VarintSerde,
+        util::try_read_u8, EncodingSign, NInt, PrimitiveValueDecoder, PrimitiveValueEncoder,
+        VarintSerde,
     },
     error::{OutOfSpecSnafu, Result},
     memory::EstimateMemory,
@@ -34,6 +34,8 @@ use self::{
     patched_base::{read_patched_base, write_patched_base},
     short_repeat::{read_short_repeat_values, write_short_repeat},
 };
+
+use super::util::calculate_percentile_bits;
 
 pub mod delta;
 pub mod direct;

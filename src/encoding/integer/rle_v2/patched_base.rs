@@ -23,10 +23,11 @@ use snafu::OptionExt;
 use super::{EncodingType, NInt};
 use crate::{
     encoding::{
-        util::{
+        integer::util::{
             encode_bit_width, extract_run_length_from_header, get_closest_fixed_bits, read_ints,
-            read_u8, rle_v2_decode_bit_width, signed_msb_encode, write_packed_ints,
+            rle_v2_decode_bit_width, write_packed_ints,
         },
+        util::{read_u8, signed_msb_encode},
         EncodingSign, VarintSerde,
     },
     error::{OutOfSpecSnafu, Result},
@@ -278,7 +279,7 @@ mod tests {
 
     use proptest::prelude::*;
 
-    use crate::encoding::{util::calculate_percentile_bits, SignedEncoding};
+    use crate::encoding::{integer::util::calculate_percentile_bits, SignedEncoding};
 
     use super::*;
 
