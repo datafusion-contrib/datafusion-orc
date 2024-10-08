@@ -18,6 +18,7 @@
 use std::marker::PhantomData;
 
 use arrow::datatypes::{ArrowPrimitiveType, ToByteSlice};
+use bytemuck::cast_slice_mut;
 use bytes::{Bytes, BytesMut};
 use snafu::ResultExt;
 
@@ -29,34 +30,12 @@ use crate::{
 use super::{PrimitiveValueDecoder, PrimitiveValueEncoder};
 
 /// Generically represent f32 and f64.
-// TODO: figure out how to use num::traits::FromBytes instead of rolling our own?
-pub trait Float: num::Float + std::fmt::Debug + num::traits::ToBytes {
-    const BYTE_SIZE: usize;
-
-    fn from_le_bytes(bytes: &[u8]) -> Self;
+pub trait Float:
+    num::Float + std::fmt::Debug + num::traits::ToBytes + bytemuck::NoUninit + bytemuck::AnyBitPattern
+{
 }
-
-impl Float for f32 {
-    const BYTE_SIZE: usize = 4;
-
-    #[inline]
-    fn from_le_bytes(bytes: &[u8]) -> Self {
-        debug_assert!(Self::BYTE_SIZE == bytes.len());
-        Self::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
-    }
-}
-
-impl Float for f64 {
-    const BYTE_SIZE: usize = 8;
-
-    #[inline]
-    fn from_le_bytes(bytes: &[u8]) -> Self {
-        debug_assert!(Self::BYTE_SIZE == bytes.len());
-        Self::from_le_bytes([
-            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-        ])
-    }
-}
+impl Float for f32 {}
+impl Float for f64 {}
 
 pub struct FloatDecoder<T: Float, R: std::io::Read> {
     reader: R,
@@ -74,11 +53,8 @@ impl<T: Float, R: std::io::Read> FloatDecoder<T, R> {
 
 impl<T: Float, R: std::io::Read> PrimitiveValueDecoder<T> for FloatDecoder<T, R> {
     fn decode(&mut self, out: &mut [T]) -> Result<()> {
-        let mut buf = vec![0; out.len() * T::BYTE_SIZE];
-        self.reader.read_exact(&mut buf).context(IoSnafu)?;
-        for (out_float, bytes) in out.iter_mut().zip(buf.chunks(T::BYTE_SIZE)) {
-            *out_float = T::from_le_bytes(bytes);
-        }
+        let bytes = cast_slice_mut::<T, u8>(out);
+        self.reader.read_exact(bytes).context(IoSnafu)?;
         Ok(())
     }
 }
