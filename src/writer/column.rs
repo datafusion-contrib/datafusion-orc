@@ -30,7 +30,7 @@ use crate::{
     encoding::{
         boolean::BooleanEncoder,
         byte::ByteRleEncoder,
-        float::FloatValueEncoder,
+        float::FloatEncoder,
         integer::{rle_v2::RleV2Encoder, NInt, SignedEncoding, UnsignedEncoding},
         PrimitiveValueEncoder,
     },
@@ -390,8 +390,8 @@ where
     }
 }
 
-pub type FloatColumnEncoder = PrimitiveColumnEncoder<Float32Type, FloatValueEncoder<Float32Type>>;
-pub type DoubleColumnEncoder = PrimitiveColumnEncoder<Float64Type, FloatValueEncoder<Float64Type>>;
+pub type FloatColumnEncoder = PrimitiveColumnEncoder<Float32Type, FloatEncoder<f32>>;
+pub type DoubleColumnEncoder = PrimitiveColumnEncoder<Float64Type, FloatEncoder<f64>>;
 pub type ByteColumnEncoder = PrimitiveColumnEncoder<Int8Type, ByteRleEncoder>;
 pub type Int16ColumnEncoder = PrimitiveColumnEncoder<Int16Type, RleV2Encoder<i16, SignedEncoding>>;
 pub type Int32ColumnEncoder = PrimitiveColumnEncoder<Int32Type, RleV2Encoder<i32, SignedEncoding>>;
