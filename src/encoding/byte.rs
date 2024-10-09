@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use bytemuck::must_cast_slice;
 use bytes::{BufMut, BytesMut};
 use snafu::ResultExt;
 
@@ -24,7 +25,7 @@ use crate::{
 };
 use std::io::Read;
 
-use super::{util::read_u8, PrimitiveValueDecoder, PrimitiveValueEncoder};
+use super::{rle::GenericRle, util::read_u8, PrimitiveValueEncoder};
 
 const MAX_LITERAL_LENGTH: usize = 128;
 const MIN_REPEAT_LENGTH: usize = 3;
@@ -209,10 +210,22 @@ impl<R: Read> ByteRleDecoder<R> {
             index: 0,
         }
     }
+}
 
-    fn read_values(&mut self) -> Result<()> {
+impl<R: Read> GenericRle<i8> for ByteRleDecoder<R> {
+    fn advance(&mut self, n: usize) {
+        self.index += n
+    }
+
+    fn available(&self) -> &[i8] {
+        let bytes = &self.leftovers[self.index..];
+        must_cast_slice(bytes)
+    }
+
+    fn decode_batch(&mut self) -> Result<()> {
         self.index = 0;
         self.leftovers.clear();
+
         let header = read_u8(&mut self.reader)?;
         if header < 0x80 {
             // Run of repeated value
@@ -231,23 +244,11 @@ impl<R: Read> ByteRleDecoder<R> {
     }
 }
 
-impl<R: Read> PrimitiveValueDecoder<i8> for ByteRleDecoder<R> {
-    // TODO: can probably implement this better
-    fn decode(&mut self, out: &mut [i8]) -> Result<()> {
-        for x in out.iter_mut() {
-            if self.index == self.leftovers.len() {
-                self.read_values()?;
-            }
-            *x = self.leftovers[self.index] as i8;
-            self.index += 1;
-        }
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
+
+    use crate::encoding::PrimitiveValueDecoder;
 
     use super::*;
 

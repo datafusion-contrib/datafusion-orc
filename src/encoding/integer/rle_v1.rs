@@ -23,8 +23,8 @@ use snafu::OptionExt;
 
 use crate::{
     encoding::{
+        rle::GenericRle,
         util::{read_u8, try_read_u8},
-        PrimitiveValueDecoder,
     },
     error::{OutOfSpecSnafu, Result},
 };
@@ -76,21 +76,6 @@ impl<N: NInt, R: Read, S: EncodingSign> RleV1Decoder<N, R, S> {
             sign: Default::default(),
         }
     }
-
-    fn decode_batch(&mut self) -> Result<()> {
-        self.current_head = 0;
-        self.decoded_ints.clear();
-
-        match EncodingType::from_header(&mut self.reader)? {
-            Some(EncodingType::Literals { length }) => {
-                read_literals::<_, _, S>(&mut self.reader, &mut self.decoded_ints, length)
-            }
-            Some(EncodingType::Run { length, delta }) => {
-                read_run::<_, _, S>(&mut self.reader, &mut self.decoded_ints, length, delta)
-            }
-            None => Ok(()),
-        }
-    }
 }
 
 fn read_literals<N: NInt, R: Read, S: EncodingSign>(
@@ -137,46 +122,27 @@ fn read_run<N: NInt, R: Read, S: EncodingSign>(
     Ok(())
 }
 
-impl<N: NInt, R: Read, S: EncodingSign> PrimitiveValueDecoder<N> for RleV1Decoder<N, R, S> {
-    // TODO: this is exact duplicate from RLEv2 version; deduplicate it
-    fn decode(&mut self, out: &mut [N]) -> Result<()> {
-        let available = &self.decoded_ints[self.current_head..];
-        // If we have enough in buffer to copy over
-        if available.len() >= out.len() {
-            out.copy_from_slice(&available[..out.len()]);
-            self.current_head += out.len();
-            return Ok(());
-        }
+impl<N: NInt, R: Read, S: EncodingSign> GenericRle<N> for RleV1Decoder<N, R, S> {
+    fn advance(&mut self, n: usize) {
+        self.current_head += n;
+    }
 
-        // Otherwise progressively copy over chunks
-        let len_to_copy = out.len();
-        let mut copied = 0;
-        while copied < len_to_copy {
-            let copying = self.decoded_ints.len() - self.current_head;
-            // At most, we fill to exact length of output buffer (don't overflow)
-            let copying = copying.min(len_to_copy - copied);
+    fn available(&self) -> &[N] {
+        &self.decoded_ints[self.current_head..]
+    }
 
-            let target_out_slice = &mut out[copied..copied + copying];
-            target_out_slice.copy_from_slice(
-                &self.decoded_ints[self.current_head..self.current_head + copying],
-            );
+    fn decode_batch(&mut self) -> Result<()> {
+        self.current_head = 0;
+        self.decoded_ints.clear();
 
-            copied += copying;
-            self.current_head += copying;
-
-            if self.current_head == self.decoded_ints.len() {
-                self.decode_batch()?;
+        match EncodingType::from_header(&mut self.reader)? {
+            Some(EncodingType::Literals { length }) => {
+                read_literals::<_, _, S>(&mut self.reader, &mut self.decoded_ints, length)
             }
-        }
-
-        if copied != out.len() {
-            // TODO: more descriptive error
-            OutOfSpecSnafu {
-                msg: "Array length less than expected",
+            Some(EncodingType::Run { length, delta }) => {
+                read_run::<_, _, S>(&mut self.reader, &mut self.decoded_ints, length, delta)
             }
-            .fail()
-        } else {
-            Ok(())
+            None => Ok(()),
         }
     }
 }
@@ -185,7 +151,7 @@ impl<N: NInt, R: Read, S: EncodingSign> PrimitiveValueDecoder<N> for RleV1Decode
 mod tests {
     use std::io::Cursor;
 
-    use crate::encoding::integer::UnsignedEncoding;
+    use crate::encoding::{integer::UnsignedEncoding, PrimitiveValueDecoder};
 
     use super::*;
 
