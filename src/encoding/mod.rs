@@ -27,6 +27,7 @@ pub mod byte;
 pub mod decimal;
 pub mod float;
 pub mod integer;
+mod rle;
 pub mod timestamp;
 mod util;
 

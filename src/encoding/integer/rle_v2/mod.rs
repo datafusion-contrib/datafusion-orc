@@ -20,8 +20,8 @@ use std::{io::Read, marker::PhantomData};
 use bytes::BytesMut;
 
 use crate::{
-    encoding::{util::try_read_u8, PrimitiveValueDecoder, PrimitiveValueEncoder},
-    error::{OutOfSpecSnafu, Result},
+    encoding::{rle::GenericRle, util::try_read_u8, PrimitiveValueEncoder},
+    error::Result,
     memory::EstimateMemory,
 };
 
@@ -98,6 +98,16 @@ impl<N: NInt, R: Read, S: EncodingSign> RleV2Decoder<N, R, S> {
             sign: Default::default(),
         }
     }
+}
+
+impl<N: NInt, R: Read, S: EncodingSign> GenericRle<N> for RleV2Decoder<N, R, S> {
+    fn advance(&mut self, n: usize) {
+        self.current_head += n;
+    }
+
+    fn available(&self) -> &[N] {
+        &self.decoded_ints[self.current_head..]
+    }
 
     fn decode_batch(&mut self) -> Result<()> {
         self.current_head = 0;
@@ -128,49 +138,6 @@ impl<N: NInt, R: Read, S: EncodingSign> RleV2Decoder<N, R, S> {
         }
 
         Ok(())
-    }
-}
-
-impl<N: NInt, R: Read, S: EncodingSign> PrimitiveValueDecoder<N> for RleV2Decoder<N, R, S> {
-    fn decode(&mut self, out: &mut [N]) -> Result<()> {
-        let available = &self.decoded_ints[self.current_head..];
-        // If we have enough in buffer to copy over
-        if available.len() >= out.len() {
-            out.copy_from_slice(&available[..out.len()]);
-            self.current_head += out.len();
-            return Ok(());
-        }
-
-        // Otherwise progressively copy over chunks
-        let len_to_copy = out.len();
-        let mut copied = 0;
-        while copied < len_to_copy {
-            let copying = self.decoded_ints.len() - self.current_head;
-            // At most, we fill to exact length of output buffer (don't overflow)
-            let copying = copying.min(len_to_copy - copied);
-
-            let target_out_slice = &mut out[copied..copied + copying];
-            target_out_slice.copy_from_slice(
-                &self.decoded_ints[self.current_head..self.current_head + copying],
-            );
-
-            copied += copying;
-            self.current_head += copying;
-
-            if self.current_head == self.decoded_ints.len() {
-                self.decode_batch()?;
-            }
-        }
-
-        if copied != out.len() {
-            // TODO: more descriptive error
-            OutOfSpecSnafu {
-                msg: "Array length less than expected",
-            }
-            .fail()
-        } else {
-            Ok(())
-        }
     }
 }
 
@@ -541,7 +508,10 @@ mod tests {
 
     use proptest::prelude::*;
 
-    use crate::encoding::integer::{SignedEncoding, UnsignedEncoding};
+    use crate::encoding::{
+        integer::{SignedEncoding, UnsignedEncoding},
+        PrimitiveValueDecoder,
+    };
 
     use super::*;
 
