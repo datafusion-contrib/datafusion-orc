@@ -1,6 +1,6 @@
 [package]
 name = "orc-rust"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 homepage = "https://github.com/datafusion-contrib/datafusion-orc"
 repository = "https://github.com/datafusion-contrib/datafusion-orc"
@@ -10,6 +10,9 @@ description = "Implementation of Apache ORC file format using Apache Arrow in-me
 keywords = ["arrow", "orc", "arrow-rs", "datafusion"]
 include = ["src/**/*.rs", "Cargo.toml"]
 rust-version = "1.73"
+
+[package.metadata.docs.rs]
+all-features = true
 
 [dependencies]
 arrow = { version = "52", features = ["prettyprint", "chrono-tz"] }
