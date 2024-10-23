@@ -1,3 +1,20 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
 //! Parse ORC file tail metadata structures from file.
 //!
 //! File tail structure:
@@ -29,16 +46,15 @@ use std::io::Read;
 
 use bytes::{Bytes, BytesMut};
 use prost::Message;
-use snafu::{OptionExt, ResultExt};
+use snafu::{ensure, OptionExt, ResultExt};
 
+use crate::compression::{Compression, Decompressor};
 use crate::error::{self, EmptyFileSnafu, OutOfSpecSnafu, Result};
 use crate::proto::{self, Footer, Metadata, PostScript};
-use crate::reader::decompress::Decompressor;
 use crate::schema::RootDataType;
 use crate::statistics::ColumnStatistics;
 use crate::stripe::StripeMetadata;
 
-use super::decompress::Compression;
 use crate::reader::ChunkReader;
 
 const DEFAULT_FOOTER_SIZE: u64 = 16 * 1024;
@@ -71,12 +87,27 @@ impl FileMetadata {
             .iter()
             .map(TryFrom::try_from)
             .collect::<Result<Vec<_>>>()?;
-        let stripes = footer
-            .stripes
-            .iter()
-            .zip(metadata.stripe_stats.iter())
-            .map(TryFrom::try_from)
-            .collect::<Result<Vec<_>>>()?;
+        ensure!(
+            metadata.stripe_stats.is_empty() || metadata.stripe_stats.len() == footer.stripes.len(),
+            OutOfSpecSnafu {
+                msg: "stripe stats length must equal the number of stripes"
+            }
+        );
+        // TODO: confirm if this is valid
+        let stripes = if metadata.stripe_stats.is_empty() {
+            footer
+                .stripes
+                .iter()
+                .map(TryFrom::try_from)
+                .collect::<Result<Vec<_>>>()?
+        } else {
+            footer
+                .stripes
+                .iter()
+                .zip(metadata.stripe_stats.iter())
+                .map(TryFrom::try_from)
+                .collect::<Result<Vec<_>>>()?
+        };
         let user_custom_metadata = footer
             .metadata
             .iter()

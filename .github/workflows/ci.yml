@@ -44,6 +44,7 @@ jobs:
         features:
         - ''
         - '--no-default-features'
+        - '--all-features'
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@master
@@ -67,7 +68,7 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
       - name: Run cargo examples
-        run: cargo run --example datafusion_integration
+        run: cargo run --example datafusion_integration --all-features
 
   toml:
     name: Toml Check
@@ -112,6 +113,7 @@ jobs:
         features:
         - ''
         - '--no-default-features'
+        - '--all-features'
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@master
@@ -153,7 +155,7 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Collect coverage data
-        run: cargo llvm-cov nextest --workspace --lcov --output-path lcov.info
+        run: cargo llvm-cov nextest --workspace --lcov --output-path lcov.info --all-features
         env:
           CARGO_BUILD_RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
           RUST_BACKTRACE: 1

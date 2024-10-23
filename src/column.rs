@@ -1,33 +1,40 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
 use std::sync::Arc;
 
 use bytes::Bytes;
 use snafu::ResultExt;
 
 use crate::error::{IoSnafu, Result};
-use crate::proto::stream::Kind;
 use crate::proto::{ColumnEncoding, StripeFooter};
-use crate::reader::decode::boolean_rle::BooleanIter;
 use crate::reader::ChunkReader;
 use crate::schema::DataType;
-use crate::stripe::Stripe;
 
 #[derive(Clone, Debug)]
 pub struct Column {
-    number_of_rows: u64,
     footer: Arc<StripeFooter>,
     name: String,
     data_type: DataType,
 }
 
 impl Column {
-    pub fn new(
-        name: &str,
-        data_type: &DataType,
-        footer: &Arc<StripeFooter>,
-        number_of_rows: u64,
-    ) -> Self {
+    pub fn new(name: &str, data_type: &DataType, footer: &Arc<StripeFooter>) -> Self {
         Self {
-            number_of_rows,
             footer: footer.clone(),
             data_type: data_type.clone(),
             name: name.to_string(),
@@ -78,7 +85,6 @@ impl Column {
             DataType::Struct { children, .. } => children
                 .iter()
                 .map(|col| Column {
-                    number_of_rows: self.number_of_rows,
                     footer: self.footer.clone(),
                     name: col.name().to_string(),
                     data_type: col.data_type().clone(),
@@ -86,7 +92,6 @@ impl Column {
                 .collect(),
             DataType::List { child, .. } => {
                 vec![Column {
-                    number_of_rows: self.number_of_rows,
                     footer: self.footer.clone(),
                     name: "item".to_string(),
                     data_type: *child.clone(),
@@ -95,13 +100,11 @@ impl Column {
             DataType::Map { key, value, .. } => {
                 vec![
                     Column {
-                        number_of_rows: self.number_of_rows,
                         footer: self.footer.clone(),
                         name: "key".to_string(),
                         data_type: *key.clone(),
                     },
                     Column {
-                        number_of_rows: self.number_of_rows,
                         footer: self.footer.clone(),
                         name: "value".to_string(),
                         data_type: *value.clone(),
@@ -114,7 +117,6 @@ impl Column {
                     .iter()
                     .enumerate()
                     .map(|(index, data_type)| Column {
-                        number_of_rows: self.number_of_rows,
                         footer: self.footer.clone(),
                         name: format!("{index}"),
                         data_type: data_type.clone(),
@@ -136,15 +138,4 @@ impl Column {
     ) -> Result<Bytes> {
         reader.get_bytes(start, length).await.context(IoSnafu)
     }
-}
-
-/// Prefetch present stream for entire column in stripe.
-///
-/// Makes subsequent operations easier to handle.
-pub fn get_present_vec(column: &Column, stripe: &Stripe) -> Result<Option<Vec<bool>>> {
-    stripe
-        .stream_map()
-        .get_opt(column, Kind::Present)
-        .map(|reader| BooleanIter::new(reader).collect::<Result<Vec<_>>>())
-        .transpose()
 }

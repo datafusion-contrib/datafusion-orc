@@ -1,3 +1,20 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
 use std::any::Any;
 use std::fmt::{self, Debug};
 use std::sync::Arc;
@@ -134,11 +151,15 @@ impl FileOpener for OrcOpener {
         // Offset by 1 since index 0 is the root
         let projection = self.projection.iter().map(|i| i + 1).collect::<Vec<_>>();
         Ok(Box::pin(async move {
-            let builder = ArrowReaderBuilder::try_new_async(reader)
+            let mut builder = ArrowReaderBuilder::try_new_async(reader)
                 .await
                 .map_err(ArrowError::from)?;
             let projection_mask =
                 ProjectionMask::roots(builder.file_metadata().root_data_type(), projection);
+            if let Some(range) = file_meta.range.clone() {
+                let range = range.start as usize..range.end as usize;
+                builder = builder.with_file_byte_range(range);
+            }
             let reader = builder
                 .with_batch_size(batch_size)
                 .with_projection(projection_mask)

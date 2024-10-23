@@ -1,3 +1,20 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
 use std::fmt::Formatter;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -87,6 +104,13 @@ impl<R: AsyncChunkReader + 'static> StripeFactory<R> {
             .cloned();
 
         if let Some(info) = info {
+            if let Some(range) = self.inner.file_byte_range.clone() {
+                let offset = info.offset() as usize;
+                if !range.contains(&offset) {
+                    self.inner.stripe_index += 1;
+                    return Ok((self, None));
+                }
+            }
             match self.read_next_stripe_inner(&info).await {
                 Ok(stripe) => Ok((self, Some(stripe))),
                 Err(err) => Err(err),
@@ -197,6 +221,7 @@ impl<R: AsyncChunkReader + 'static> ArrowReaderBuilder<R> {
             file_metadata: self.file_metadata,
             projected_data_type,
             stripe_index: 0,
+            file_byte_range: self.file_byte_range,
         };
         ArrowStreamReader::new(cursor, self.batch_size, schema_ref)
     }

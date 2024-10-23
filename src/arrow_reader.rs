@@ -1,4 +1,22 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
 use std::collections::HashMap;
+use std::ops::Range;
 use std::sync::Arc;
 
 use arrow::datatypes::SchemaRef;
@@ -11,7 +29,7 @@ use crate::projection::ProjectionMask;
 use crate::reader::metadata::{read_metadata, FileMetadata};
 use crate::reader::ChunkReader;
 use crate::schema::RootDataType;
-use crate::stripe::Stripe;
+use crate::stripe::{Stripe, StripeMetadata};
 
 const DEFAULT_BATCH_SIZE: usize = 8192;
 
@@ -21,6 +39,7 @@ pub struct ArrowReaderBuilder<R> {
     pub(crate) batch_size: usize,
     pub(crate) projection: ProjectionMask,
     pub(crate) schema_ref: Option<SchemaRef>,
+    pub(crate) file_byte_range: Option<Range<usize>>,
 }
 
 impl<R> ArrowReaderBuilder<R> {
@@ -31,6 +50,7 @@ impl<R> ArrowReaderBuilder<R> {
             batch_size: DEFAULT_BATCH_SIZE,
             projection: ProjectionMask::all(),
             schema_ref: None,
+            file_byte_range: None,
         }
     }
 
@@ -50,6 +70,12 @@ impl<R> ArrowReaderBuilder<R> {
 
     pub fn with_schema(mut self, schema: SchemaRef) -> Self {
         self.schema_ref = Some(schema);
+        self
+    }
+
+    /// Specifies a range of file bytes that will read the strips offset within this range
+    pub fn with_file_byte_range(mut self, range: Range<usize>) -> Self {
+        self.file_byte_range = Some(range);
         self
     }
 
@@ -91,6 +117,7 @@ impl<R: ChunkReader> ArrowReaderBuilder<R> {
             file_metadata: self.file_metadata,
             projected_data_type,
             stripe_index: 0,
+            file_byte_range: self.file_byte_range,
         };
         ArrowReader {
             cursor,
@@ -159,14 +186,32 @@ pub(crate) struct Cursor<R> {
     pub file_metadata: Arc<FileMetadata>,
     pub projected_data_type: RootDataType,
     pub stripe_index: usize,
+    pub file_byte_range: Option<Range<usize>>,
+}
+
+impl<R: ChunkReader> Cursor<R> {
+    fn get_stripe_metadatas(&self) -> Vec<StripeMetadata> {
+        if let Some(range) = self.file_byte_range.clone() {
+            self.file_metadata
+                .stripe_metadatas()
+                .iter()
+                .filter(|info| {
+                    let offset = info.offset() as usize;
+                    range.contains(&offset)
+                })
+                .map(|info| info.to_owned())
+                .collect::<Vec<_>>()
+        } else {
+            self.file_metadata.stripe_metadatas().to_vec()
+        }
+    }
 }
 
 impl<R: ChunkReader> Iterator for Cursor<R> {
     type Item = Result<Stripe>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.file_metadata
-            .stripe_metadatas()
+        self.get_stripe_metadatas()
             .get(self.stripe_index)
             .map(|info| {
                 let stripe = Stripe::new(

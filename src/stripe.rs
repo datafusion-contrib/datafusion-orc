@@ -1,3 +1,20 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
 use std::{collections::HashMap, io::Read, sync::Arc};
 
 use bytes::Bytes;
@@ -6,13 +23,10 @@ use snafu::ResultExt;
 
 use crate::{
     column::Column,
+    compression::{Compression, Decompressor},
     error::{self, IoSnafu, Result},
     proto::{self, stream::Kind, StripeFooter},
-    reader::{
-        decompress::{Compression, Decompressor},
-        metadata::FileMetadata,
-        ChunkReader,
-    },
+    reader::{metadata::FileMetadata, ChunkReader},
     schema::RootDataType,
     statistics::ColumnStatistics,
 };
@@ -87,6 +101,21 @@ impl TryFrom<(&proto::StripeInformation, &proto::StripeStatistics)> for StripeMe
     }
 }
 
+impl TryFrom<&proto::StripeInformation> for StripeMetadata {
+    type Error = error::OrcError;
+
+    fn try_from(value: &proto::StripeInformation) -> Result<Self> {
+        Ok(Self {
+            column_statistics: vec![],
+            offset: value.offset(),
+            index_length: value.index_length(),
+            data_length: value.data_length(),
+            footer_length: value.footer_length(),
+            number_of_rows: value.number_of_rows(),
+        })
+    }
+}
+
 #[derive(Debug)]
 pub struct Stripe {
     columns: Vec<Column>,
@@ -113,7 +142,7 @@ impl Stripe {
         let columns = projected_data_type
             .children()
             .iter()
-            .map(|col| Column::new(col.name(), col.data_type(), &footer, info.number_of_rows()))
+            .map(|col| Column::new(col.name(), col.data_type(), &footer))
             .collect();
 
         let mut stream_map = HashMap::new();
@@ -166,7 +195,7 @@ impl Stripe {
         let columns = projected_data_type
             .children()
             .iter()
-            .map(|col| Column::new(col.name(), col.data_type(), &footer, info.number_of_rows()))
+            .map(|col| Column::new(col.name(), col.data_type(), &footer))
             .collect();
 
         let mut stream_map = HashMap::new();
@@ -204,7 +233,7 @@ impl Stripe {
         self.number_of_rows
     }
 
-    pub fn stream_map(&self) -> &StreamMap {
+    pub(crate) fn stream_map(&self) -> &StreamMap {
         &self.stream_map
     }
 
@@ -218,7 +247,7 @@ impl Stripe {
 }
 
 #[derive(Debug)]
-pub struct StreamMap {
+pub(crate) struct StreamMap {
     pub inner: HashMap<(u32, Kind), Bytes>,
     pub compression: Option<Compression>,
 }

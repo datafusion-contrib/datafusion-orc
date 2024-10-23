@@ -1,13 +1,37 @@
-use std::cmp::Ordering;
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
 
-use crate::column::get_present_vec;
+use std::cmp::Ordering;
+use std::sync::Arc;
+
+use arrow::array::ArrayRef;
+use arrow::buffer::NullBuffer;
+use arrow::datatypes::Decimal128Type;
+use snafu::ResultExt;
+
+use crate::encoding::decimal::UnboundedVarintStreamDecoder;
+use crate::encoding::integer::get_rle_reader;
+use crate::encoding::PrimitiveValueDecoder;
+use crate::error::ArrowSnafu;
 use crate::proto::stream::Kind;
-use crate::reader::decode::decimal::UnboundedVarintStreamDecoder;
-use crate::reader::decode::get_rle_reader;
 use crate::stripe::Stripe;
 use crate::{column::Column, error::Result};
 
-use super::{ArrayBatchDecoder, DecimalArrayDecoder};
+use super::{ArrayBatchDecoder, PresentDecoder, PrimitiveArrayDecoder};
 
 pub fn new_decimal_decoder(
     column: &Column,
@@ -16,20 +40,15 @@ pub fn new_decimal_decoder(
     fixed_scale: u32,
 ) -> Result<Box<dyn ArrayBatchDecoder>> {
     let varint_iter = stripe.stream_map().get(column, Kind::Data);
-    let varint_iter = Box::new(UnboundedVarintStreamDecoder::new(
-        varint_iter,
-        stripe.number_of_rows(),
-    ));
-    let varint_iter = varint_iter as Box<dyn Iterator<Item = Result<i128>> + Send>;
+    let varint_iter = Box::new(UnboundedVarintStreamDecoder::new(varint_iter));
 
     // Scale is specified on a per varint basis (in addition to being encoded in the type)
     let scale_iter = stripe.stream_map().get(column, Kind::Secondary);
     let scale_iter = get_rle_reader::<i32, _>(column, scale_iter)?;
 
-    let present = get_present_vec(column, stripe)?
-        .map(|iter| Box::new(iter.into_iter()) as Box<dyn Iterator<Item = bool> + Send>);
+    let present = PresentDecoder::from_stripe(stripe, column);
 
-    let iter = DecimalScaleRepairIter {
+    let iter = DecimalScaleRepairDecoder {
         varint_iter,
         scale_iter,
         fixed_scale,
@@ -44,30 +63,65 @@ pub fn new_decimal_decoder(
     )))
 }
 
-/// This iter fixes the scales of the varints decoded as scale is specified on a per
-/// varint basis, and needs to align with type specified scale
-struct DecimalScaleRepairIter {
-    varint_iter: Box<dyn Iterator<Item = Result<i128>> + Send>,
-    scale_iter: Box<dyn Iterator<Item = Result<i32>> + Send>,
-    fixed_scale: u32,
+/// Wrapper around PrimitiveArrayDecoder to allow specifying the precision and scale
+/// of the output decimal array.
+pub struct DecimalArrayDecoder {
+    precision: u8,
+    scale: i8,
+    inner: PrimitiveArrayDecoder<Decimal128Type>,
 }
 
-impl DecimalScaleRepairIter {
-    #[inline]
-    fn next_helper(&mut self, varint: Result<i128>, scale: Result<i32>) -> Result<Option<i128>> {
-        let varint = varint?;
-        let scale = scale?;
-        Ok(Some(fix_i128_scale(varint, self.fixed_scale, scale)))
+impl DecimalArrayDecoder {
+    pub fn new(
+        precision: u8,
+        scale: i8,
+        iter: Box<dyn PrimitiveValueDecoder<i128> + Send>,
+        present: Option<PresentDecoder>,
+    ) -> Self {
+        let inner = PrimitiveArrayDecoder::<Decimal128Type>::new(iter, present);
+        Self {
+            precision,
+            scale,
+            inner,
+        }
     }
 }
 
-impl Iterator for DecimalScaleRepairIter {
-    type Item = Result<i128>;
+impl ArrayBatchDecoder for DecimalArrayDecoder {
+    fn next_batch(
+        &mut self,
+        batch_size: usize,
+        parent_present: Option<&NullBuffer>,
+    ) -> Result<ArrayRef> {
+        let array = self
+            .inner
+            .next_primitive_batch(batch_size, parent_present)?
+            .with_precision_and_scale(self.precision, self.scale)
+            .context(ArrowSnafu)?;
+        let array = Arc::new(array) as ArrayRef;
+        Ok(array)
+    }
+}
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let varint = self.varint_iter.next()?;
-        let scale = self.scale_iter.next()?;
-        self.next_helper(varint, scale).transpose()
+/// This iter fixes the scales of the varints decoded as scale is specified on a per
+/// varint basis, and needs to align with type specified scale
+struct DecimalScaleRepairDecoder {
+    varint_iter: Box<dyn PrimitiveValueDecoder<i128> + Send>,
+    scale_iter: Box<dyn PrimitiveValueDecoder<i32> + Send>,
+    fixed_scale: u32,
+}
+
+impl PrimitiveValueDecoder<i128> for DecimalScaleRepairDecoder {
+    fn decode(&mut self, out: &mut [i128]) -> Result<()> {
+        // TODO: can probably optimize, reuse buffers?
+        let mut varint = vec![0; out.len()];
+        let mut scale = vec![0; out.len()];
+        self.varint_iter.decode(&mut varint)?;
+        self.scale_iter.decode(&mut scale)?;
+        for (index, (&varint, &scale)) in varint.iter().zip(scale.iter()).enumerate() {
+            out[index] = fix_i128_scale(varint, self.fixed_scale, scale);
+        }
+        Ok(())
     }
 }
 
