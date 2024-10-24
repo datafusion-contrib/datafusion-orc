@@ -17,8 +17,7 @@
 
 headerPath = "Apache-2.0-ASF.txt"
 
-includes = [
-    "*.rs",
-    "*.py",
-    "*.ts",
+excludes = [
+    "**/*.md"
 ]
+
