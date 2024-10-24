@@ -145,7 +145,7 @@ impl Stripe {
             .iter()
             .map(|col| Column::new(col.name(), col.data_type(), &footer))
             .collect();
-        let column_ids: HashSet<u32> = columns.iter().map(|c| c.column_id()).collect();
+        let column_ids = collect_required_column_ids(&columns);
 
         let mut stream_map = HashMap::new();
         let mut stream_offset = info.offset();
@@ -198,7 +198,7 @@ impl Stripe {
             .iter()
             .map(|col| Column::new(col.name(), col.data_type(), &footer))
             .collect();
-        let column_ids: HashSet<u32> = columns.iter().map(|c| c.column_id()).collect();
+        let column_ids = collect_required_column_ids(&columns);
 
         let mut stream_map = HashMap::new();
         let mut stream_offset = info.offset();
@@ -283,4 +283,13 @@ fn deserialize_stripe_footer(
         .read_to_end(&mut buffer)
         .context(error::IoSnafu)?;
     StripeFooter::decode(buffer.as_slice()).context(error::DecodeProtoSnafu)
+}
+
+fn collect_required_column_ids(columns: &[Column]) -> HashSet<u32> {
+    let mut set = HashSet::new();
+    for column in columns {
+        set.insert(column.column_id());
+        set.extend(collect_required_column_ids(&column.children()));
+    }
+    set
 }
