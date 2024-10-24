@@ -15,8 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::{collections::HashMap, io::Read, sync::Arc};
 use std::collections::HashSet;
+use std::{collections::HashMap, io::Read, sync::Arc};
 
 use bytes::Bytes;
 use prost::Message;
