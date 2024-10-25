@@ -38,14 +38,12 @@ bytes = "1.4"
 chrono = { version = "0.4.37", default-features = false, features = ["std"] }
 chrono-tz = "0.9"
 fallible-streaming-iterator = { version = "0.1" }
-flate2 = "1"
-lz4_flex = "0.11"
 lzokay-native = "0.1"
 num = "0.4.1"
 prost = { version = "0.12" }
 snafu = "0.8"
-snap = "1.1"
-zstd = "0.12"
+
+libcramjam = { version = "*", default-features = false, features = ["snappy", "zstd", "lz4", "gzip", "zlib", "deflate"] }
 
 # async support
 async-trait = { version = "0.1.77", optional = true }

@@ -18,8 +18,6 @@
 // Modified from https://github.com/DataEngineeringLabs/orc-format/blob/416490db0214fc51d53289253c0ee91f7fc9bc17/src/read/decompress/mod.rs
 //! Related code for handling decompression of ORC files.
 
-use std::io::Read;
-
 use bytes::{Bytes, BytesMut};
 use fallible_streaming_iterator::FallibleStreamingIterator;
 use snafu::ResultExt;
@@ -141,32 +139,28 @@ struct Lz4 {
 
 impl DecompressorVariant for Zlib {
     fn decompress_block(&self, compressed_bytes: &[u8], scratch: &mut Vec<u8>) -> Result<()> {
-        let mut gz = flate2::read::DeflateDecoder::new(compressed_bytes);
         scratch.clear();
-        gz.read_to_end(scratch).context(error::IoSnafu)?;
+        libcramjam::deflate::decompress(compressed_bytes, scratch).context(error::IoSnafu)?;
         Ok(())
     }
 }
 
 impl DecompressorVariant for Zstd {
     fn decompress_block(&self, compressed_bytes: &[u8], scratch: &mut Vec<u8>) -> Result<()> {
-        let mut reader =
-            zstd::Decoder::new(compressed_bytes).context(error::BuildZstdDecoderSnafu)?;
         scratch.clear();
-        reader.read_to_end(scratch).context(error::IoSnafu)?;
+        libcramjam::zstd::decompress(compressed_bytes, scratch).context(error::IoSnafu)?;
         Ok(())
     }
 }
 
 impl DecompressorVariant for Snappy {
     fn decompress_block(&self, compressed_bytes: &[u8], scratch: &mut Vec<u8>) -> Result<()> {
-        let len =
-            snap::raw::decompress_len(compressed_bytes).context(error::BuildSnappyDecoderSnafu)?;
-        scratch.resize(len, 0);
-        let mut decoder = snap::raw::Decoder::new();
-        decoder
-            .decompress(compressed_bytes, scratch)
+        let len = libcramjam::snappy::snap::raw::decompress_len(compressed_bytes)
             .context(error::BuildSnappyDecoderSnafu)?;
+        scratch.resize(len, 0);
+        let n = libcramjam::snappy::raw::decompress(compressed_bytes, scratch.as_mut_slice())
+            .context(error::IoSnafu)?;
+        scratch.truncate(n);
         Ok(())
     }
 }
@@ -184,12 +178,10 @@ impl DecompressorVariant for Lzo {
 
 impl DecompressorVariant for Lz4 {
     fn decompress_block(&self, compressed_bytes: &[u8], scratch: &mut Vec<u8>) -> Result<()> {
-        let decompressed =
-            lz4_flex::block::decompress(compressed_bytes, self.max_decompressed_block_size)
-                .context(error::BuildLz4DecoderSnafu)?;
-        // TODO: better way to utilize scratch here
-        scratch.clear();
-        scratch.extend(decompressed);
+        scratch.resize(self.max_decompressed_block_size, 0);
+        let n = libcramjam::lz4::block::decompress_into(compressed_bytes, scratch, None)
+            .context(error::IoSnafu)?;
+        scratch.truncate(n);
         Ok(())
     }
 }

@@ -142,7 +142,7 @@ pub enum OrcError {
     BuildSnappyDecoder {
         #[snafu(implicit)]
         location: Location,
-        source: snap::Error,
+        source: libcramjam::snappy::snap::Error,
     },
 
     #[snafu(display("Failed to build lzo decoder: {}", source))]
@@ -156,7 +156,7 @@ pub enum OrcError {
     BuildLz4Decoder {
         #[snafu(implicit)]
         location: Location,
-        source: lz4_flex::block::DecompressError,
+        source: io::Error,
     },
 
     #[snafu(display("Arrow error: {}", source))]
