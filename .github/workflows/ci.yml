@@ -189,11 +189,3 @@ jobs:
           RUST_BACKTRACE: 1
           CARGO_INCREMENTAL: 0
           UNITTEST_LOG_DIR: "__unittest_logs"
-      - name: Codecov upload
-        uses: codecov/codecov-action@v2
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./lcov.info
-          flags: rust
-          fail_ci_if_error: false
-          verbose: true

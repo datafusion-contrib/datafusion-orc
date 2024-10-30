@@ -16,7 +16,7 @@
 # under the License.
 
 [package]
-name = "orc-rust"
+name = "datafusion-orc"
 version = "0.4.1"
 edition = "2021"
 homepage = "https://github.com/datafusion-contrib/datafusion-orc"
@@ -32,26 +32,17 @@ rust-version = "1.73"
 all-features = true
 
 [dependencies]
-arrow = { version = "52", features = ["prettyprint", "chrono-tz"] }
-bytemuck = { version = "1.18.0", features = ["must_cast"] }
+arrow = { version = "53", features = ["prettyprint", "chrono-tz"] }
+async-trait = { version = "0.1.77" }
 bytes = "1.4"
-chrono = { version = "0.4.37", default-features = false, features = ["std"] }
-chrono-tz = "0.9"
-fallible-streaming-iterator = { version = "0.1" }
-flate2 = "1"
-lz4_flex = "0.11"
-lzokay-native = "0.1"
-num = "0.4.1"
-prost = { version = "0.12" }
-snafu = "0.8"
-snap = "1.1"
-zstd = "0.12"
-
-# async support
-async-trait = { version = "0.1.77", optional = true }
-futures = { version = "0.3", optional = true, default-features = false, features = ["std"] }
-futures-util = { version = "0.3", optional = true }
-tokio = { version = "1.28", optional = true, features = [
+datafusion = { version = "42.0" }
+datafusion-expr = { version = "42.0" }
+datafusion-physical-expr = { version = "42.0" }
+futures = { version = "0.3", default-features = false, features = ["std"] }
+futures-util = { version = "0.3" }
+object_store = { version = "0.11" }
+orc-rust = { version = "0.5", features = ["async"] }
+tokio = { version = "1.28", features = [
     "io-util",
     "sync",
     "fs",
@@ -60,61 +51,16 @@ tokio = { version = "1.28", optional = true, features = [
     "rt-multi-thread",
 ] }
 
-# cli
-anyhow = { version = "1.0", optional = true }
-clap = { version = "4.5.4", features = ["derive"], optional = true }
-
-# opendal
-opendal = { version = "0.48", optional = true, default-features = false }
-
-# datafusion support
-datafusion = { version = "39.0.0", optional = true }
-datafusion-expr = { version = "39.0.0", optional = true }
-datafusion-physical-expr = { version = "39.0.0", optional = true }
-object_store = { version = "0.10.1", optional = true }
-
 [dev-dependencies]
-arrow-ipc = { version = "52.0.0", features = ["lz4"] }
-arrow-json = "52.0.0"
+arrow-ipc = { version = "53.0.0", features = ["lz4"] }
+arrow-json = "53.0.0"
 criterion = { version = "0.5", default-features = false, features = ["async_tokio"] }
 opendal = { version = "0.48", default-features = false, features = ["services-memory"] }
 pretty_assertions = "1.3.0"
 proptest = "1.0.0"
 serde_json = { version = "1.0", default-features = false, features = ["std"] }
 
-[features]
-default = ["async"]
-
-async = ["async-trait", "futures", "futures-util", "tokio"]
-cli = ["anyhow", "clap"]
-datafusion = ["async", "dep:datafusion", "datafusion-expr", "datafusion-physical-expr", "object_store"]
-# Enable opendal support.
-opendal = ["dep:opendal"]
-
-[[bench]]
-name = "arrow_reader"
-harness = false
-required-features = ["async"]
-# Some issue when publishing and path isn't specified, so adding here
-path = "./benches/arrow_reader.rs"
-
-[profile.bench]
-debug = true
-
 [[example]]
 name = "datafusion_integration"
-required-features = ["datafusion"]
 # Some issue when publishing and path isn't specified, so adding here
 path = "./examples/datafusion_integration.rs"
-
-[[bin]]
-name = "orc-metadata"
-required-features = ["cli"]
-
-[[bin]]
-name = "orc-export"
-required-features = ["cli"]
-
-[[bin]]
-name = "orc-stats"
-required-features = ["cli"]
