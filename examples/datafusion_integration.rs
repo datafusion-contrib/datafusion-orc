@@ -17,7 +17,7 @@
 
 use datafusion::error::Result;
 use datafusion::prelude::*;
-use orc_rust::datafusion::{OrcReadOptions, SessionContextOrcExt};
+use datafusion_orc::{OrcReadOptions, SessionContextOrcExt};
 
 #[tokio::main]
 async fn main() -> Result<()> {
