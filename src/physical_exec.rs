@@ -126,7 +126,7 @@ impl ExecutionPlan for OrcExec {
             projection,
             batch_size: context.session_config().batch_size(),
             _limit: self.config.limit,
-            _table_schema: self.config.file_schema.clone(),
+            table_schema: self.config.file_schema.clone(),
             _metrics: self.metrics.clone(),
             object_store,
         };
@@ -142,7 +142,7 @@ struct OrcOpener {
     projection: Vec<usize>,
     batch_size: usize,
     _limit: Option<usize>,
-    _table_schema: SchemaRef,
+    table_schema: SchemaRef,
     _metrics: ExecutionPlanMetricsSet,
     object_store: Arc<dyn ObjectStore>,
 }
@@ -152,12 +152,21 @@ impl FileOpener for OrcOpener {
         let reader =
             ObjectStoreReader::new(self.object_store.clone(), file_meta.object_meta.clone());
         let batch_size = self.batch_size;
-        // Offset by 1 since index 0 is the root
-        let projection = self.projection.iter().map(|i| i + 1).collect::<Vec<_>>();
+        let projected_schema = SchemaRef::from(self.table_schema.project(&self.projection)?);
+
         Ok(Box::pin(async move {
             let mut builder = ArrowReaderBuilder::try_new_async(reader)
                 .await
                 .map_err(ArrowError::from)?;
+            // Find complex data type column index as projection
+            let mut projection = Vec::with_capacity(projected_schema.fields().len());
+            for named_column in builder.file_metadata().root_data_type().children() {
+                if let Some((_table_idx, _table_field)) =
+                    projected_schema.fields().find(named_column.name())
+                {
+                    projection.push(named_column.data_type().column_index());
+                }
+            }
             let projection_mask =
                 ProjectionMask::roots(builder.file_metadata().root_data_type(), projection);
             if let Some(range) = file_meta.range.clone() {
