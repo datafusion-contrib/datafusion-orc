@@ -23,7 +23,7 @@
 //! ```no_run
 //! # use datafusion::prelude::*;
 //! # use datafusion::error::Result;
-//! # use orc_rust::datafusion::{OrcReadOptions, SessionContextOrcExt};
+//! # use datafusion_orc::{OrcReadOptions, SessionContextOrcExt};
 //! # #[tokio::main]
 //! # async fn main() -> Result<()> {
 //! let ctx = SessionContext::new();
@@ -70,7 +70,7 @@ pub struct OrcReadOptions<'a> {
     pub file_extension: &'a str,
 }
 
-impl<'a> Default for OrcReadOptions<'a> {
+impl Default for OrcReadOptions<'_> {
     fn default() -> Self {
         Self {
             file_extension: "orc",
