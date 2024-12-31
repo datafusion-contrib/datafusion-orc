@@ -35,9 +35,9 @@ all-features = true
 arrow = { version = "53", features = ["prettyprint", "chrono-tz"] }
 async-trait = { version = "0.1.77" }
 bytes = "1.4"
-datafusion = { version = "42.0" }
-datafusion-expr = { version = "42.0" }
-datafusion-physical-expr = { version = "42.0" }
+datafusion = { version = "43.0" }
+datafusion-expr = { version = "43.0" }
+datafusion-physical-expr = { version = "43.0" }
 futures = { version = "0.3", default-features = false, features = ["std"] }
 futures-util = { version = "0.3" }
 object_store = { version = "0.11" }
