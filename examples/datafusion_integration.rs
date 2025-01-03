@@ -25,6 +25,16 @@ async fn main() -> Result<()> {
     // methods available on SessionContext. With that done, we are able to process
     // ORC files using SQL or the DataFrame API.
     let ctx = SessionContext::new();
+
+    ctx.register_orc(
+        "table2",
+        "tests/basic/data/map_list.snappy.orc",
+        OrcReadOptions::default(),
+    )
+    .await?;
+
+    ctx.sql("select id,m,l from table2").await?.show().await?;
+
     ctx.register_orc(
         "table1",
         "tests/basic/data/alltypes.snappy.orc",
