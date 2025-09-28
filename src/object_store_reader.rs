@@ -22,7 +22,7 @@ use futures::future::BoxFuture;
 use futures::{FutureExt, TryFutureExt};
 use orc_rust::reader::AsyncChunkReader;
 
-use object_store::{ObjectMeta, ObjectStore};
+use object_store::{GetOptions, ObjectMeta, ObjectStore};
 
 /// Implements [`AsyncChunkReader`] to allow reading ORC files via `object_store` API.
 pub struct ObjectStoreReader {
@@ -38,7 +38,11 @@ impl ObjectStoreReader {
 
 impl AsyncChunkReader for ObjectStoreReader {
     fn len(&mut self) -> BoxFuture<'_, std::io::Result<u64>> {
-        async move { Ok(self.file.size as u64) }.boxed()
+        self.store
+            .get_opts(&self.file.location, GetOptions::default())
+            .map(|result| result.map(|x| x.meta.size))
+            .map_err(|e| e.into())
+            .boxed()
     }
 
     fn get_bytes(
@@ -46,8 +50,6 @@ impl AsyncChunkReader for ObjectStoreReader {
         offset_from_start: u64,
         length: u64,
     ) -> BoxFuture<'_, std::io::Result<Bytes>> {
-        let offset_from_start = offset_from_start as usize;
-        let length = length as usize;
         let range = offset_from_start..(offset_from_start + length);
         self.store
             .get_range(&self.file.location, range)
