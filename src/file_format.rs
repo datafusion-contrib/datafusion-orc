@@ -25,21 +25,21 @@ use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::common::Statistics;
 use datafusion::datasource::file_format::file_compression_type::FileCompressionType;
 use datafusion::datasource::file_format::FileFormat;
-use datafusion::datasource::physical_plan::FileScanConfig;
+use datafusion::datasource::physical_plan::{FileScanConfig, FileSource};
 use datafusion::error::{DataFusionError, Result};
-use datafusion::execution::context::SessionState;
 use datafusion::physical_plan::ExecutionPlan;
-use datafusion_physical_expr::PhysicalExpr;
 use futures::TryStreamExt;
 use orc_rust::reader::metadata::read_metadata_async;
 
+use crate::OrcSource;
 use async_trait::async_trait;
+use datafusion::catalog::Session;
+use datafusion::datasource::source::DataSourceExec;
 use futures_util::StreamExt;
 use object_store::path::Path;
 use object_store::{ObjectMeta, ObjectStore};
 
 use super::object_store_reader::ObjectStoreReader;
-use super::physical_exec::OrcExec;
 
 async fn fetch_schema(store: &Arc<dyn ObjectStore>, file: &ObjectMeta) -> Result<(Path, Schema)> {
     let loc_path = file.location.clone();
@@ -54,13 +54,7 @@ async fn fetch_schema(store: &Arc<dyn ObjectStore>, file: &ObjectMeta) -> Result
 }
 
 #[derive(Clone, Debug)]
-pub struct OrcFormat {}
-
-impl OrcFormat {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
+pub struct OrcFormat;
 
 #[async_trait]
 impl FileFormat for OrcFormat {
@@ -76,9 +70,13 @@ impl FileFormat for OrcFormat {
         Ok("orc".to_string())
     }
 
+    fn compression_type(&self) -> Option<FileCompressionType> {
+        None
+    }
+
     async fn infer_schema(
         &self,
-        state: &SessionState,
+        state: &dyn Session,
         store: &Arc<dyn ObjectStore>,
         objects: &[ObjectMeta],
     ) -> Result<SchemaRef> {
@@ -109,7 +107,7 @@ impl FileFormat for OrcFormat {
 
     async fn infer_stats(
         &self,
-        _state: &SessionState,
+        _state: &dyn Session,
         _store: &Arc<dyn ObjectStore>,
         table_schema: SchemaRef,
         _object: &ObjectMeta,
@@ -119,10 +117,13 @@ impl FileFormat for OrcFormat {
 
     async fn create_physical_plan(
         &self,
-        _state: &SessionState,
+        _state: &dyn Session,
         conf: FileScanConfig,
-        _filters: Option<&Arc<dyn PhysicalExpr>>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        Ok(Arc::new(OrcExec::new(conf)))
+        Ok(DataSourceExec::from_data_source(conf))
+    }
+
+    fn file_source(&self) -> Arc<dyn FileSource> {
+        Arc::new(OrcSource::default())
     }
 }

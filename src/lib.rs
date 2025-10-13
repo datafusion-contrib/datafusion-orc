@@ -58,11 +58,13 @@ use datafusion::execution::options::ReadOptions;
 
 use async_trait::async_trait;
 
-use self::file_format::OrcFormat;
-
 mod file_format;
+mod file_source;
 mod object_store_reader;
 mod physical_exec;
+
+pub use file_format::OrcFormat;
+pub use file_source::OrcSource;
 
 /// Configuration options for reading ORC files.
 #[derive(Clone)]
@@ -85,8 +87,7 @@ impl ReadOptions<'_> for OrcReadOptions<'_> {
         _config: &SessionConfig,
         _table_options: TableOptions,
     ) -> ListingOptions {
-        let file_format = OrcFormat::new();
-        ListingOptions::new(Arc::new(file_format)).with_file_extension(self.file_extension)
+        ListingOptions::new(Arc::new(OrcFormat)).with_file_extension(self.file_extension)
     }
 
     async fn get_resolved_schema(
@@ -126,8 +127,7 @@ impl SessionContextOrcExt for SessionContext {
         // SessionContext::_read_type
         let table_paths = table_paths.to_urls()?;
         let session_config = self.copied_config();
-        let listing_options =
-            ListingOptions::new(Arc::new(OrcFormat::new())).with_file_extension(".orc");
+        let listing_options = ListingOptions::new(Arc::new(OrcFormat)).with_file_extension(".orc");
 
         let option_extension = listing_options.file_extension.clone();
 
