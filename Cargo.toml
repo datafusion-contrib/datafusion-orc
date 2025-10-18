@@ -17,7 +17,7 @@
 
 [package]
 name = "datafusion-orc"
-version = "0.4.1"
+version = "0.5.0"
 edition = "2021"
 homepage = "https://github.com/datafusion-contrib/datafusion-orc"
 repository = "https://github.com/datafusion-contrib/datafusion-orc"
@@ -40,7 +40,7 @@ datafusion-datasource = "50.0"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 futures-util = { version = "0.3" }
 object_store = { version = "0.12" }
-orc-rust = { version = "0.6", features = ["async"] }
+orc-rust = { version = "0.6.3", features = ["async"] }
 tokio = { version = "1.28", features = [
     "io-util",
     "sync",
