@@ -16,10 +16,10 @@
 // under the License.
 
 use crate::physical_exec::OrcOpener;
-use arrow::datatypes::SchemaRef;
 use datafusion::common::Statistics;
 use datafusion::datasource::physical_plan::{FileOpener, FileScanConfig, FileSource};
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
+use datafusion_datasource::TableSchema;
 use object_store::ObjectStore;
 use std::any::Any;
 use std::sync::Arc;
@@ -62,7 +62,7 @@ impl FileSource for OrcSource {
         })
     }
 
-    fn with_schema(&self, _schema: SchemaRef) -> Arc<dyn FileSource> {
+    fn with_schema(&self, _schema: TableSchema) -> Arc<dyn FileSource> {
         Arc::new(self.clone())
     }
 

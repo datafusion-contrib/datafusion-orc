@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use arrow::error::ArrowError;
 use datafusion::arrow::datatypes::SchemaRef;
-use datafusion::datasource::physical_plan::{FileMeta, FileOpenFuture, FileOpener, FileScanConfig};
+use datafusion::datasource::physical_plan::{FileOpenFuture, FileOpener, FileScanConfig};
 use datafusion::error::Result;
 use datafusion_datasource::PartitionedFile;
 use orc_rust::projection::ProjectionMask;
@@ -45,21 +45,21 @@ impl OrcOpener {
     ) -> Self {
         let projection = config
             .file_column_projection_indices()
-            .unwrap_or_else(|| (0..config.file_schema.fields().len()).collect());
+            .unwrap_or_else(|| (0..config.file_schema().fields().len()).collect());
 
         Self {
             projection,
             batch_size: config.batch_size.unwrap_or(batch_size),
-            table_schema: config.file_schema.clone(),
+            table_schema: config.file_schema().clone(),
             object_store,
         }
     }
 }
 
 impl FileOpener for OrcOpener {
-    fn open(&self, file_meta: FileMeta, _: PartitionedFile) -> Result<FileOpenFuture> {
-        let reader =
-            ObjectStoreReader::new(self.object_store.clone(), file_meta.object_meta.clone());
+    fn open(&self, file: PartitionedFile) -> Result<FileOpenFuture> {
+        let object_meta = &file.object_meta;
+        let reader = ObjectStoreReader::new(self.object_store.clone(), object_meta.clone());
         let batch_size = self.batch_size;
         let projected_schema = SchemaRef::from(self.table_schema.project(&self.projection)?);
 
@@ -78,7 +78,7 @@ impl FileOpener for OrcOpener {
             }
             let projection_mask =
                 ProjectionMask::roots(builder.file_metadata().root_data_type(), projection);
-            if let Some(range) = file_meta.range.clone() {
+            if let Some(range) = file.range.clone() {
                 let range = range.start as usize..range.end as usize;
                 builder = builder.with_file_byte_range(range);
             }
