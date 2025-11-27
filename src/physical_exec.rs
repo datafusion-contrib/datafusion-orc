@@ -17,8 +17,8 @@
 
 use std::sync::Arc;
 
-use arrow::error::ArrowError;
 use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::arrow::error::ArrowError;
 use datafusion::datasource::physical_plan::{FileOpenFuture, FileOpener, FileScanConfig};
 use datafusion::error::Result;
 use datafusion_datasource::PartitionedFile;

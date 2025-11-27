@@ -32,7 +32,6 @@ rust-version = "1.73"
 all-features = true
 
 [dependencies]
-arrow = { version = "57.0", features = ["prettyprint", "chrono-tz"] }
 async-trait = { version = "0.1.77" }
 bytes = "1.4"
 datafusion = "51.0"
