@@ -19,9 +19,9 @@ use std::sync::Arc;
 
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::error::ArrowError;
+use datafusion::datasource::listing::PartitionedFile;
 use datafusion::datasource::physical_plan::{FileOpenFuture, FileOpener, FileScanConfig};
 use datafusion::error::Result;
-use datafusion_datasource::PartitionedFile;
 use orc_rust::projection::ProjectionMask;
 use orc_rust::ArrowReaderBuilder;
 
@@ -31,28 +31,22 @@ use object_store::ObjectStore;
 use super::object_store_reader::ObjectStoreReader;
 
 pub(crate) struct OrcOpener {
-    projection: Vec<usize>,
+    projected_schema: SchemaRef,
     batch_size: usize,
-    table_schema: SchemaRef,
     object_store: Arc<dyn ObjectStore>,
 }
 
 impl OrcOpener {
-    pub(crate) fn new(
+    pub(crate) fn try_new(
         object_store: Arc<dyn ObjectStore>,
         config: &FileScanConfig,
         batch_size: usize,
-    ) -> Self {
-        let projection = config
-            .file_column_projection_indices()
-            .unwrap_or_else(|| (0..config.file_schema().fields().len()).collect());
-
-        Self {
-            projection,
+    ) -> Result<Self> {
+        Ok(Self {
+            projected_schema: config.projected_schema()?,
             batch_size: config.batch_size.unwrap_or(batch_size),
-            table_schema: config.file_schema().clone(),
             object_store,
-        }
+        })
     }
 }
 
@@ -61,7 +55,7 @@ impl FileOpener for OrcOpener {
         let object_meta = &file.object_meta;
         let reader = ObjectStoreReader::new(self.object_store.clone(), object_meta.clone());
         let batch_size = self.batch_size;
-        let projected_schema = SchemaRef::from(self.table_schema.project(&self.projection)?);
+        let projected_schema = self.projected_schema.clone();
 
         Ok(Box::pin(async move {
             let mut builder = ArrowReaderBuilder::try_new_async(reader)
