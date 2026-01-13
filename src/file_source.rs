@@ -30,14 +30,21 @@ pub struct OrcSource {
     metrics: ExecutionPlanMetricsSet,
     batch_size: usize,
     table_schema: TableSchema,
+    projection: ProjectionExprs,
 }
 
 impl OrcSource {
     pub fn new(table_schema: TableSchema) -> Self {
+        let table_schema_ref = table_schema.table_schema();
+        let projection = ProjectionExprs::from_indices(
+            &(0..table_schema_ref.fields().len()).collect::<Vec<_>>(),
+            table_schema_ref,
+        );
         Self {
             metrics: ExecutionPlanMetricsSet::default(),
             batch_size: 1024,
             table_schema,
+            projection,
         }
     }
 }
@@ -49,8 +56,13 @@ impl FileSource for OrcSource {
         config: &FileScanConfig,
         _partition: usize,
     ) -> Result<Arc<dyn FileOpener>, DataFusionError> {
-        OrcOpener::try_new(object_store, config, self.batch_size)
-            .map(|f| Arc::new(f) as Arc<dyn FileOpener>)
+        OrcOpener::try_new(
+            object_store,
+            self.table_schema.table_schema().clone(),
+            config.batch_size.unwrap_or(self.batch_size),
+            self.projection.clone(),
+        )
+        .map(|f| Arc::new(f) as Arc<dyn FileOpener>)
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -68,6 +80,10 @@ impl FileSource for OrcSource {
         })
     }
 
+    fn projection(&self) -> Option<&ProjectionExprs> {
+        Some(&self.projection)
+    }
+
     fn metrics(&self) -> &ExecutionPlanMetricsSet {
         &self.metrics
     }
@@ -80,6 +96,8 @@ impl FileSource for OrcSource {
         &self,
         projection: &ProjectionExprs,
     ) -> Result<Option<Arc<dyn FileSource>>, DataFusionError> {
-        todo!()
+        let mut source = self.clone();
+        source.projection = self.projection.try_merge(projection)?;
+        Ok(Some(Arc::new(source)))
     }
 }
