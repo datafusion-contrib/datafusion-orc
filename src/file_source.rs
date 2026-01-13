@@ -16,10 +16,11 @@
 // under the License.
 
 use crate::physical_exec::OrcOpener;
-use datafusion::common::Statistics;
+use datafusion::common::DataFusionError;
 use datafusion::datasource::physical_plan::{FileOpener, FileScanConfig, FileSource};
+use datafusion::datasource::table_schema::TableSchema;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
-use datafusion_datasource::TableSchema;
+use datafusion::physical_plan::projection::ProjectionExprs;
 use object_store::ObjectStore;
 use std::any::Any;
 use std::sync::Arc;
@@ -27,16 +28,23 @@ use std::sync::Arc;
 #[derive(Debug, Clone)]
 pub struct OrcSource {
     metrics: ExecutionPlanMetricsSet,
-    statistics: Statistics,
     batch_size: usize,
+    table_schema: TableSchema,
+    projection: ProjectionExprs,
 }
 
-impl Default for OrcSource {
-    fn default() -> Self {
+impl OrcSource {
+    pub fn new(table_schema: TableSchema) -> Self {
+        let table_schema_ref = table_schema.table_schema();
+        let projection = ProjectionExprs::from_indices(
+            &(0..table_schema_ref.fields().len()).collect::<Vec<_>>(),
+            table_schema_ref,
+        );
         Self {
             metrics: ExecutionPlanMetricsSet::default(),
-            statistics: Statistics::default(),
             batch_size: 1024,
+            table_schema,
+            projection,
         }
     }
 }
@@ -47,12 +55,22 @@ impl FileSource for OrcSource {
         object_store: Arc<dyn ObjectStore>,
         config: &FileScanConfig,
         _partition: usize,
-    ) -> Arc<dyn FileOpener> {
-        Arc::new(OrcOpener::new(object_store, config, self.batch_size))
+    ) -> Result<Arc<dyn FileOpener>, DataFusionError> {
+        OrcOpener::try_new(
+            object_store,
+            self.table_schema.table_schema().clone(),
+            config.batch_size.unwrap_or(self.batch_size),
+            self.projection.clone(),
+        )
+        .map(|f| Arc::new(f) as Arc<dyn FileOpener>)
     }
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    fn table_schema(&self) -> &TableSchema {
+        &self.table_schema
     }
 
     fn with_batch_size(&self, batch_size: usize) -> Arc<dyn FileSource> {
@@ -62,30 +80,24 @@ impl FileSource for OrcSource {
         })
     }
 
-    fn with_schema(&self, _schema: TableSchema) -> Arc<dyn FileSource> {
-        Arc::new(self.clone())
-    }
-
-    fn with_projection(&self, _config: &FileScanConfig) -> Arc<dyn FileSource> {
-        Arc::new(self.clone())
-    }
-
-    fn with_statistics(&self, statistics: Statistics) -> Arc<dyn FileSource> {
-        Arc::new(Self {
-            statistics,
-            ..self.clone()
-        })
+    fn projection(&self) -> Option<&ProjectionExprs> {
+        Some(&self.projection)
     }
 
     fn metrics(&self) -> &ExecutionPlanMetricsSet {
         &self.metrics
     }
 
-    fn statistics(&self) -> datafusion::common::Result<Statistics> {
-        Ok(self.statistics.clone())
-    }
-
     fn file_type(&self) -> &str {
         "orc"
+    }
+
+    fn try_pushdown_projection(
+        &self,
+        projection: &ProjectionExprs,
+    ) -> Result<Option<Arc<dyn FileSource>>, DataFusionError> {
+        let mut source = self.clone();
+        source.projection = self.projection.try_merge(projection)?;
+        Ok(Some(Arc::new(source)))
     }
 }

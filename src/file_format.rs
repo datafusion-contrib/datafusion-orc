@@ -25,6 +25,7 @@ use datafusion::common::Statistics;
 use datafusion::datasource::file_format::file_compression_type::FileCompressionType;
 use datafusion::datasource::file_format::FileFormat;
 use datafusion::datasource::physical_plan::{FileScanConfig, FileSource};
+use datafusion::datasource::table_schema::TableSchema;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::physical_plan::ExecutionPlan;
 use futures::TryStreamExt;
@@ -122,7 +123,7 @@ impl FileFormat for OrcFormat {
         Ok(DataSourceExec::from_data_source(conf))
     }
 
-    fn file_source(&self) -> Arc<dyn FileSource> {
-        Arc::new(OrcSource::default())
+    fn file_source(&self, table_schema: TableSchema) -> Arc<dyn FileSource> {
+        Arc::new(OrcSource::new(table_schema))
     }
 }

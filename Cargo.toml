@@ -34,8 +34,7 @@ all-features = true
 [dependencies]
 async-trait = { version = "0.1.77" }
 bytes = "1.4"
-datafusion = "51.0"
-datafusion-datasource = "51.0"
+datafusion = "52.0"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 futures-util = { version = "0.3" }
 object_store = { version = "0.12" }
