@@ -22,7 +22,7 @@ use futures::future::BoxFuture;
 use futures::{FutureExt, TryFutureExt};
 use orc_rust::reader::AsyncChunkReader;
 
-use object_store::{GetOptions, ObjectMeta, ObjectStore};
+use object_store::{GetOptions, ObjectMeta, ObjectStore, ObjectStoreExt};
 
 /// Implements [`AsyncChunkReader`] to allow reading ORC files via `object_store` API.
 pub struct ObjectStoreReader {
@@ -53,7 +53,7 @@ impl AsyncChunkReader for ObjectStoreReader {
         let range = offset_from_start..(offset_from_start + length);
         self.store
             .get_range(&self.file.location, range)
-            .map_err(|e| e.into())
+            .map_err(std::io::Error::from)
             .boxed()
     }
 }
