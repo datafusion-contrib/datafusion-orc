@@ -22,7 +22,6 @@ use datafusion::datasource::table_schema::TableSchema;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use datafusion::physical_plan::projection::ProjectionExprs;
 use object_store::ObjectStore;
-use std::any::Any;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -63,10 +62,6 @@ impl FileSource for OrcSource {
             self.projection.clone(),
         )
         .map(|f| Arc::new(f) as Arc<dyn FileOpener>)
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn table_schema(&self) -> &TableSchema {
