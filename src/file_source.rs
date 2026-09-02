@@ -16,12 +16,14 @@
 // under the License.
 
 use crate::physical_exec::OrcOpener;
+use datafusion::common::tree_node::TreeNodeRecursion;
 use datafusion::common::DataFusionError;
 use datafusion::datasource::physical_plan::{FileOpener, FileScanConfig, FileSource};
 use datafusion::datasource::table_schema::TableSchema;
 use datafusion::object_store::ObjectStore;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use datafusion::physical_plan::projection::ProjectionExprs;
+use datafusion::physical_plan::PhysicalExpr;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -94,5 +96,12 @@ impl FileSource for OrcSource {
         let mut source = self.clone();
         source.projection = self.projection.try_merge(projection)?;
         Ok(Some(Arc::new(source)))
+    }
+
+    fn apply_expressions(
+        &self,
+        f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> Result<TreeNodeRecursion, DataFusionError>,
+    ) -> Result<TreeNodeRecursion, DataFusionError> {
+        datafusion::physical_plan::apply_expression_roots(self.projection.iter(), f)
     }
 }

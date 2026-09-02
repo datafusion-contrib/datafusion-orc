@@ -78,7 +78,13 @@ impl FileFormat for OrcFormat {
         let mut schemas: Vec<_> = futures::stream::iter(objects)
             .map(|object| fetch_schema(store, object))
             .boxed() // Workaround https://github.com/rust-lang/rust/issues/64552
-            .buffered(state.config_options().execution.meta_fetch_concurrency)
+            .buffered(
+                state
+                    .config_options()
+                    .execution
+                    .meta_fetch_concurrency
+                    .into(),
+            )
             .try_collect()
             .await?;
 
